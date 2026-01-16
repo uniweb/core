@@ -27,6 +27,6 @@
     "node": ">=20.19"
   },
   "dependencies": {
-    "@uniweb/semantic-parser": "^0.1.0"
+    "@uniweb/semantic-parser": "workspace:*"
   }
 }
