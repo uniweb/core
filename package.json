@@ -1,0 +1,32 @@
+{
+  "name": "@uniweb/core",
+  "version": "0.1.0",
+  "description": "Core classes for the Uniweb platform - Uniweb, Website, Page, Block",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src"
+  ],
+  "keywords": [
+    "uniweb",
+    "core"
+  ],
+  "author": "Proximify",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/uniweb/core.git"
+  },
+  "homepage": "https://github.com/uniweb/core#readme",
+  "bugs": {
+    "url": "https://github.com/uniweb/core/issues"
+  },
+  "engines": {
+    "node": ">=20.19"
+  },
+  "dependencies": {
+    "@uniweb/semantic-parser": "^0.1.0"
+  }
+}
