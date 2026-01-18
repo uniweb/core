@@ -56,12 +56,29 @@ uniweb.setFoundation(module)  // Set the foundation module
 Manages pages, theme, and localization.
 
 ```js
+// Page navigation
 website.getPage(route)        // Get page by route
 website.setActivePage(route)  // Navigate to page
-website.localize(value)       // Localize a multilingual value
-website.getLanguage()         // Get current language code
-website.getLanguages()        // Get available languages
+website.activePage            // Current active page
+website.pages                 // All pages
+website.pageRoutes            // Array of route strings
+
+// Locale API
+website.getLocales()          // Get all locales: [{code, label, isDefault}]
+website.getActiveLocale()     // Get current locale code
+website.getDefaultLocale()    // Get default locale code
+website.hasMultipleLocales()  // Check if site has multiple locales
+website.getLocaleUrl(code, route)  // Build URL for a locale
+website.setActiveLocale(code) // Set active locale
+website.getLocale(code)       // Get locale info by code
+
+// Content localization (for multilingual values)
+website.localize(value)       // Localize {en: "Hello", es: "Hola"} to active lang
 website.makeHref(href)        // Transform href for routing
+
+// Deprecated (use Locale API instead)
+website.getLanguage()         // Use getActiveLocale()
+website.getLanguages()        // Use getLocales()
 ```
 
 #### Page
@@ -71,7 +88,12 @@ Represents a page with its sections.
 ```js
 page.route                    // Page route path
 page.title                    // Page title
+page.description              // Page description
 page.sections                 // Array of section blocks
+page.website                  // Back-reference to parent Website
+page.site                     // Alias for page.website
+page.getPageBlocks()          // Get header + body + footer blocks
+page.getHeadMeta()            // Get SEO meta tags
 ```
 
 #### Block
