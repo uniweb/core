@@ -287,8 +287,60 @@ export default class Website {
     return defaultVal
   }
 
+  // ─────────────────────────────────────────────────────────────────
+  // Search API
+  // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Check if search is enabled for this site
+   * @returns {boolean}
+   */
+  isSearchEnabled() {
+    // Search is enabled by default unless explicitly disabled
+    return this.config?.search?.enabled !== false
+  }
+
+  /**
+   * Get search configuration
+   * @returns {Object} Search configuration
+   */
+  getSearchConfig() {
+    const config = this.config?.search || {}
+
+    return {
+      enabled: this.isSearchEnabled(),
+      indexUrl: this.getSearchIndexUrl(),
+      locale: this.getActiveLocale(),
+      include: {
+        pages: config.include?.pages !== false,
+        sections: config.include?.sections !== false,
+        headings: config.include?.headings !== false,
+        paragraphs: config.include?.paragraphs !== false,
+        links: config.include?.links !== false,
+        lists: config.include?.lists !== false
+      },
+      exclude: {
+        routes: config.exclude?.routes || [],
+        components: config.exclude?.components || []
+      }
+    }
+  }
+
+  /**
+   * Get the URL for the search index file
+   * @returns {string} URL to fetch the search index
+   */
+  getSearchIndexUrl() {
+    const locale = this.getActiveLocale()
+    const isDefault = locale === this.getDefaultLocale()
+
+    // Default locale uses root path, others use locale prefix
+    return isDefault ? '/search-index.json' : `/${locale}/search-index.json`
+  }
+
   /**
    * Get search data for all pages
+   * @deprecated Use getSearchConfig() and fetch the search index instead
    */
   getSearchData() {
     return this.pages.map((page) => ({
