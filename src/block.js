@@ -10,8 +10,13 @@ import { parseContent as parseSemanticContent } from '@uniweb/semantic-parser'
 export default class Block {
   constructor(blockData, id) {
     this.id = id
-    this.component = blockData.component || 'Section'
+    // 'type' matches frontmatter convention; 'component' supported for backwards compatibility
+    this.type = blockData.type || blockData.component || 'Section'
     this.Component = null
+
+    // Back-references (set by Page when creating blocks)
+    this.page = null
+    this.website = null
 
     // Content structure
     // The content can be:
@@ -28,7 +33,7 @@ export default class Block {
     // Block configuration
     const blockConfig = blockData.params || blockData.config || {}
     this.preset = blockData.preset
-    this.themeName = `context__${blockConfig.theme || 'light'}`
+    this.themeName = blockConfig.theme || 'light'
     this.standardOptions = blockConfig.standardOptions || {}
     this.properties = blockConfig.properties || blockConfig
 
@@ -40,10 +45,13 @@ export default class Block {
     // Input data
     this.input = blockData.input || null
 
-    // State management
+    // State management (dynamic, can change at runtime)
     this.startState = null
     this.state = null
     this.resetStateHook = null
+
+    // Context (static, defined per component type)
+    this.context = null
   }
 
   /**
@@ -160,17 +168,24 @@ export default class Block {
   initComponent() {
     if (this.Component) return this.Component
 
-    this.Component = globalThis.uniweb?.getComponent(this.component)
+    this.Component = globalThis.uniweb?.getComponent(this.type)
 
     if (!this.Component) {
-      console.warn(`[Block] Component not found: ${this.component}`)
+      console.warn(`[Block] Component not found: ${this.type}`)
       return null
     }
 
-    // Initialize state from component defaults
-    const defaults = this.Component.blockDefaults || { state: this.Component.blockState }
-    this.startState = defaults.state ? { ...defaults.state } : null
+    // Get component-level block configuration
+    // Supports: Component.block (preferred), Component.blockDefaults (legacy)
+    const blockConfig = this.Component.block || this.Component.blockDefaults || {}
+
+    // Initialize state (dynamic, can change at runtime)
+    const stateDefaults = blockConfig.state || this.Component.blockState
+    this.startState = stateDefaults ? { ...stateDefaults } : null
     this.initState()
+
+    // Initialize context (static, per component type)
+    this.context = blockConfig.context ? { ...blockConfig.context } : null
 
     return this.Component
   }
@@ -241,6 +256,59 @@ export default class Block {
   initState() {
     this.state = this.startState
     if (this.resetStateHook) this.resetStateHook()
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Cross-Block Communication
+  // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Get this block's index within its page.
+   * Useful for finding neighboring blocks.
+   *
+   * @returns {number} The index, or -1 if not found
+   */
+  getIndex() {
+    if (!this.page) return -1
+    return this.page.getBlockIndex(this)
+  }
+
+  /**
+   * Get information about this block for cross-component communication.
+   * Other components (like NavBar) can use this to adapt their behavior.
+   *
+   * @returns {Object} Block info: { type, theme, state, context }
+   */
+  getBlockInfo() {
+    return {
+      type: this.type,
+      theme: this.themeName,
+      state: this.state,
+      context: this.context
+    }
+  }
+
+  /**
+   * Get information about the next block in the page.
+   * Commonly used by headers/navbars to adapt to the first content section.
+   *
+   * @returns {Object|null} Next block's info or null
+   */
+  getNextBlockInfo() {
+    const index = this.getIndex()
+    if (index < 0 || !this.page) return null
+    return this.page.getBlockInfo(index + 1)
+  }
+
+  /**
+   * Get information about the previous block in the page.
+   *
+   * @returns {Object|null} Previous block's info or null
+   */
+  getPrevBlockInfo() {
+    const index = this.getIndex()
+    if (index <= 0 || !this.page) return null
+    return this.page.getBlockInfo(index - 1)
   }
 
   /**

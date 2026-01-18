@@ -46,14 +46,8 @@ export default class Website {
       .filter((page) => !specialRoutes.includes(page.route))
       .map(
         (page, index) =>
-          new Page(page, index, this.headerPage, this.footerPage, this.leftPage, this.rightPage)
+          new Page(page, index, this, this.headerPage, this.footerPage, this.leftPage, this.rightPage)
       )
-
-    // Set reference from pages back to website
-    for (const page of this.pages) {
-      page.website = this
-      page.site = this // Alias
-    }
 
     this.activePage =
       this.pages.find((page) => page.route === '/' || page.route === '/index') ||

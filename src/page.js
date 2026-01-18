@@ -8,7 +8,7 @@
 import Block from './block.js'
 
 export default class Page {
-  constructor(pageData, id, pageHeader, pageFooter, pageLeft, pageRight) {
+  constructor(pageData, id, website, pageHeader, pageFooter, pageLeft, pageRight) {
     this.id = id
     this.route = pageData.route
     this.title = pageData.title || ''
@@ -48,9 +48,9 @@ export default class Page {
     // Child pages (for nested hierarchy) - populated by Website
     this.children = []
 
-    // Back-reference to website (set by Website constructor)
-    this.website = null
-    this.site = null // Alias
+    // Back-reference to website
+    this.website = website
+    this.site = website // Alias
 
     // Scroll position memory (for navigation restoration)
     this.scrollY = 0
@@ -99,15 +99,43 @@ export default class Page {
   buildPageBlocks(body, header, footer, left, right) {
     const buildBlocks = (sections, prefix) => {
       if (!sections || sections.length === 0) return null
-      return sections.map((section, index) => new Block(section, `${prefix}-${index}`))
+      return sections.map((section, index) => {
+        const block = new Block(section, `${prefix}-${index}`)
+        this.initBlockReferences(block)
+        return block
+      })
     }
+
+    const bodyBlocks = (body || []).map((section, index) => {
+      const block = new Block(section, index)
+      this.initBlockReferences(block)
+      return block
+    })
 
     return {
       header: buildBlocks(header, 'header'),
-      body: (body || []).map((section, index) => new Block(section, index)),
+      body: bodyBlocks,
       footer: buildBlocks(footer, 'footer'),
       left: buildBlocks(left, 'left'),
       right: buildBlocks(right, 'right')
+    }
+  }
+
+  /**
+   * Initialize block back-references to page and website.
+   * Also recursively sets references for child blocks.
+   *
+   * @param {Block} block - The block to initialize
+   */
+  initBlockReferences(block) {
+    block.page = this
+    block.website = this.website
+
+    // Recursively set references for child blocks
+    if (block.childBlocks?.length) {
+      for (const childBlock of block.childBlocks) {
+        this.initBlockReferences(childBlock)
+      }
     }
   }
 
@@ -117,6 +145,46 @@ export default class Page {
    */
   getBlockGroups() {
     return this.pageBlocks
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Cross-Block Communication
+  // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Find a block's index within the page's block list.
+   * Searches across all layout areas (header, body, footer, left, right).
+   *
+   * @param {Block} block - The block to find
+   * @returns {number} The index in the flat list, or -1 if not found
+   */
+  getBlockIndex(block) {
+    const allBlocks = this.getPageBlocks()
+    return allBlocks.indexOf(block)
+  }
+
+  /**
+   * Get information about a block at a specific index.
+   * Used for cross-component communication (e.g., NavBar checking Hero's theme).
+   *
+   * @param {number} index - The block index
+   * @returns {Object|null} Block info { theme, component, state } or null
+   */
+  getBlockInfo(index) {
+    const allBlocks = this.getPageBlocks()
+    const block = allBlocks[index]
+    return block?.getBlockInfo() || null
+  }
+
+  /**
+   * Get the first body block's info.
+   * Common use case: NavBar checking if first section supports overlay.
+   *
+   * @returns {Object|null} First body block's info or null
+   */
+  getFirstBodyBlockInfo() {
+    const bodyBlocks = this.pageBlocks.body
+    return bodyBlocks?.[0]?.getBlockInfo() || null
   }
 
   /**
