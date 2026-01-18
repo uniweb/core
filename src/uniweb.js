@@ -6,6 +6,7 @@
  */
 
 import Website from './website.js'
+import Analytics from './analytics.js'
 
 export default class Uniweb {
   constructor(configData) {
@@ -15,6 +16,9 @@ export default class Uniweb {
     this.foundation = null // The loaded foundation module
     this.foundationConfig = {} // Configuration from foundation
     this.language = 'en'
+
+    // Initialize analytics (disabled by default, configure via site config)
+    this.analytics = new Analytics(configData.analytics || {})
   }
 
   /**

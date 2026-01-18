@@ -13,6 +13,7 @@ export { default as Website } from './website.js'
 export { default as Page } from './page.js'
 export { default as Block } from './block.js'
 export { default as Input } from './input.js'
+export { default as Analytics } from './analytics.js'
 
 /**
  * The singleton Uniweb instance.
