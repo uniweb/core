@@ -6,6 +6,23 @@
 
 import Page from './page.js'
 
+// Common locale display names
+const LOCALE_NAMES = {
+  en: 'English',
+  es: 'Español',
+  fr: 'Français',
+  de: 'Deutsch',
+  it: 'Italiano',
+  pt: 'Português',
+  nl: 'Nederlands',
+  pl: 'Polski',
+  ru: 'Русский',
+  ja: '日本語',
+  ko: '한국어',
+  zh: '中文',
+  ar: 'العربية'
+}
+
 export default class Website {
   constructor(websiteData) {
     const { pages = [], theme = {}, config = {} } = websiteData
@@ -26,6 +43,12 @@ export default class Website {
           new Page(page, index, this.headerPage, this.footerPage)
       )
 
+    // Set reference from pages back to website
+    for (const page of this.pages) {
+      page.website = this
+      page.site = this // Alias
+    }
+
     this.activePage =
       this.pages.find((page) => page.route === '/' || page.route === '/index') ||
       this.pages[0]
@@ -33,11 +56,46 @@ export default class Website {
     this.pageRoutes = this.pages.map((page) => page.route)
     this.themeData = theme
     this.config = config
-    this.activeLang = config.defaultLanguage || 'en'
-    this.langs = config.languages || [
-      { label: 'English', value: 'en' },
-      { label: 'français', value: 'fr' }
-    ]
+
+    // Locale configuration
+    this.defaultLocale = config.defaultLanguage || 'en'
+    this.activeLocale = config.activeLocale || this.defaultLocale
+
+    // Build locales list from i18n config
+    this.locales = this.buildLocalesList(config)
+
+    // Legacy language support (for editor multilingual)
+    this.activeLang = this.activeLocale
+    this.langs = config.languages || this.locales.map(l => ({
+      label: l.label,
+      value: l.code
+    }))
+  }
+
+  /**
+   * Build locales list from config
+   * @private
+   */
+  buildLocalesList(config) {
+    const defaultLocale = config.defaultLanguage || 'en'
+    const i18nLocales = config.i18n?.locales || []
+
+    // Start with default locale
+    const allLocaleCodes = [defaultLocale]
+
+    // Add translated locales (avoiding duplicates)
+    for (const locale of i18nLocales) {
+      if (!allLocaleCodes.includes(locale)) {
+        allLocaleCodes.push(locale)
+      }
+    }
+
+    // Build full locale objects
+    return allLocaleCodes.map(code => ({
+      code,
+      label: LOCALE_NAMES[code] || code.toUpperCase(),
+      isDefault: code === defaultLocale
+    }))
   }
 
   /**
@@ -93,6 +151,7 @@ export default class Website {
 
   /**
    * Get available languages
+   * @deprecated Use getLocales() instead
    */
   getLanguages() {
     return this.langs
@@ -100,9 +159,89 @@ export default class Website {
 
   /**
    * Get current language
+   * @deprecated Use getActiveLocale() instead
    */
   getLanguage() {
     return this.activeLang
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Locale API (new)
+  // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Get all available locales
+   * @returns {Array<{code: string, label: string, isDefault: boolean}>}
+   */
+  getLocales() {
+    return this.locales
+  }
+
+  /**
+   * Get currently active locale code
+   * @returns {string}
+   */
+  getActiveLocale() {
+    return this.activeLocale
+  }
+
+  /**
+   * Get the default locale code
+   * @returns {string}
+   */
+  getDefaultLocale() {
+    return this.defaultLocale
+  }
+
+  /**
+   * Check if site has multiple locales (useful for showing language switcher)
+   * @returns {boolean}
+   */
+  hasMultipleLocales() {
+    return this.locales.length > 1
+  }
+
+  /**
+   * Set the active locale
+   * @param {string} localeCode - Locale code to activate
+   */
+  setActiveLocale(localeCode) {
+    const locale = this.locales.find(l => l.code === localeCode)
+    if (locale) {
+      this.activeLocale = localeCode
+      this.activeLang = localeCode // Keep legacy in sync
+    }
+  }
+
+  /**
+   * Build URL for a specific locale
+   * @param {string} localeCode - Target locale code
+   * @param {string} route - Page route (default: current page route)
+   * @returns {string}
+   */
+  getLocaleUrl(localeCode, route = null) {
+    const targetRoute = route || this.activePage?.route || '/'
+
+    // Default locale uses root path (no prefix)
+    if (localeCode === this.defaultLocale) {
+      return targetRoute
+    }
+
+    // Other locales use /locale/ prefix
+    if (targetRoute === '/') {
+      return `/${localeCode}/`
+    }
+
+    return `/${localeCode}${targetRoute}`
+  }
+
+  /**
+   * Get locale info by code
+   * @param {string} localeCode - Locale code
+   * @returns {Object|undefined} Locale object or undefined
+   */
+  getLocale(localeCode) {
+    return this.locales.find(l => l.code === localeCode)
   }
 
   /**
