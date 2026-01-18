@@ -10,6 +10,11 @@ export default class Website {
   constructor(websiteData) {
     const { pages = [], theme = {}, config = {} } = websiteData
 
+    // Site metadata
+    this.name = config.name || ''
+    this.description = config.description || ''
+    this.url = config.url || ''
+
     // Extract special pages (header, footer) and regular pages
     this.headerPage = pages.find((p) => p.route === '/@header')
     this.footerPage = pages.find((p) => p.route === '/@footer')
