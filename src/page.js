@@ -1,13 +1,14 @@
 /**
  * Page
  *
- * Represents a single page with header, body sections, and footer.
+ * Represents a single page with header, body, footer, and panel sections.
+ * Each layout area can have multiple sections/blocks.
  */
 
 import Block from './block.js'
 
 export default class Page {
-  constructor(pageData, id, pageHeader, pageFooter) {
+  constructor(pageData, id, pageHeader, pageFooter, pageLeft, pageRight) {
     this.id = id
     this.route = pageData.route
     this.title = pageData.title || ''
@@ -26,8 +27,11 @@ export default class Page {
     this.layout = {
       header: pageData.layout?.header !== false,
       footer: pageData.layout?.footer !== false,
-      leftPanel: pageData.layout?.leftPanel !== false,
-      rightPanel: pageData.layout?.rightPanel !== false
+      left: pageData.layout?.left !== false,
+      right: pageData.layout?.right !== false,
+      // Aliases for backwards compatibility
+      leftPanel: pageData.layout?.left !== false,
+      rightPanel: pageData.layout?.right !== false
     }
 
     // SEO configuration
@@ -48,10 +52,16 @@ export default class Page {
     this.website = null
     this.site = null // Alias
 
+    // Scroll position memory (for navigation restoration)
+    this.scrollY = 0
+
+    // Build block groups for all layout areas
     this.pageBlocks = this.buildPageBlocks(
       pageData.sections,
       pageHeader?.sections,
-      pageFooter?.sections
+      pageFooter?.sections,
+      pageLeft?.sections,
+      pageRight?.sections
     )
   }
 
@@ -76,32 +86,58 @@ export default class Page {
   }
 
   /**
-   * Build the page block structure
+   * Build the page block structure for all layout areas.
+   * Each area can have multiple sections/blocks.
+   *
+   * @param {Array} body - Body sections from page content
+   * @param {Array} header - Header sections from @header page
+   * @param {Array} footer - Footer sections from @footer page
+   * @param {Array} left - Left panel sections from @left page
+   * @param {Array} right - Right panel sections from @right page
+   * @returns {Object} Block groups for each layout area
    */
-  buildPageBlocks(body, header, footer) {
-    const headerSection = header?.[0]
-    const footerSection = footer?.[0]
-    const bodySections = body || []
+  buildPageBlocks(body, header, footer, left, right) {
+    const buildBlocks = (sections, prefix) => {
+      if (!sections || sections.length === 0) return null
+      return sections.map((section, index) => new Block(section, `${prefix}-${index}`))
+    }
 
     return {
-      header: headerSection ? new Block(headerSection, 'header') : null,
-      body: bodySections.map((section, index) => new Block(section, index)),
-      footer: footerSection ? new Block(footerSection, 'footer') : null,
-      leftPanel: null,
-      rightPanel: null
+      header: buildBlocks(header, 'header'),
+      body: (body || []).map((section, index) => new Block(section, index)),
+      footer: buildBlocks(footer, 'footer'),
+      left: buildBlocks(left, 'left'),
+      right: buildBlocks(right, 'right')
     }
   }
 
   /**
+   * Get all block groups (for Layout component)
+   * @returns {Object} { header, body, footer, left, right }
+   */
+  getBlockGroups() {
+    return this.pageBlocks
+  }
+
+  /**
    * Get all blocks (header, body, footer) as flat array
+   * Respects page layout preferences (hasHeader, hasFooter, etc.)
    * @returns {Block[]}
    */
   getPageBlocks() {
-    return [
-      this.pageBlocks.header,
-      ...this.pageBlocks.body,
-      this.pageBlocks.footer
-    ].filter(Boolean)
+    const blocks = []
+
+    if (this.hasHeader() && this.pageBlocks.header) {
+      blocks.push(...this.pageBlocks.header)
+    }
+
+    blocks.push(...this.pageBlocks.body)
+
+    if (this.hasFooter() && this.pageBlocks.footer) {
+      blocks.push(...this.pageBlocks.footer)
+    }
+
+    return blocks
   }
 
   /**
@@ -113,19 +149,76 @@ export default class Page {
   }
 
   /**
-   * Get header block
-   * @returns {Block|null}
+   * Get header blocks (respects layout preference)
+   * @returns {Block[]|null}
    */
-  getHeader() {
+  getHeaderBlocks() {
+    if (!this.hasHeader()) return null
     return this.pageBlocks.header
   }
 
   /**
-   * Get footer block
+   * Get footer blocks (respects layout preference)
+   * @returns {Block[]|null}
+   */
+  getFooterBlocks() {
+    if (!this.hasFooter()) return null
+    return this.pageBlocks.footer
+  }
+
+  /**
+   * Get left panel blocks (respects layout preference)
+   * @returns {Block[]|null}
+   */
+  getLeftBlocks() {
+    if (!this.hasLeftPanel()) return null
+    return this.pageBlocks.left
+  }
+
+  /**
+   * Get right panel blocks (respects layout preference)
+   * @returns {Block[]|null}
+   */
+  getRightBlocks() {
+    if (!this.hasRightPanel()) return null
+    return this.pageBlocks.right
+  }
+
+  /**
+   * Get header block (legacy - returns first block)
    * @returns {Block|null}
+   * @deprecated Use getHeaderBlocks() instead
+   */
+  getHeader() {
+    return this.pageBlocks.header?.[0] || null
+  }
+
+  /**
+   * Get footer block (legacy - returns first block)
+   * @returns {Block|null}
+   * @deprecated Use getFooterBlocks() instead
    */
   getFooter() {
-    return this.pageBlocks.footer
+    return this.pageBlocks.footer?.[0] || null
+  }
+
+  /**
+   * Reset block states (for scroll restoration)
+   */
+  resetBlockStates() {
+    const allBlocks = [
+      ...(this.pageBlocks.header || []),
+      ...this.pageBlocks.body,
+      ...(this.pageBlocks.footer || []),
+      ...(this.pageBlocks.left || []),
+      ...(this.pageBlocks.right || [])
+    ]
+
+    for (const block of allBlocks) {
+      if (typeof block.initState === 'function') {
+        block.initState()
+      }
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────

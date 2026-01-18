@@ -25,22 +25,28 @@ const LOCALE_NAMES = {
 
 export default class Website {
   constructor(websiteData) {
-    const { pages = [], theme = {}, config = {} } = websiteData
+    const { pages = [], theme = {}, config = {}, header, footer, left, right } = websiteData
 
     // Site metadata
     this.name = config.name || ''
     this.description = config.description || ''
     this.url = config.url || ''
 
-    // Extract special pages (header, footer) and regular pages
-    this.headerPage = pages.find((p) => p.route === '/@header')
-    this.footerPage = pages.find((p) => p.route === '/@footer')
+    // Store special pages (layout areas)
+    // These come from top-level properties set by content-collector
+    // Fallback to searching pages array for backwards compatibility
+    this.headerPage = header || pages.find((p) => p.route === '/@header') || null
+    this.footerPage = footer || pages.find((p) => p.route === '/@footer') || null
+    this.leftPage = left || pages.find((p) => p.route === '/@left') || null
+    this.rightPage = right || pages.find((p) => p.route === '/@right') || null
 
+    // Filter out special pages from regular pages array
+    const specialRoutes = ['/@header', '/@footer', '/@left', '/@right']
     this.pages = pages
-      .filter((page) => page.route !== '/@header' && page.route !== '/@footer')
+      .filter((page) => !specialRoutes.includes(page.route))
       .map(
         (page, index) =>
-          new Page(page, index, this.headerPage, this.footerPage)
+          new Page(page, index, this.headerPage, this.footerPage, this.leftPage, this.rightPage)
       )
 
     // Set reference from pages back to website
