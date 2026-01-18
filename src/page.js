@@ -12,9 +12,23 @@ export default class Page {
     this.route = pageData.route
     this.title = pageData.title || ''
     this.description = pageData.description || ''
+    this.label = pageData.label || null // Short label for navigation (null = use title)
     this.keywords = pageData.keywords || null
     this.order = pageData.order ?? 0
     this.lastModified = pageData.lastModified || null
+
+    // Navigation visibility options
+    this.hidden = pageData.hidden || false
+    this.hideInHeader = pageData.hideInHeader || false
+    this.hideInFooter = pageData.hideInFooter || false
+
+    // Layout options (per-page overrides for header/footer/panels)
+    this.layout = {
+      header: pageData.layout?.header !== false,
+      footer: pageData.layout?.footer !== false,
+      leftPanel: pageData.layout?.leftPanel !== false,
+      rightPanel: pageData.layout?.rightPanel !== false
+    }
 
     // SEO configuration
     this.seo = {
@@ -26,6 +40,13 @@ export default class Page {
       changefreq: pageData.seo?.changefreq || null,
       priority: pageData.seo?.priority || null
     }
+
+    // Child pages (for nested hierarchy) - populated by Website
+    this.children = []
+
+    // Back-reference to website (set by Website constructor)
+    this.website = null
+    this.site = null // Alias
 
     this.pageBlocks = this.buildPageBlocks(
       pageData.sections,
@@ -105,5 +126,81 @@ export default class Page {
    */
   getFooter() {
     return this.pageBlocks.footer
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Navigation and Layout Helpers
+  // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Get display label for navigation (short form of title)
+   * @returns {string}
+   */
+  getLabel() {
+    return this.label || this.title
+  }
+
+  /**
+   * Check if page should be hidden from navigation
+   * @returns {boolean}
+   */
+  isHidden() {
+    return this.hidden
+  }
+
+  /**
+   * Check if page should appear in header navigation
+   * @returns {boolean}
+   */
+  showInHeader() {
+    return !this.hidden && !this.hideInHeader
+  }
+
+  /**
+   * Check if page should appear in footer navigation
+   * @returns {boolean}
+   */
+  showInFooter() {
+    return !this.hidden && !this.hideInFooter
+  }
+
+  /**
+   * Check if header should be rendered on this page
+   * @returns {boolean}
+   */
+  hasHeader() {
+    return this.layout.header
+  }
+
+  /**
+   * Check if footer should be rendered on this page
+   * @returns {boolean}
+   */
+  hasFooter() {
+    return this.layout.footer
+  }
+
+  /**
+   * Check if left panel should be rendered on this page
+   * @returns {boolean}
+   */
+  hasLeftPanel() {
+    return this.layout.leftPanel
+  }
+
+  /**
+   * Check if right panel should be rendered on this page
+   * @returns {boolean}
+   */
+  hasRightPanel() {
+    return this.layout.rightPanel
+  }
+
+  /**
+   * Check if page has child pages
+   * @returns {boolean}
+   */
+  hasChildren() {
+    return this.children.length > 0
   }
 }

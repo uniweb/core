@@ -298,4 +298,111 @@ export default class Website {
         .join('\n')
     }))
   }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Page Hierarchy API (for navigation components)
+  // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Get page hierarchy for building navigation (navbar, footer, sitemap)
+   *
+   * This is the primary API for navigation components. It returns pages
+   * filtered and formatted for navigation use.
+   *
+   * @param {Object} options - Configuration options
+   * @param {boolean} [options.nested=true] - Return nested hierarchy (with children) or flat list
+   * @param {string} [options.for] - Filter for specific navigation: 'header', 'footer', or undefined (all)
+   * @param {boolean} [options.includeHidden=false] - Include hidden pages
+   * @param {function} [options.filter] - Custom filter function (page) => boolean
+   * @param {function} [options.sort] - Custom sort function (a, b) => number
+   * @returns {Array<Object>} Array of page info objects for navigation
+   *
+   * @example
+   * // Get pages for header navigation
+   * const headerPages = website.getPageHierarchy({ for: 'header' })
+   *
+   * // Get flat list of all pages
+   * const allPages = website.getPageHierarchy({ nested: false, includeHidden: true })
+   *
+   * // Custom filtering
+   * const topLevel = website.getPageHierarchy({
+   *   filter: (page) => page.order < 10
+   * })
+   */
+  getPageHierarchy(options = {}) {
+    const {
+      nested = true,
+      for: navType,
+      includeHidden = false,
+      filter: customFilter,
+      sort: customSort
+    } = options
+
+    // Filter pages based on navigation type and visibility
+    let filteredPages = this.pages.filter(page => {
+      // Always exclude special pages (header/footer are already separated)
+      if (page.route.startsWith('/@')) return false
+
+      // Check visibility based on navigation type
+      if (!includeHidden) {
+        if (page.hidden) return false
+        if (navType === 'header' && page.hideInHeader) return false
+        if (navType === 'footer' && page.hideInFooter) return false
+      }
+
+      // Apply custom filter if provided
+      if (customFilter && !customFilter(page)) return false
+
+      return true
+    })
+
+    // Apply custom sort or default to order
+    if (customSort) {
+      filteredPages.sort(customSort)
+    }
+    // Already sorted by order in constructor, so no need to re-sort
+
+    // Build page info objects
+    const buildPageInfo = (page) => ({
+      id: page.id,
+      route: page.route === '/' ? '' : page.route,
+      title: page.title,
+      label: page.getLabel(),
+      description: page.description,
+      order: page.order,
+      hasContent: page.getBodyBlocks().length > 0,
+      children: nested && page.hasChildren()
+        ? page.children.map(buildPageInfo)
+        : []
+    })
+
+    return filteredPages.map(buildPageInfo)
+  }
+
+  /**
+   * Get pages for header navigation
+   * Convenience method equivalent to getPageHierarchy({ for: 'header' })
+   * @returns {Array<Object>}
+   */
+  getHeaderPages() {
+    return this.getPageHierarchy({ for: 'header' })
+  }
+
+  /**
+   * Get pages for footer navigation
+   * Convenience method equivalent to getPageHierarchy({ for: 'footer' })
+   * @returns {Array<Object>}
+   */
+  getFooterPages() {
+    return this.getPageHierarchy({ for: 'footer' })
+  }
+
+  /**
+   * Get flat list of all pages (for sitemaps, search, etc.)
+   * @param {boolean} includeHidden - Include hidden pages
+   * @returns {Array<Object>}
+   */
+  getAllPages(includeHidden = false) {
+    return this.getPageHierarchy({ nested: false, includeHidden })
+  }
 }

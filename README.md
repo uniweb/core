@@ -63,6 +63,12 @@ website.activePage            // Current active page
 website.pages                 // All pages
 website.pageRoutes            // Array of route strings
 
+// Page Hierarchy API (for navbars, footers, sitemaps)
+website.getPageHierarchy(options)  // Get pages for navigation
+website.getHeaderPages()           // Convenience: pages for header nav
+website.getFooterPages()           // Convenience: pages for footer nav
+website.getAllPages()              // Get flat list of all pages
+
 // Locale API
 website.getLocales()          // Get all locales: [{code, label, isDefault}]
 website.getActiveLocale()     // Get current locale code
@@ -81,19 +87,99 @@ website.getLanguage()         // Use getActiveLocale()
 website.getLanguages()        // Use getLocales()
 ```
 
+**Page Hierarchy API**
+
+The `getPageHierarchy()` method returns pages filtered and formatted for navigation:
+
+```js
+// Get pages for header navigation
+const headerPages = website.getPageHierarchy({ for: 'header' })
+// Returns: [{ id, route, title, label, description, order, hasContent, children }]
+
+// Get flat list of all pages (for sitemaps)
+const allPages = website.getPageHierarchy({ nested: false, includeHidden: true })
+
+// Custom filtering and sorting
+const topLevel = website.getPageHierarchy({
+  filter: (page) => page.order < 10,
+  sort: (a, b) => a.title.localeCompare(b.title)
+})
+```
+
+Options:
+- `nested` (default: true) - Return with nested children or flat list
+- `for` - Filter for 'header', 'footer', or undefined (all)
+- `includeHidden` (default: false) - Include hidden pages
+- `filter` - Custom filter function: `(page) => boolean`
+- `sort` - Custom sort function: `(a, b) => number`
+
 #### Page
 
 Represents a page with its sections.
 
 ```js
+// Basic properties
 page.route                    // Page route path
 page.title                    // Page title
 page.description              // Page description
-page.sections                 // Array of section blocks
+page.label                    // Short navigation label (or null)
+page.order                    // Sort order
+page.children                 // Child pages (for nested hierarchy)
 page.website                  // Back-reference to parent Website
 page.site                     // Alias for page.website
+
+// Navigation visibility
+page.hidden                   // Hidden from all navigation
+page.hideInHeader             // Hidden from header nav only
+page.hideInFooter             // Hidden from footer nav only
+page.isHidden()               // Check if hidden from navigation
+page.showInHeader()           // Should appear in header nav?
+page.showInFooter()           // Should appear in footer nav?
+page.getLabel()               // Get navigation label (falls back to title)
+
+// Layout options (per-page overrides)
+page.layout.header            // Show header on this page?
+page.layout.footer            // Show footer on this page?
+page.layout.leftPanel         // Show left panel?
+page.layout.rightPanel        // Show right panel?
+page.hasHeader()              // Convenience: page.layout.header
+page.hasFooter()              // Convenience: page.layout.footer
+page.hasLeftPanel()           // Convenience: page.layout.leftPanel
+page.hasRightPanel()          // Convenience: page.layout.rightPanel
+
+// Content
 page.getPageBlocks()          // Get header + body + footer blocks
+page.getBodyBlocks()          // Get just body blocks
+page.getHeader()              // Get header block
+page.getFooter()              // Get footer block
+page.hasChildren()            // Has child pages?
 page.getHeadMeta()            // Get SEO meta tags
+```
+
+**Page Configuration (page.yml)**
+
+```yaml
+title: About Us
+description: Learn about our company
+label: About                  # Short nav label (optional)
+order: 2
+
+# Navigation visibility
+hidden: true                  # Hide from all navigation
+hideInHeader: true            # Hide from header nav only
+hideInFooter: true            # Hide from footer nav only
+
+# Layout overrides (default: all true)
+layout:
+  header: false               # Don't show header on this page
+  footer: false               # Don't show footer on this page
+  leftPanel: false            # Don't show left panel
+  rightPanel: false           # Don't show right panel
+
+# SEO (optional)
+seo:
+  noindex: false
+  image: /about-og.png
 ```
 
 #### Block
