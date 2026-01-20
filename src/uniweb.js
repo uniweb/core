@@ -40,13 +40,8 @@ export default class Uniweb {
       return undefined
     }
 
-    // Use foundation's getComponent interface
-    if (typeof this.foundation.getComponent === 'function') {
-      return this.foundation.getComponent(name)
-    }
-
-    // Fallback: direct component access
-    return this.foundation[name]
+    // Look in components object first, then direct access (named export)
+    return this.foundation.components?.[name] || this.foundation[name]
   }
 
   /**
@@ -56,26 +51,12 @@ export default class Uniweb {
   listComponents() {
     if (!this.foundation) return []
 
-    if (typeof this.foundation.listComponents === 'function') {
-      return this.foundation.listComponents()
+    // Use components object if available
+    if (this.foundation.components) {
+      return Object.keys(this.foundation.components)
     }
 
     return []
-  }
-
-  /**
-   * Get component schema
-   * @param {string} name - Component name
-   * @returns {Object|undefined}
-   */
-  getSchema(name) {
-    if (!this.foundation) return undefined
-
-    if (typeof this.foundation.getSchema === 'function') {
-      return this.foundation.getSchema(name)
-    }
-
-    return undefined
   }
 
   /**
@@ -84,24 +65,5 @@ export default class Uniweb {
    */
   setFoundationConfig(config) {
     this.foundationConfig = config
-  }
-
-  // Legacy compatibility - maps to new method names
-  getRemoteComponent(name) {
-    return this.getComponent(name)
-  }
-
-  setRemoteComponents(components) {
-    // Legacy: components was an object map
-    // Convert to foundation-like interface
-    this.foundation = {
-      getComponent: (name) => components[name],
-      listComponents: () => Object.keys(components),
-      components
-    }
-  }
-
-  setRemoteConfig(config) {
-    this.setFoundationConfig(config)
   }
 }
