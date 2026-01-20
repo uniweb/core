@@ -49,6 +49,9 @@ export default class Website {
           new Page(page, index, this, this.headerPage, this.footerPage, this.leftPage, this.rightPage)
       )
 
+    // Build parent-child relationships based on route structure
+    this.buildPageHierarchy()
+
     this.activePage =
       this.pages.find((page) => page.route === '/' || page.route === '/index') ||
       this.pages[0]
@@ -96,6 +99,53 @@ export default class Website {
       label: LOCALE_NAMES[code] || code.toUpperCase(),
       isDefault: code === defaultLocale
     }))
+  }
+
+  /**
+   * Build parent-child relationships between pages based on route structure
+   * E.g., /getting-started/installation is a child of /getting-started
+   * @private
+   */
+  buildPageHierarchy() {
+    // Sort pages by route depth (parents before children)
+    const sortedPages = [...this.pages].sort((a, b) => {
+      const depthA = (a.route.match(/\//g) || []).length
+      const depthB = (b.route.match(/\//g) || []).length
+      return depthA - depthB
+    })
+
+    // Build a map of route to page for quick lookup
+    const pageMap = new Map()
+    for (const page of sortedPages) {
+      pageMap.set(page.route, page)
+    }
+
+    // For each page, find its parent and add it as a child
+    for (const page of sortedPages) {
+      const route = page.route
+      if (route === '/' || route === '') continue
+
+      // Find parent route by removing the last segment
+      // /getting-started/installation -> /getting-started
+      const segments = route.split('/').filter(Boolean)
+      if (segments.length <= 1) continue // Root-level pages have no parent
+
+      // Build parent route
+      const parentRoute = '/' + segments.slice(0, -1).join('/')
+      const parent = pageMap.get(parentRoute)
+
+      if (parent) {
+        parent.children.push(page)
+        page.parent = parent
+      }
+    }
+
+    // Sort children by order
+    for (const page of this.pages) {
+      if (page.children.length > 0) {
+        page.children.sort((a, b) => (a.order || 0) - (b.order || 0))
+      }
+    }
   }
 
   /**
@@ -391,7 +441,7 @@ export default class Website {
     } = options
 
     // Filter pages based on navigation type and visibility
-    let filteredPages = this.pages.filter(page => {
+    const isPageVisible = (page) => {
       // Always exclude special pages (header/footer are already separated)
       if (page.route.startsWith('/@')) return false
 
@@ -406,7 +456,15 @@ export default class Website {
       if (customFilter && !customFilter(page)) return false
 
       return true
-    })
+    }
+
+    let filteredPages = this.pages.filter(isPageVisible)
+
+    // When nested, only include root-level pages at top level
+    // (children will be nested inside their parents)
+    if (nested) {
+      filteredPages = filteredPages.filter(page => !page.parent)
+    }
 
     // Apply custom sort or default to order
     if (customSort) {
@@ -424,7 +482,7 @@ export default class Website {
       order: page.order,
       hasContent: page.getBodyBlocks().length > 0,
       children: nested && page.hasChildren()
-        ? page.children.map(buildPageInfo)
+        ? page.children.filter(isPageVisible).map(buildPageInfo)
         : []
     })
 
