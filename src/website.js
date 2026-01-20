@@ -475,7 +475,7 @@ export default class Website {
     // Build page info objects
     const buildPageInfo = (page) => ({
       id: page.id,
-      route: page.route === '/' ? '' : page.route,
+      route: page.route,
       title: page.title,
       label: page.getLabel(),
       description: page.description,
