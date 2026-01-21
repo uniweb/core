@@ -11,6 +11,7 @@ export default class Page {
   constructor(pageData, id, website, pageHeader, pageFooter, pageLeft, pageRight) {
     this.id = id
     this.route = pageData.route
+    this.isIndex = pageData.isIndex || false // True if this page is the index for its parent route
     this.title = pageData.title || ''
     this.description = pageData.description || ''
     this.label = pageData.label || null // Short label for navigation (null = use title)
@@ -292,6 +293,26 @@ export default class Page {
   // ─────────────────────────────────────────────────────────────────
   // Navigation and Layout Helpers
   // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Get the navigation route (canonical route for links)
+   * For index pages, returns the parent route (e.g., '/' for homepage)
+   * For regular pages, returns the actual route
+   * @returns {string}
+   */
+  getNavRoute() {
+    if (!this.isIndex) {
+      return this.route
+    }
+    // Index page - compute parent route
+    // /home -> /
+    // /docs/getting-started -> /docs
+    const segments = this.route.split('/').filter(Boolean)
+    if (segments.length <= 1) {
+      return '/'
+    }
+    return '/' + segments.slice(0, -1).join('/')
+  }
 
   /**
    * Get display label for navigation (short form of title)

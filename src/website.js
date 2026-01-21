@@ -52,8 +52,9 @@ export default class Website {
     // Build parent-child relationships based on route structure
     this.buildPageHierarchy()
 
+    // Find the homepage (root-level index page)
     this.activePage =
-      this.pages.find((page) => page.route === '/' || page.route === '/index') ||
+      this.pages.find((page) => page.isIndex && page.getNavRoute() === '/') ||
       this.pages[0]
 
     this.pageRoutes = this.pages.map((page) => page.route)
@@ -115,22 +116,28 @@ export default class Website {
     })
 
     // Build a map of route to page for quick lookup
+    // Include both actual routes and nav routes (for index pages)
     const pageMap = new Map()
     for (const page of sortedPages) {
       pageMap.set(page.route, page)
+      // Also map the nav route for index pages so parent lookup works
+      if (page.isIndex) {
+        const navRoute = page.getNavRoute()
+        if (navRoute !== page.route) {
+          pageMap.set(navRoute, page)
+        }
+      }
     }
 
     // For each page, find its parent and add it as a child
     for (const page of sortedPages) {
       const route = page.route
-      if (route === '/' || route === '') continue
-
-      // Find parent route by removing the last segment
-      // /getting-started/installation -> /getting-started
+      // Skip root-level pages (single segment like /home, /about)
       const segments = route.split('/').filter(Boolean)
-      if (segments.length <= 1) continue // Root-level pages have no parent
+      if (segments.length <= 1) continue
 
-      // Build parent route
+      // Build parent route by removing the last segment
+      // /docs/getting-started -> /docs
       const parentRoute = '/' + segments.slice(0, -1).join('/')
       const parent = pageMap.get(parentRoute)
 
@@ -150,11 +157,17 @@ export default class Website {
 
   /**
    * Get page by route
+   * Matches both actual routes and nav routes (for index pages)
    * @param {string} route
    * @returns {Page|undefined}
    */
   getPage(route) {
-    return this.pages.find((page) => page.route === route)
+    // First try exact match on actual route
+    const exactMatch = this.pages.find((page) => page.route === route)
+    if (exactMatch) return exactMatch
+
+    // Then try matching nav route (for index pages accessible at parent route)
+    return this.pages.find((page) => page.isIndex && page.getNavRoute() === route)
   }
 
   /**
@@ -475,7 +488,7 @@ export default class Website {
     // Build page info objects
     const buildPageInfo = (page) => ({
       id: page.id,
-      route: page.route,
+      route: page.getNavRoute(), // Use canonical nav route (e.g., '/' for index pages)
       title: page.title,
       label: page.getLabel(),
       description: page.description,
