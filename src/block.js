@@ -175,17 +175,18 @@ export default class Block {
       return null
     }
 
-    // Get component-level block configuration
-    // Supports: Component.block (preferred), Component.blockDefaults (legacy)
-    const blockConfig = this.Component.block || this.Component.blockDefaults || {}
+    // Get runtime schema for this component (from meta.js, extracted at build time)
+    const schema = globalThis.uniweb?.getComponentSchema(this.type) || {}
 
     // Initialize state (dynamic, can change at runtime)
-    const stateDefaults = blockConfig.state || this.Component.blockState
+    // Source: meta.js initialState field
+    const stateDefaults = schema.initialState
     this.startState = stateDefaults ? { ...stateDefaults } : null
     this.initState()
 
     // Initialize context (static, per component type)
-    this.context = blockConfig.context ? { ...blockConfig.context } : null
+    // Source: meta.js context field
+    this.context = schema.context ? { ...schema.context } : null
 
     return this.Component
   }
