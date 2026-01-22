@@ -126,7 +126,6 @@ page.label                    // Short navigation label (or null)
 page.order                    // Sort order
 page.children                 // Child pages (for nested hierarchy)
 page.website                  // Back-reference to parent Website
-page.site                     // Alias for page.website
 
 // Navigation visibility
 page.hidden                   // Hidden from all navigation

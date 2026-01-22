@@ -51,7 +51,6 @@ export default class Page {
 
     // Back-reference to website
     this.website = website
-    this.site = website // Alias
 
     // Scroll position memory (for navigation restoration)
     this.scrollY = 0
