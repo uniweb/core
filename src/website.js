@@ -489,11 +489,12 @@ export default class Website {
     const buildPageInfo = (page) => ({
       id: page.id,
       route: page.getNavRoute(), // Use canonical nav route (e.g., '/' for index pages)
+      navigableRoute: page.getNavigableRoute(), // First route with content (for links)
       title: page.title,
       label: page.getLabel(),
       description: page.description,
       order: page.order,
-      hasContent: page.getBodyBlocks().length > 0,
+      hasContent: page.hasContent(),
       children: nested && page.hasChildren()
         ? page.children.filter(isPageVisible).map(buildPageInfo)
         : []
@@ -527,5 +528,36 @@ export default class Website {
    */
   getAllPages(includeHidden = false) {
     return this.getPageHierarchy({ nested: false, includeHidden })
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Active Route API (for navigation components)
+  // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Get the current active route, normalized (no leading/trailing slashes).
+   * Works in both SSR (from activePage) and client (from activePage).
+   *
+   * @returns {string} Normalized route (e.g., 'docs/getting-started')
+   *
+   * @example
+   * website.getActiveRoute() // 'docs/getting-started'
+   */
+  getActiveRoute() {
+    return this.activePage?.getNormalizedRoute() || ''
+  }
+
+  /**
+   * Get the first segment of the active route.
+   * Useful for root-level navigation highlighting.
+   *
+   * @returns {string} First segment (e.g., 'docs' for 'docs/getting-started')
+   *
+   * @example
+   * // Active route: 'docs/getting-started/installation'
+   * website.getActiveRootSegment() // 'docs'
+   */
+  getActiveRootSegment() {
+    return this.getActiveRoute().split('/')[0]
   }
 }

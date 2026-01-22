@@ -385,4 +385,80 @@ export default class Page {
   hasChildren() {
     return this.children.length > 0
   }
+
+  /**
+   * Check if page has body content (sections)
+   * @returns {boolean}
+   */
+  hasContent() {
+    return this.pageBlocks.body.length > 0
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Active Route Detection
+  // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Get the first navigable route for this page.
+   * If page has no content, recursively finds first child with content.
+   * Useful for category pages that are just navigation containers.
+   *
+   * @returns {string} The route to navigate to
+   *
+   * @example
+   * // For a "Docs" category page with no content but children:
+   * // page.route = '/docs'
+   * // page.hasContent() = false
+   * // First child with content: '/docs/getting-started'
+   * page.getNavigableRoute() // Returns '/docs/getting-started'
+   */
+  getNavigableRoute() {
+    if (this.hasContent()) return this.route
+    for (const child of this.children || []) {
+      const route = child.getNavigableRoute()
+      if (route) return route
+    }
+    return this.route // Fallback to own route
+  }
+
+  /**
+   * Get route without leading/trailing slashes.
+   * Useful for route comparisons.
+   *
+   * @returns {string} Normalized route (e.g., 'docs/getting-started')
+   */
+  getNormalizedRoute() {
+    return (this.route || '').replace(/^\//, '').replace(/\/$/, '')
+  }
+
+  /**
+   * Check if this page matches the given route exactly.
+   *
+   * @param {string} route - Normalized route (no leading/trailing slashes)
+   * @returns {boolean} True if this page's route matches
+   */
+  isActiveFor(route) {
+    return this.getNormalizedRoute() === route
+  }
+
+  /**
+   * Check if this page or any descendant matches the given route.
+   * Useful for highlighting parent nav items when a child page is active.
+   *
+   * @param {string} route - Normalized route (no leading/trailing slashes)
+   * @returns {boolean} True if this page or a descendant is active
+   *
+   * @example
+   * // Page route: '/docs'
+   * // Current route: 'docs/getting-started/installation'
+   * page.isActiveOrAncestor('docs/getting-started/installation') // true
+   */
+  isActiveOrAncestor(route) {
+    const pageRoute = this.getNormalizedRoute()
+    if (pageRoute === route) return true
+    // Check if route starts with this page's route followed by /
+    // Handle empty pageRoute (root) specially
+    if (pageRoute === '') return true // Root is ancestor of all
+    return route.startsWith(pageRoute + '/')
+  }
 }
