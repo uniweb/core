@@ -175,18 +175,18 @@ export default class Block {
       return null
     }
 
-    // Get runtime schema for this component (from meta.js, extracted at build time)
-    const schema = globalThis.uniweb?.getComponentSchema(this.type) || {}
+    // Get runtime metadata for this component (from meta.js, extracted at build time)
+    const meta = globalThis.uniweb?.getComponentMeta(this.type) || {}
 
     // Initialize state (dynamic, can change at runtime)
     // Source: meta.js initialState field
-    const stateDefaults = schema.initialState
+    const stateDefaults = meta.initialState
     this.startState = stateDefaults ? { ...stateDefaults } : null
     this.initState()
 
     // Initialize context (static, per component type)
     // Source: meta.js context field
-    this.context = schema.context ? { ...schema.context } : null
+    this.context = meta.context ? { ...meta.context } : null
 
     return this.Component
   }

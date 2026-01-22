@@ -15,7 +15,7 @@ export default class Uniweb {
     this.routingComponents = {} // Link, SafeHtml, useNavigate, etc.
     this.foundation = null // The loaded foundation module
     this.foundationConfig = {} // Configuration from foundation (capabilities)
-    this.schema = {} // Lean runtime metadata per component
+    this.meta = {} // Per-component runtime metadata (from meta.js)
     this.language = 'en'
 
     // Initialize analytics (disabled by default, configure via site config)
@@ -29,19 +29,19 @@ export default class Uniweb {
   setFoundation(foundation) {
     this.foundation = foundation
 
-    // Store runtime schema if present
-    if (foundation.schema) {
-      this.schema = foundation.schema
+    // Store per-component metadata if present
+    if (foundation.meta) {
+      this.meta = foundation.meta
     }
   }
 
   /**
-   * Get runtime schema for a component
+   * Get runtime metadata for a component
    * @param {string} componentName
-   * @returns {Object|null} Schema with defaults, context, initialState, background, data
+   * @returns {Object|null} Meta with defaults, context, initialState, background, data
    */
-  getComponentSchema(componentName) {
-    return this.schema[componentName] || null
+  getComponentMeta(componentName) {
+    return this.meta[componentName] || null
   }
 
   /**
@@ -50,7 +50,7 @@ export default class Uniweb {
    * @returns {Object} Default values (empty object if none)
    */
   getComponentDefaults(componentName) {
-    return this.schema[componentName]?.defaults || {}
+    return this.meta[componentName]?.defaults || {}
   }
 
   /**
