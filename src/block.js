@@ -45,6 +45,14 @@ export default class Block {
     // Input data
     this.input = blockData.input || null
 
+    // Fetch configuration (from section frontmatter)
+    // Supports local files (path) or remote URLs (url)
+    this.fetch = blockData.fetch || null
+
+    // Cascaded data from page/site level fetches
+    // Populated during render for components with inheritData
+    this.cascadedData = blockData.cascadedData || {}
+
     // State management (dynamic, can change at runtime)
     this.startState = null
     this.state = null
