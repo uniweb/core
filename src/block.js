@@ -26,9 +26,9 @@ export default class Block {
     this.rawContent = blockData.content || {}
     this.parsedContent = this.parseContent(blockData.content)
 
-    const { main, items } = this.parsedContent
-    this.main = main
-    this.items = items
+    // Flat content structure - no more nested main/items
+    // parsedContent now has: title, pretitle, paragraphs, links, imgs, items, etc.
+    this.items = this.parsedContent.items || []
 
     // Block configuration
     const blockConfig = blockData.params || blockData.config || {}
@@ -81,11 +81,10 @@ export default class Block {
     // Simple key-value content (PoC style) - pass through directly
     // This allows components to receive content like { title, subtitle, items }
     if (content && typeof content === 'object' && !Array.isArray(content)) {
+      // Mark as PoC format so runtime can detect and pass through
       return {
-        main: { header: {}, body: {} },
-        items: [],
-        // Store raw content for direct access
-        raw: content
+        _isPoc: true,
+        _pocContent: content
       }
     }
 
@@ -99,24 +98,15 @@ export default class Block {
   /**
    * Extract structured content from ProseMirror document
    * Uses @uniweb/semantic-parser for intelligent content extraction
+   * Returns flat content structure
    */
   extractFromProseMirror(doc) {
     try {
-      // Parse with semantic-parser
-      const { groups, sequence, byType } = parseSemanticContent(doc)
+      // Parse with semantic-parser - returns flat structure
+      const parsed = parseSemanticContent(doc)
 
-      // Transform groups structure to match expected format
-      const main = groups.main || { header: {}, body: {} }
-      const items = groups.items || []
-
-      return {
-        main,
-        items,
-        // Include additional data for advanced use cases
-        sequence,
-        byType,
-        metadata: groups.metadata
-      }
+      // Parsed content is now flat: { title, pretitle, paragraphs, links, items, sequence, ... }
+      return parsed
     } catch (err) {
       console.warn('[Block] Semantic parser error, using fallback:', err.message)
       return this.extractFromProseMirrorFallback(doc)
@@ -125,29 +115,39 @@ export default class Block {
 
   /**
    * Fallback extraction when semantic-parser fails
+   * Returns flat content structure matching new parser output
    */
   extractFromProseMirrorFallback(doc) {
-    const main = { header: {}, body: {} }
-    const items = []
+    const content = {
+      title: '',
+      pretitle: '',
+      subtitle: '',
+      paragraphs: [],
+      links: [],
+      imgs: [],
+      lists: [],
+      icons: [],
+      items: [],
+      sequence: []
+    }
 
-    if (!doc.content) return { main, items }
+    if (!doc.content) return content
 
     for (const node of doc.content) {
       if (node.type === 'heading') {
         const text = this.extractText(node)
         if (node.attrs?.level === 1) {
-          main.header.title = text
+          content.title = text
         } else if (node.attrs?.level === 2) {
-          main.header.subtitle = text
+          content.subtitle = text
         }
       } else if (node.type === 'paragraph') {
         const text = this.extractText(node)
-        if (!main.body.paragraphs) main.body.paragraphs = []
-        main.body.paragraphs.push(text)
+        content.paragraphs.push(text)
       }
     }
 
-    return { main, items }
+    return content
   }
 
   /**
@@ -193,26 +193,25 @@ export default class Block {
 
   /**
    * Get structured block content for components
+   * Returns flat content structure
    */
   getBlockContent() {
-    const mainHeader = this.main?.header || {}
-    const mainBody = this.main?.body || {}
-    const banner = this.main?.banner || null
+    const c = this.parsedContent || {}
 
     return {
-      banner,
-      pretitle: mainHeader.pretitle || '',
-      title: mainHeader.title || '',
-      subtitle: mainHeader.subtitle || '',
-      description: mainHeader.description || '',
-      paragraphs: mainBody.paragraphs || [],
-      images: mainBody.imgs || mainBody.images || [],
-      links: mainBody.links || [],
-      icons: mainBody.icons || [],
-      properties: mainBody.propertyBlocks?.[0] || {},
-      videos: mainBody.videos || [],
-      lists: mainBody.lists || [],
-      buttons: mainBody.buttons || []
+      pretitle: c.pretitle || '',
+      title: c.title || '',
+      subtitle: c.subtitle || '',
+      description: c.subtitle2 || '',
+      paragraphs: c.paragraphs || [],
+      images: c.imgs || [],
+      links: c.links || [],
+      icons: c.icons || [],
+      properties: c.propertyBlocks?.[0] || c.properties || {},
+      videos: c.videos || [],
+      lists: c.lists || [],
+      buttons: c.buttons || [],
+      items: c.items || []
     }
   }
 
@@ -237,14 +236,15 @@ export default class Block {
    */
   getBlockLinks(options = {}) {
     const website = globalThis.uniweb?.activeWebsite
+    const c = this.parsedContent || {}
 
     if (options.nested) {
-      const lists = this.main?.body?.lists || []
+      const lists = c.lists || []
       const links = lists[0]
       return Block.parseNestedLinks(links, website)
     }
 
-    const links = this.main?.body?.links || []
+    const links = c.links || []
     return links.map((link) => ({
       route: website?.makeHref(link.href) || link.href,
       label: link.label
