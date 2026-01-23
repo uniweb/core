@@ -26,6 +26,15 @@ export default class Block {
     this.rawContent = blockData.content || {}
     this.parsedContent = this.parseContent(blockData.content)
 
+    // Merge fetched data from prerender (if present)
+    // Prerender stores fetched data in blockData.parsedContent.data
+    if (blockData.parsedContent?.data) {
+      this.parsedContent.data = {
+        ...(this.parsedContent.data || {}),
+        ...blockData.parsedContent.data,
+      }
+    }
+
     // Flat content structure - no more nested main/items
     // parsedContent now has: title, pretitle, paragraphs, links, imgs, items, etc.
     this.items = this.parsedContent.items || []
