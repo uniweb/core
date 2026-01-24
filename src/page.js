@@ -8,7 +8,15 @@
 import Block from './block.js'
 
 export default class Page {
-  constructor(pageData, id, website, pageHeader, pageFooter, pageLeft, pageRight) {
+  constructor(
+    pageData,
+    id,
+    website,
+    pageHeader,
+    pageFooter,
+    pageLeft,
+    pageRight,
+  ) {
     this.id = id
     this.route = pageData.route
     this.isIndex = pageData.isIndex || false // True if this page is the index for its parent route
@@ -32,7 +40,7 @@ export default class Page {
       right: pageData.layout?.right !== false,
       // Aliases for backwards compatibility
       leftPanel: pageData.layout?.left !== false,
-      rightPanel: pageData.layout?.right !== false
+      rightPanel: pageData.layout?.right !== false,
     }
 
     // SEO configuration
@@ -43,7 +51,7 @@ export default class Page {
       ogDescription: pageData.seo?.ogDescription || null,
       canonical: pageData.seo?.canonical || null,
       changefreq: pageData.seo?.changefreq || null,
-      priority: pageData.seo?.priority || null
+      priority: pageData.seo?.priority || null,
     }
 
     // Child pages (for nested hierarchy) - populated by Website
@@ -61,7 +69,7 @@ export default class Page {
       pageHeader?.sections,
       pageFooter?.sections,
       pageLeft?.sections,
-      pageRight?.sections
+      pageRight?.sections,
     )
   }
 
@@ -80,8 +88,8 @@ export default class Page {
         title: this.seo.ogTitle || this.title,
         description: this.seo.ogDescription || this.description,
         image: this.seo.image,
-        url: this.route
-      }
+        url: this.route,
+      },
     }
   }
 
@@ -117,7 +125,7 @@ export default class Page {
       body: bodyBlocks,
       footer: buildBlocks(footer, 'footer'),
       left: buildBlocks(left, 'left'),
-      right: buildBlocks(right, 'right')
+      right: buildBlocks(right, 'right'),
     }
   }
 
@@ -279,7 +287,7 @@ export default class Page {
       ...this.pageBlocks.body,
       ...(this.pageBlocks.footer || []),
       ...(this.pageBlocks.left || []),
-      ...(this.pageBlocks.right || [])
+      ...(this.pageBlocks.right || []),
     ]
 
     for (const block of allBlocks) {
@@ -457,7 +465,7 @@ export default class Page {
     if (pageRoute === route) return true
     // Check if route starts with this page's route followed by /
     // Handle empty pageRoute (root) specially
-    if (pageRoute === '') return true // Root is ancestor of all
+    // if (pageRoute === '') return true // Root is ancestor of all
     return route.startsWith(pageRoute + '/')
   }
 }
