@@ -25,7 +25,7 @@ const LOCALE_NAMES = {
 
 export default class Website {
   constructor(websiteData) {
-    const { pages = [], theme = {}, config = {}, header, footer, left, right } = websiteData
+    const { pages = [], theme = {}, config = {}, header, footer, left, right, notFound } = websiteData
 
     // Site metadata
     this.name = config.name || ''
@@ -40,8 +40,12 @@ export default class Website {
     this.leftPage = left || pages.find((p) => p.route === '/@left') || null
     this.rightPage = right || pages.find((p) => p.route === '/@right') || null
 
+    // Store 404 page (for SPA routing)
+    // Convention: pages/404/ directory
+    this.notFoundPage = notFound || pages.find((p) => p.route === '/404') || null
+
     // Filter out special pages from regular pages array
-    const specialRoutes = ['/@header', '/@footer', '/@left', '/@right']
+    const specialRoutes = ['/@header', '/@footer', '/@left', '/@right', '/404']
     const regularPages = pages.filter((page) => !specialRoutes.includes(page.route))
 
     // Store original page data for dynamic pages (needed to create instances on-demand)
@@ -767,6 +771,14 @@ export default class Website {
    */
   getAllPages(includeHidden = false) {
     return this.getPageHierarchy({ nested: false, includeHidden })
+  }
+
+  /**
+   * Get the 404 (not found) page if defined
+   * @returns {Page|null} The 404 page or null
+   */
+  getNotFoundPage() {
+    return this.notFoundPage
   }
 
   // ─────────────────────────────────────────────────────────────────
