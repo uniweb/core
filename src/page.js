@@ -471,7 +471,7 @@ export default class Page {
    * @returns {string} Normalized route (e.g., 'docs/getting-started')
    */
   getNormalizedRoute() {
-    return this.website?.normalizeRoute(this.route) || ''
+    return this.website.normalizeRoute(this.route)
   }
 
   /**
@@ -482,7 +482,7 @@ export default class Page {
    * @returns {boolean} True if this page's route matches
    */
   isActiveFor(currentRoute) {
-    return this.website?.isRouteActive(this.route, currentRoute) || false
+    return this.website.isRouteActive(this.route, currentRoute)
   }
 
   /**
@@ -499,6 +499,6 @@ export default class Page {
    * page.isActiveOrAncestor('docs/getting-started/installation') // true
    */
   isActiveOrAncestor(currentRoute) {
-    return this.website?.isRouteActiveOrAncestor(this.route, currentRoute) || false
+    return this.website.isRouteActiveOrAncestor(this.route, currentRoute)
   }
 }
