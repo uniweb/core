@@ -42,12 +42,23 @@ export default class Website {
 
     // Filter out special pages from regular pages array
     const specialRoutes = ['/@header', '/@footer', '/@left', '/@right']
-    this.pages = pages
-      .filter((page) => !specialRoutes.includes(page.route))
-      .map(
-        (page, index) =>
-          new Page(page, index, this, this.headerPage, this.footerPage, this.leftPage, this.rightPage)
-      )
+    const regularPages = pages.filter((page) => !specialRoutes.includes(page.route))
+
+    // Store original page data for dynamic pages (needed to create instances on-demand)
+    this._dynamicPageData = new Map()
+    for (const pageData of regularPages) {
+      if (pageData.isDynamic || pageData.route?.includes(':')) {
+        this._dynamicPageData.set(pageData.route, pageData)
+      }
+    }
+
+    // Cache for dynamically created page instances
+    this._dynamicPageCache = new Map()
+
+    this.pages = regularPages.map(
+      (page, index) =>
+        new Page(page, index, this, this.headerPage, this.footerPage, this.leftPage, this.rightPage)
+    )
 
     // Build parent-child relationships based on route structure
     this.buildPageHierarchy()
@@ -157,17 +168,245 @@ export default class Website {
 
   /**
    * Get page by route
-   * Matches both actual routes and nav routes (for index pages)
-   * @param {string} route
+   * Matches in priority order:
+   * 1. Exact match on actual route
+   * 2. Index page nav route match
+   * 3. Dynamic route pattern match (e.g., /blog/:slug matches /blog/my-post)
+   *
+   * @param {string} route - The route to find
    * @returns {Page|undefined}
    */
   getPage(route) {
-    // First try exact match on actual route
+    // Priority 1: Exact match on actual route
     const exactMatch = this.pages.find((page) => page.route === route)
     if (exactMatch) return exactMatch
 
-    // Then try matching nav route (for index pages accessible at parent route)
-    return this.pages.find((page) => page.isIndex && page.getNavRoute() === route)
+    // Priority 2: Index page nav route match
+    const indexMatch = this.pages.find((page) => page.isIndex && page.getNavRoute() === route)
+    if (indexMatch) return indexMatch
+
+    // Priority 3: Dynamic route pattern matching
+    // Check cache first
+    if (this._dynamicPageCache.has(route)) {
+      return this._dynamicPageCache.get(route)
+    }
+
+    // Try to match against dynamic route patterns
+    for (const page of this.pages) {
+      // Check if this is a dynamic page (has :param in route)
+      if (!page.route.includes(':')) continue
+
+      const match = this._matchDynamicRoute(page.route, route)
+      if (match) {
+        // Create a dynamic page instance with the concrete route and params
+        const dynamicPage = this._createDynamicPage(page, route, match.params)
+        if (dynamicPage) {
+          // Cache for future requests
+          this._dynamicPageCache.set(route, dynamicPage)
+          return dynamicPage
+        }
+      }
+    }
+
+    return undefined
+  }
+
+  /**
+   * Match a dynamic route pattern against a concrete path
+   * E.g., /blog/:slug matches /blog/my-post => { params: { slug: 'my-post' } }
+   *
+   * @private
+   * @param {string} pattern - Route pattern with :param placeholders
+   * @param {string} path - Actual path to match
+   * @returns {Object|null} Match result with params, or null if no match
+   */
+  _matchDynamicRoute(pattern, path) {
+    // Extract param names and build regex
+    const paramNames = []
+    const regexStr = pattern
+      .replace(/[.*+?^${}()|[\]\\]/g, '\\$&') // Escape special chars except :
+      .replace(/:(\w+)/g, (_, paramName) => {
+        paramNames.push(paramName)
+        return '([^/]+)' // Capture anything except /
+      })
+
+    const regex = new RegExp(`^${regexStr}$`)
+    const match = path.match(regex)
+
+    if (!match) return null
+
+    // Build params object
+    const params = {}
+    paramNames.forEach((name, i) => {
+      params[name] = decodeURIComponent(match[i + 1])
+    })
+
+    return { params }
+  }
+
+  /**
+   * Create a dynamic page instance with concrete route and params
+   *
+   * @private
+   * @param {Page} templatePage - The template page with :param route
+   * @param {string} concreteRoute - The actual route (e.g., /blog/my-post)
+   * @param {Object} params - Matched params (e.g., { slug: 'my-post' })
+   * @returns {Page|null} New page instance or null
+   */
+  _createDynamicPage(templatePage, concreteRoute, params) {
+    // Get the original page data
+    const originalData = this._dynamicPageData.get(templatePage.route)
+    if (!originalData) return null
+
+    // Deep clone the page data
+    const pageData = JSON.parse(JSON.stringify(originalData))
+
+    // Update with concrete route and dynamic context
+    pageData.route = concreteRoute
+    pageData.isDynamic = false // No longer a template
+
+    const paramName = Object.keys(params)[0]
+    const paramValue = Object.values(params)[0]
+    const pluralSchema = originalData.parentSchema // e.g., 'articles'
+    const singularSchema = this._singularize(pluralSchema) // e.g., 'article'
+
+    // Store dynamic context for components to access
+    pageData.dynamicContext = {
+      templateRoute: templatePage.route,
+      params,
+      paramName,
+      paramValue,
+      schema: pluralSchema,
+      singularSchema,
+    }
+
+    // Get the parent page's data to find the items array
+    // Parent route is the template route without the :param suffix
+    const parentRoute = templatePage.route.replace(/\/:[\w]+$/, '') || '/'
+    const parentPage = this.pages.find(p => p.route === parentRoute || p.getNavRoute() === parentRoute)
+
+    // Get items from parent's cascaded data
+    let items = []
+    let currentItem = null
+
+    if (parentPage && pluralSchema) {
+      // Get items from parent page's first section's cascadedData
+      // This is where the page-level fetch stores its data
+      const firstSection = parentPage.pageBlocks?.body?.[0]
+      if (firstSection) {
+        items = firstSection.cascadedData?.[pluralSchema] || []
+      }
+
+      // Find the current item using the param
+      if (items.length > 0) {
+        currentItem = items.find(item => String(item[paramName]) === String(paramValue))
+      }
+    }
+
+    // Store items in dynamic context for Block.getCurrentItem() / getAllItems()
+    pageData.dynamicContext.currentItem = currentItem
+    pageData.dynamicContext.allItems = items
+
+    // Inject cascaded data into sections for components with inheritData
+    // This provides both singular (article) and plural (articles) data
+    const cascadedData = {}
+    if (currentItem && singularSchema) {
+      cascadedData[singularSchema] = currentItem
+    }
+    if (items.length > 0 && pluralSchema) {
+      cascadedData[pluralSchema] = items
+    }
+
+    this._injectDynamicData(pageData.sections, cascadedData, pageData.dynamicContext)
+
+    // Update page metadata from current item if available
+    if (currentItem) {
+      if (currentItem.title) pageData.title = currentItem.title
+      if (currentItem.description || currentItem.excerpt) {
+        pageData.description = currentItem.description || currentItem.excerpt
+      }
+    }
+
+    // Create the page instance
+    const dynamicPage = new Page(
+      pageData,
+      `dynamic-${concreteRoute}`,
+      this,
+      this.headerPage,
+      this.footerPage,
+      this.leftPage,
+      this.rightPage
+    )
+
+    // Copy parent reference from template
+    dynamicPage.parent = templatePage.parent
+
+    return dynamicPage
+  }
+
+  /**
+   * Singularize a plural schema name
+   * @private
+   */
+  _singularize(name) {
+    if (!name) return name
+    // Common irregular plurals
+    const irregulars = {
+      people: 'person',
+      children: 'child',
+      men: 'men',
+      women: 'woman',
+      series: 'series',
+    }
+    if (irregulars[name]) return irregulars[name]
+    // -ies → -y (categories → category)
+    if (name.endsWith('ies')) return name.slice(0, -3) + 'y'
+    // -es endings that should only remove 's' (not 'es')
+    // e.g., articles → article, courses → course
+    if (name.endsWith('es')) {
+      // Check if the base word ends in a consonant that requires 'es' plural
+      // (boxes, dishes, classes, heroes) vs just 's' plural (articles, courses)
+      const base = name.slice(0, -2)
+      const lastChar = base.slice(-1)
+      // If base ends in s, x, z, ch, sh - these need 'es' for plural, so remove 'es'
+      if (['s', 'x', 'z'].includes(lastChar) || base.endsWith('ch') || base.endsWith('sh')) {
+        return base
+      }
+      // Otherwise just remove 's' (articles → article)
+      return name.slice(0, -1)
+    }
+    // Regular -s plurals
+    if (name.endsWith('s')) return name.slice(0, -1)
+    return name
+  }
+
+  /**
+   * Inject dynamic route data into sections for components with inheritData
+   * This provides both the current item (singular) and all items (plural)
+   *
+   * @private
+   * @param {Array} sections - Sections to update
+   * @param {Object} cascadedData - Data to inject { article: {...}, articles: [...] }
+   * @param {Object} dynamicContext - Dynamic route context
+   */
+  _injectDynamicData(sections, cascadedData, dynamicContext) {
+    if (!sections || !Array.isArray(sections)) return
+
+    for (const section of sections) {
+      // Merge cascaded data into section's existing cascadedData
+      section.cascadedData = {
+        ...(section.cascadedData || {}),
+        ...cascadedData,
+      }
+
+      // Also set dynamic context for Block.getDynamicContext()
+      section.dynamicContext = dynamicContext
+
+      // Recurse into subsections
+      if (section.subsections && section.subsections.length > 0) {
+        this._injectDynamicData(section.subsections, cascadedData, dynamicContext)
+      }
+    }
   }
 
   /**

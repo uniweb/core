@@ -63,6 +63,9 @@ export default class Page {
     // Scroll position memory (for navigation restoration)
     this.scrollY = 0
 
+    // Dynamic route context (for pages created from dynamic routes like /blog/:slug)
+    this.dynamicContext = pageData.dynamicContext || null
+
     // Build block groups for all layout areas
     this.pageBlocks = this.buildPageBlocks(
       pageData.sections,
@@ -91,6 +94,39 @@ export default class Page {
         url: this.route,
       },
     }
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Dynamic Route Support
+  // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Check if this is a dynamic page (created from a route pattern like /blog/:slug)
+   * @returns {boolean}
+   */
+  isDynamicPage() {
+    return this.dynamicContext !== null
+  }
+
+  /**
+   * Get dynamic route context
+   * @returns {Object|null} Dynamic context with params, or null if not a dynamic page
+   *
+   * @example
+   * // For route /blog/:slug matched against /blog/my-post
+   * page.getDynamicContext()
+   * // { templateRoute: '/blog/:slug', params: { slug: 'my-post' }, paramName: 'slug', paramValue: 'my-post' }
+   */
+  getDynamicContext() {
+    return this.dynamicContext
+  }
+
+  /**
+   * Get the URL param value for dynamic routes
+   * @returns {string|null} The param value (e.g., 'my-post' for /blog/my-post), or null
+   */
+  getDynamicParam() {
+    return this.dynamicContext?.paramValue || null
   }
 
   /**
