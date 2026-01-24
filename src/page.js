@@ -466,29 +466,31 @@ export default class Page {
 
   /**
    * Get route without leading/trailing slashes.
-   * Useful for route comparisons.
+   * Delegates to Website.normalizeRoute() for consistent normalization.
    *
    * @returns {string} Normalized route (e.g., 'docs/getting-started')
    */
   getNormalizedRoute() {
-    return (this.route || '').replace(/^\//, '').replace(/\/$/, '')
+    return this.website?.normalizeRoute(this.route) || ''
   }
 
   /**
    * Check if this page matches the given route exactly.
+   * Delegates to Website.isRouteActive() for consistent comparison.
    *
-   * @param {string} route - Normalized route (no leading/trailing slashes)
+   * @param {string} currentRoute - Current route to compare against
    * @returns {boolean} True if this page's route matches
    */
-  isActiveFor(route) {
-    return this.getNormalizedRoute() === route
+  isActiveFor(currentRoute) {
+    return this.website?.isRouteActive(this.route, currentRoute) || false
   }
 
   /**
    * Check if this page or any descendant matches the given route.
    * Useful for highlighting parent nav items when a child page is active.
+   * Delegates to Website.isRouteActiveOrAncestor() for consistent logic.
    *
-   * @param {string} route - Normalized route (no leading/trailing slashes)
+   * @param {string} currentRoute - Current route to compare against
    * @returns {boolean} True if this page or a descendant is active
    *
    * @example
@@ -496,12 +498,7 @@ export default class Page {
    * // Current route: 'docs/getting-started/installation'
    * page.isActiveOrAncestor('docs/getting-started/installation') // true
    */
-  isActiveOrAncestor(route) {
-    const pageRoute = this.getNormalizedRoute()
-    if (pageRoute === route) return true
-    // Check if route starts with this page's route followed by /
-    // Handle empty pageRoute (root) specially
-    // if (pageRoute === '') return true // Root is ancestor of all
-    return route.startsWith(pageRoute + '/')
+  isActiveOrAncestor(currentRoute) {
+    return this.website?.isRouteActiveOrAncestor(this.route, currentRoute) || false
   }
 }

@@ -799,4 +799,64 @@ export default class Website {
   getActiveRootSegment() {
     return this.getActiveRoute().split('/')[0]
   }
+
+  /**
+   * Normalize a route by removing leading/trailing slashes.
+   * This is the single source of truth for route normalization.
+   *
+   * @param {string} route - Route to normalize
+   * @returns {string} Normalized route (e.g., 'docs/getting-started')
+   *
+   * @example
+   * website.normalizeRoute('/docs/guide/') // 'docs/guide'
+   * website.normalizeRoute('about')        // 'about'
+   * website.normalizeRoute('/')            // ''
+   */
+  normalizeRoute(route) {
+    return (route || '').replace(/^\/+/, '').replace(/\/+$/, '')
+  }
+
+  /**
+   * Check if a target route matches the current route exactly.
+   *
+   * @param {string} targetRoute - Route to check (will be normalized)
+   * @param {string} currentRoute - Current route (will be normalized)
+   * @returns {boolean} True if routes match exactly
+   *
+   * @example
+   * website.isRouteActive('/about', '/about') // true
+   * website.isRouteActive('/about', '/about/team') // false
+   */
+  isRouteActive(targetRoute, currentRoute) {
+    return this.normalizeRoute(targetRoute) === this.normalizeRoute(currentRoute)
+  }
+
+  /**
+   * Check if a target route matches the current route or is an ancestor of it.
+   * Used for navigation highlighting where parent items should be highlighted
+   * when a child page is active.
+   *
+   * @param {string} targetRoute - Route to check (will be normalized)
+   * @param {string} currentRoute - Current route (will be normalized)
+   * @returns {boolean} True if target matches current or is an ancestor
+   *
+   * @example
+   * website.isRouteActiveOrAncestor('/docs', '/docs')           // true (exact)
+   * website.isRouteActiveOrAncestor('/docs', '/docs/guide')     // true (ancestor)
+   * website.isRouteActiveOrAncestor('/about', '/docs/guide')    // false
+   * website.isRouteActiveOrAncestor('/', '/docs')               // false (root is not ancestor of all)
+   */
+  isRouteActiveOrAncestor(targetRoute, currentRoute) {
+    const target = this.normalizeRoute(targetRoute)
+    const current = this.normalizeRoute(currentRoute)
+
+    // Exact match
+    if (target === current) return true
+
+    // Empty target (root) is not considered ancestor of everything
+    if (target === '') return false
+
+    // Check if current starts with target followed by /
+    return current.startsWith(target + '/')
+  }
 }
