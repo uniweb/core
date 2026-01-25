@@ -67,6 +67,11 @@ export default class Page {
     // Dynamic route context (for pages created from dynamic routes like /blog/:slug)
     this.dynamicContext = pageData.dynamicContext || null
 
+    // Version context (for pages within versioned sections like /docs/v1/*)
+    this.version = pageData.version || null // { id, label, latest, deprecated }
+    this.versionMeta = pageData.versionMeta || null // { versions, latestId }
+    this.versionScope = pageData.versionScope || null // The route where versioning starts
+
     // Build block groups for all layout areas
     this.pageBlocks = this.buildPageBlocks(
       pageData.sections,
@@ -501,5 +506,59 @@ export default class Page {
    */
   isActiveOrAncestor(currentRoute) {
     return this.website.isRouteActiveOrAncestor(this.route, currentRoute)
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Version API (for documentation pages)
+  // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Check if this page is within a versioned section
+   * @returns {boolean}
+   */
+  isVersioned() {
+    return this.version !== null
+  }
+
+  /**
+   * Get the current version for this page
+   * @returns {Object|null} Version info { id, label, latest, deprecated } or null
+   */
+  getVersion() {
+    return this.version
+  }
+
+  /**
+   * Get all available versions for this page's scope
+   * @returns {Array} Array of version objects, or empty array
+   */
+  getVersions() {
+    return this.versionMeta?.versions || []
+  }
+
+  /**
+   * Check if this page is on the latest version
+   * @returns {boolean}
+   */
+  isLatestVersion() {
+    return this.version?.latest === true
+  }
+
+  /**
+   * Check if this page is on a deprecated version
+   * @returns {boolean}
+   */
+  isDeprecatedVersion() {
+    return this.version?.deprecated === true
+  }
+
+  /**
+   * Get URL for switching to a different version of this page
+   * @param {string} targetVersion - Target version ID (e.g., 'v1')
+   * @returns {string|null} Target URL or null if not versioned
+   */
+  getVersionUrl(targetVersion) {
+    if (!this.isVersioned()) return null
+    return this.website.getVersionUrl(targetVersion, this.route)
   }
 }
