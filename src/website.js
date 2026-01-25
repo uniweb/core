@@ -969,8 +969,18 @@ export default class Website {
 
     // Check each versioned scope to see if route falls within it
     for (const scope of Object.keys(this.versionedScopes)) {
-      // Route matches scope exactly or is a child of scope
-      if (normalizedRoute === scope || normalizedRoute.startsWith(scope + '/')) {
+      // Route matches scope exactly
+      if (normalizedRoute === scope) {
+        return scope
+      }
+
+      // Root scope matches all routes starting with /
+      if (scope === '/') {
+        if (normalizedRoute.startsWith('/') || normalizedRoute === '') {
+          return scope
+        }
+      } else if (normalizedRoute.startsWith(scope + '/')) {
+        // Route is a child of this scope
         return scope
       }
     }
@@ -1060,7 +1070,10 @@ export default class Website {
     if (!targetVersionInfo) return null
 
     // Extract the path within the scope (after scope and any version prefix)
-    const afterScope = currentRoute.slice(scope.length) // e.g., '/getting-started' or '/v1/getting-started'
+    // For root scope ('/'), keep the full path; otherwise slice off the scope
+    const afterScope = scope === '/'
+      ? currentRoute
+      : currentRoute.slice(scope.length) // e.g., '/getting-started' or '/v1/getting-started'
 
     // Check if current route has a version prefix
     let pathWithinVersion = afterScope
@@ -1076,9 +1089,13 @@ export default class Website {
     // Build target URL
     // Latest version has no prefix, others have /vN prefix
     if (targetVersionInfo.latest) {
-      return scope + pathWithinVersion
+      // For root scope, return path directly; otherwise prepend scope
+      return scope === '/' ? pathWithinVersion : scope + pathWithinVersion
     } else {
-      return scope + '/' + targetVersion + pathWithinVersion
+      // For root scope: /v1/path; otherwise: scope/v1/path
+      return scope === '/'
+        ? '/' + targetVersion + pathWithinVersion
+        : scope + '/' + targetVersion + pathWithinVersion
     }
   }
 
