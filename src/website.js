@@ -6,23 +6,6 @@
 
 import Page from './page.js'
 
-// Common locale display names
-const LOCALE_NAMES = {
-  en: 'English',
-  es: 'Español',
-  fr: 'Français',
-  de: 'Deutsch',
-  it: 'Italiano',
-  pt: 'Português',
-  nl: 'Nederlands',
-  pl: 'Polski',
-  ru: 'Русский',
-  ja: '日本語',
-  ko: '한국어',
-  zh: '中文',
-  ar: 'العربية'
-}
-
 export default class Website {
   constructor(websiteData) {
     const { pages = [], theme = {}, config = {}, header, footer, left, right, notFound, versionedScopes = {} } = websiteData
@@ -86,7 +69,7 @@ export default class Website {
     // Legacy language support (for editor multilingual)
     this.activeLang = this.activeLocale
     this.langs = config.languages || this.locales.map(l => ({
-      label: l.label,
+      label: l.label || l.code,
       value: l.code
     }))
 
@@ -97,27 +80,44 @@ export default class Website {
 
   /**
    * Build locales list from config
+   * Supports both string codes and objects: ['es', 'fr'] or [{code: 'es', label: 'Español'}]
+   * Labels are passed through if provided; otherwise only code is returned.
+   * Use kit's getLocaleLabel() for display names.
    * @private
    */
   buildLocalesList(config) {
     const defaultLocale = config.defaultLanguage || 'en'
     const i18nLocales = config.i18n?.locales || []
 
-    // Start with default locale
-    const allLocaleCodes = [defaultLocale]
+    // Normalize input: convert strings to objects, keep objects as-is
+    const normalizeLocale = (locale) => {
+      if (typeof locale === 'string') {
+        return { code: locale }
+      }
+      // Object with code and optional label
+      return { code: locale.code, ...(locale.label && { label: locale.label }) }
+    }
 
-    // Add translated locales (avoiding duplicates)
+    // Start with default locale (may not be in i18nLocales)
+    const localeMap = new Map()
+    localeMap.set(defaultLocale, { code: defaultLocale })
+
+    // Add i18n locales (may include objects with labels)
     for (const locale of i18nLocales) {
-      if (!allLocaleCodes.includes(locale)) {
-        allLocaleCodes.push(locale)
+      const normalized = normalizeLocale(locale)
+      // Merge with existing (to preserve labels if default locale also in i18n with label)
+      if (localeMap.has(normalized.code)) {
+        const existing = localeMap.get(normalized.code)
+        localeMap.set(normalized.code, { ...existing, ...normalized })
+      } else {
+        localeMap.set(normalized.code, normalized)
       }
     }
 
-    // Build full locale objects
-    return allLocaleCodes.map(code => ({
-      code,
-      label: LOCALE_NAMES[code] || code.toUpperCase(),
-      isDefault: code === defaultLocale
+    // Build final array with isDefault flag
+    return Array.from(localeMap.values()).map(locale => ({
+      ...locale,
+      isDefault: locale.code === defaultLocale
     }))
   }
 
@@ -531,7 +531,8 @@ export default class Website {
 
   /**
    * Get all available locales
-   * @returns {Array<{code: string, label: string, isDefault: boolean}>}
+   * Label is optional - use kit's getLocaleLabel() for display names if not provided.
+   * @returns {Array<{code: string, label?: string, isDefault: boolean}>}
    */
   getLocales() {
     return this.locales
