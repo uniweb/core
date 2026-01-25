@@ -26,6 +26,12 @@
   "engines": {
     "node": ">=20.19"
   },
+  "scripts": {
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
   "dependencies": {
     "@uniweb/semantic-parser": "workspace:*"
   }
