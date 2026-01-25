@@ -10,6 +10,7 @@ import { parseContent as parseSemanticContent } from '@uniweb/semantic-parser'
 export default class Block {
   constructor(blockData, id) {
     this.id = id
+    this.stableId = blockData.stableId || null // Stable section ID for scroll targeting (from filename or frontmatter)
     // 'type' matches frontmatter convention; 'component' supported for backwards compatibility
     this.type = blockData.type || blockData.component || 'Section'
     this.Component = null

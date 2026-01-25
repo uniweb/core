@@ -18,6 +18,7 @@ export default class Page {
     pageRight,
   ) {
     this.id = id
+    this.stableId = pageData.id || null // Stable page ID for page: links (from page.yml)
     this.route = pageData.route
     this.isIndex = pageData.isIndex || false // True if this page is the index for its parent route
     this.title = pageData.title || ''

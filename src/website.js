@@ -120,6 +120,7 @@ export default class Website {
   /**
    * Build parent-child relationships between pages based on route structure
    * E.g., /getting-started/installation is a child of /getting-started
+   * Also builds page ID map for makeHref() resolution
    * @private
    */
   buildPageHierarchy() {
@@ -166,6 +167,21 @@ export default class Website {
     for (const page of this.pages) {
       if (page.children.length > 0) {
         page.children.sort((a, b) => (a.order || 0) - (b.order || 0))
+      }
+    }
+
+    // Build page ID map for makeHref() resolution
+    // Supports both explicit IDs and route-based lookup
+    this._pageIdMap = new Map()
+    for (const page of this.pages) {
+      // Explicit stableId takes priority (survives page reorganization)
+      if (page.stableId) {
+        this._pageIdMap.set(page.stableId, page)
+      }
+      // Route-based lookup (normalized, without leading/trailing slashes)
+      const routeId = this.normalizeRoute(page.route)
+      if (routeId && !this._pageIdMap.has(routeId)) {
+        this._pageIdMap.set(routeId, page)
       }
     }
   }
@@ -447,12 +463,46 @@ export default class Website {
 
   /**
    * Make href (for link transformation)
-   * @param {string} href
-   * @returns {string}
+   * Resolves page: references to actual routes
+   *
+   * @param {string} href - The href to transform
+   * @returns {string} Resolved href
+   *
+   * @example
+   * makeHref('page:getting-started')           // → '/docs/getting-started'
+   * makeHref('page:getting-started#install')   // → '/docs/getting-started#section-install'
+   * makeHref('page:docs/api')                  // → '/docs/api' (route-based)
+   * makeHref('/about')                         // → '/about' (passthrough)
    */
   makeHref(href) {
-    // Could add basename handling here
-    return href
+    if (!href || !href.startsWith('page:')) {
+      return href
+    }
+
+    // Parse page reference: page:pageId#sectionId
+    const withoutPrefix = href.slice(5) // Remove 'page:'
+    const [pageId, sectionId] = withoutPrefix.split('#')
+
+    // Look up page by ID (explicit or route-based)
+    const page = this._pageIdMap?.get(pageId)
+
+    if (!page) {
+      // Page not found - return original href (or could warn in dev)
+      if (typeof console !== 'undefined' && process?.env?.NODE_ENV !== 'production') {
+        console.warn(`[makeHref] Page not found: ${pageId}`)
+      }
+      return href
+    }
+
+    // Build the resolved href
+    let resolvedHref = page.route
+
+    // Add section hash if specified (with section- prefix for DOM ID)
+    if (sectionId) {
+      resolvedHref += `#section-${sectionId}`
+    }
+
+    return resolvedHref
   }
 
   /**
