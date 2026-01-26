@@ -233,7 +233,8 @@ export default class Block {
       videos: c.videos || [],
       lists: c.lists || [],
       buttons: c.buttons || [],
-      items: c.items || []
+      items: c.items || [],
+      data: c.data || {}
     }
   }
 

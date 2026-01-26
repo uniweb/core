@@ -20,6 +20,7 @@ export default class Page {
     this.id = id
     this.stableId = pageData.id || null // Stable page ID for page: links (from page.yml)
     this.route = pageData.route
+    this.sourcePath = pageData.sourcePath || null // Original folder-based path (for ancestor checking)
     this.isIndex = pageData.isIndex || false // True if this page is the index for its parent route
     this.title = pageData.title || ''
     this.description = pageData.description || ''
@@ -345,22 +346,12 @@ export default class Page {
 
   /**
    * Get the navigation route (canonical route for links)
-   * For index pages, returns the parent route (e.g., '/' for homepage)
-   * For regular pages, returns the actual route
+   * With the new routing model, route is already the canonical nav route.
+   * Index pages have route set to parent route (e.g., '/' for homepage).
    * @returns {string}
    */
   getNavRoute() {
-    if (!this.isIndex) {
-      return this.route
-    }
-    // Index page - compute parent route
-    // /home -> /
-    // /docs/getting-started -> /docs
-    const segments = this.route.split('/').filter(Boolean)
-    if (segments.length <= 1) {
-      return '/'
-    }
-    return '/' + segments.slice(0, -1).join('/')
+    return this.route
   }
 
   /**
@@ -494,18 +485,27 @@ export default class Page {
   /**
    * Check if this page or any descendant matches the given route.
    * Useful for highlighting parent nav items when a child page is active.
-   * Delegates to Website.isRouteActiveOrAncestor() for consistent logic.
+   *
+   * For index pages, uses sourcePath (original folder path) for ancestor checking
+   * to avoid false positives. E.g., homepage at '/' shouldn't be ancestor of '/about'.
    *
    * @param {string} currentRoute - Current route to compare against
    * @returns {boolean} True if this page or a descendant is active
    *
    * @example
-   * // Page route: '/docs'
-   * // Current route: 'docs/getting-started/installation'
-   * page.isActiveOrAncestor('docs/getting-started/installation') // true
+   * // Page route: '/docs' (index page with sourcePath: '/docs/intro')
+   * // Current route: '/docs/api'
+   * page.isActiveOrAncestor('/docs/api') // false (not under /docs/intro)
    */
   isActiveOrAncestor(currentRoute) {
-    return this.website.isRouteActiveOrAncestor(this.route, currentRoute)
+    // Exact match on canonical route
+    if (this.website.isRouteActive(this.route, currentRoute)) {
+      return true
+    }
+    // Ancestor check uses sourcePath (folder-based path) to avoid false positives
+    // For index pages, sourcePath differs from route
+    const pathForAncestorCheck = this.sourcePath || this.route
+    return this.website.isRouteActiveOrAncestor(pathForAncestorCheck, currentRoute)
   }
 
   // ─────────────────────────────────────────────────────────────────
