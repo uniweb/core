@@ -756,6 +756,10 @@ export default class Website {
       // Always exclude special pages (header/footer are already separated)
       if (page.route.startsWith('/@')) return false
 
+      // Always exclude dynamic route template pages (e.g., /blog/:slug)
+      // These are templates for generating pages, not actual navigable pages
+      if (page.route.includes(':')) return false
+
       // Check visibility based on navigation type
       if (!includeHidden) {
         if (page.hidden) return false
