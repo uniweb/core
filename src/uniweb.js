@@ -18,8 +18,26 @@ export default class Uniweb {
     this.meta = {} // Per-component runtime metadata (from meta.js)
     this.language = 'en'
 
+    // Icon resolver: (library, name) => Promise<string|null>
+    // Set by runtime based on site config
+    this.iconResolver = null
+
     // Initialize analytics (disabled by default, configure via site config)
     this.analytics = new Analytics(configData.analytics || {})
+  }
+
+  /**
+   * Resolve an icon by library and name
+   * @param {string} library - Icon family (lucide, heroicons, etc.)
+   * @param {string} name - Icon name (check, arrow-right, etc.)
+   * @returns {Promise<string|null>} SVG string or null
+   */
+  async resolveIcon(library, name) {
+    if (!this.iconResolver) {
+      console.warn('[Uniweb] No icon resolver configured')
+      return null
+    }
+    return this.iconResolver(library, name)
   }
 
   /**
