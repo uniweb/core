@@ -52,9 +52,6 @@ export default class Block {
       ? blockData.subsections.map((block, i) => new Block(block, `${id}_${i}`))
       : []
 
-    // Input data
-    this.input = blockData.input || null
-
     // Fetch configuration (from section frontmatter)
     // Supports local files (path) or remote URLs (url)
     this.fetch = blockData.fetch || null
