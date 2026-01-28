@@ -37,11 +37,8 @@ export default class Page {
     this.layout = {
       header: pageData.layout?.header !== false,
       footer: pageData.layout?.footer !== false,
-      left: pageData.layout?.left !== false,
-      right: pageData.layout?.right !== false,
-      // Aliases for backwards compatibility
-      leftPanel: pageData.layout?.left !== false,
-      rightPanel: pageData.layout?.right !== false,
+      leftPanel: pageData.layout?.leftPanel !== false,
+      rightPanel: pageData.layout?.rightPanel !== false,
     }
 
     // SEO configuration
