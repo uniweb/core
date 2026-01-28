@@ -201,18 +201,22 @@ export default class Website {
    * @returns {Page|undefined}
    */
   getPage(route) {
+    // Normalize trailing slashes for consistent matching
+    // '/about/' and '/about' should match the same page
+    const normalizedRoute = route === '/' ? '/' : route.replace(/\/$/, '')
+
     // Priority 1: Exact match on actual route
-    const exactMatch = this.pages.find((page) => page.route === route)
+    const exactMatch = this.pages.find((page) => page.route === normalizedRoute)
     if (exactMatch) return exactMatch
 
     // Priority 2: Index page nav route match
-    const indexMatch = this.pages.find((page) => page.isIndex && page.getNavRoute() === route)
+    const indexMatch = this.pages.find((page) => page.isIndex && page.getNavRoute() === normalizedRoute)
     if (indexMatch) return indexMatch
 
     // Priority 3: Dynamic route pattern matching
     // Check cache first
-    if (this._dynamicPageCache.has(route)) {
-      return this._dynamicPageCache.get(route)
+    if (this._dynamicPageCache.has(normalizedRoute)) {
+      return this._dynamicPageCache.get(normalizedRoute)
     }
 
     // Try to match against dynamic route patterns
@@ -220,13 +224,13 @@ export default class Website {
       // Check if this is a dynamic page (has :param in route)
       if (!page.route.includes(':')) continue
 
-      const match = this._matchDynamicRoute(page.route, route)
+      const match = this._matchDynamicRoute(page.route, normalizedRoute)
       if (match) {
         // Create a dynamic page instance with the concrete route and params
-        const dynamicPage = this._createDynamicPage(page, route, match.params)
+        const dynamicPage = this._createDynamicPage(page, normalizedRoute, match.params)
         if (dynamicPage) {
           // Cache for future requests
-          this._dynamicPageCache.set(route, dynamicPage)
+          this._dynamicPageCache.set(normalizedRoute, dynamicPage)
           return dynamicPage
         }
       }
