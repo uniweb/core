@@ -167,12 +167,8 @@ export default class Website {
       }
     }
 
-    // Sort children by order
-    for (const page of this.pages) {
-      if (page.children.length > 0) {
-        page.children.sort((a, b) => (a.order || 0) - (b.order || 0))
-      }
-    }
+    // Note: Pages arrive pre-sorted from build time.
+    // The hierarchy is hydrated from that order - no runtime sorting needed.
 
     // Build page ID map for makeHref() resolution
     // Supports both explicit IDs and route-based lookup
@@ -743,7 +739,7 @@ export default class Website {
    *
    * // Custom filtering
    * const topLevel = website.getPageHierarchy({
-   *   filter: (page) => page.order < 10
+   *   filter: (page) => !page.route.startsWith('/admin')
    * })
    */
   getPageHierarchy(options = {}) {
@@ -799,7 +795,6 @@ export default class Website {
       title: page.title,
       label: page.getLabel(),
       description: page.description,
-      order: page.order,
       hasContent: page.hasContent(),
       children: nested && page.hasChildren()
         ? page.children.filter(isPageVisible).map(buildPageInfo)

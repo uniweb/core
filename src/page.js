@@ -26,7 +26,6 @@ export default class Page {
     this.description = pageData.description || ''
     this.label = pageData.label || null // Short label for navigation (null = use title)
     this.keywords = pageData.keywords || null
-    this.order = pageData.order ?? 0
     this.lastModified = pageData.lastModified || null
 
     // Navigation visibility options
