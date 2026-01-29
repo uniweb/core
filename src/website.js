@@ -128,47 +128,22 @@ export default class Website {
    * @private
    */
   buildPageHierarchy() {
-    // Sort pages by route depth (parents before children)
-    const sortedPages = [...this.pages].sort((a, b) => {
-      const depthA = (a.route.match(/\//g) || []).length
-      const depthB = (b.route.match(/\//g) || []).length
-      return depthA - depthB
-    })
-
-    // Build a map of route to page for quick lookup
-    // Include both actual routes and nav routes (for index pages)
+    // Build a map of route to page for parent lookup
     const pageMap = new Map()
-    for (const page of sortedPages) {
+    for (const page of this.pages) {
       pageMap.set(page.route, page)
-      // Also map the nav route for index pages so parent lookup works
-      if (page.isIndex) {
-        const navRoute = page.getNavRoute()
-        if (navRoute !== page.route) {
-          pageMap.set(navRoute, page)
+    }
+
+    // Link pages using the declared parent route (set by build)
+    for (const page of this.pages) {
+      if (page.parentRoute) {
+        const parent = pageMap.get(page.parentRoute)
+        if (parent) {
+          parent.children.push(page)
+          page.parent = parent
         }
       }
     }
-
-    // For each page, find its parent and add it as a child
-    for (const page of sortedPages) {
-      const route = page.route
-      // Skip root-level pages (single segment like /home, /about)
-      const segments = route.split('/').filter(Boolean)
-      if (segments.length <= 1) continue
-
-      // Build parent route by removing the last segment
-      // /docs/getting-started -> /docs
-      const parentRoute = '/' + segments.slice(0, -1).join('/')
-      const parent = pageMap.get(parentRoute)
-
-      if (parent) {
-        parent.children.push(page)
-        page.parent = parent
-      }
-    }
-
-    // Note: Pages arrive pre-sorted from build time.
-    // The hierarchy is hydrated from that order - no runtime sorting needed.
 
     // Build page ID map for makeHref() resolution
     // Supports both explicit IDs and route-based lookup
@@ -796,6 +771,7 @@ export default class Website {
       label: page.getLabel(),
       description: page.description,
       hasContent: page.hasContent(),
+      version: page.version || null, // Version metadata for filtering by version
       children: nested && page.hasChildren()
         ? page.children.filter(isPageVisible).map(buildPageInfo)
         : []

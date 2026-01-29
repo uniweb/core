@@ -22,6 +22,7 @@ export default class Page {
     this.route = pageData.route
     this.sourcePath = pageData.sourcePath || null // Original folder-based path (for ancestor checking)
     this.isIndex = pageData.isIndex || false // True if this page is the index for its parent route
+    this.parentRoute = pageData.parent || null // Declared parent route for hierarchy linking (set by build)
     this.title = pageData.title || ''
     this.description = pageData.description || ''
     this.label = pageData.label || null // Short label for navigation (null = use title)
