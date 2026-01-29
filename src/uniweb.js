@@ -22,6 +22,10 @@ export default class Uniweb {
     // Set by runtime based on site config
     this.iconResolver = null
 
+    // Pre-populated icon cache for SSR: Map<"family:name", svgString>
+    // Populated by prerender before rendering, read synchronously by Icon component
+    this.iconCache = new Map()
+
     // Initialize analytics (disabled by default, configure via site config)
     this.analytics = new Analytics(configData.analytics || {})
   }
@@ -38,6 +42,16 @@ export default class Uniweb {
       return null
     }
     return this.iconResolver(library, name)
+  }
+
+  /**
+   * Get a cached icon synchronously (for SSR/prerender)
+   * @param {string} library - Icon family code
+   * @param {string} name - Icon name
+   * @returns {string|null} SVG string or null if not cached
+   */
+  getIconSync(library, name) {
+    return this.iconCache.get(`${library}:${name}`) || null
   }
 
   /**
