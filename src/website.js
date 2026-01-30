@@ -172,9 +172,22 @@ export default class Website {
    * @returns {Page|undefined}
    */
   getPage(route) {
+    // Strip locale prefix if present (e.g., '/fr/about' → '/about')
+    // Pages are stored with non-prefixed routes; the locale is a URL concern,
+    // not a page identity concern.
+    let stripped = route
+    if (this.activeLocale && this.activeLocale !== this.defaultLocale) {
+      const prefix = `/${this.activeLocale}`
+      if (stripped === prefix || stripped === `${prefix}/`) {
+        stripped = '/'
+      } else if (stripped.startsWith(`${prefix}/`)) {
+        stripped = stripped.slice(prefix.length)
+      }
+    }
+
     // Normalize trailing slashes for consistent matching
     // '/about/' and '/about' should match the same page
-    const normalizedRoute = route === '/' ? '/' : route.replace(/\/$/, '')
+    const normalizedRoute = stripped === '/' ? '/' : stripped.replace(/\/$/, '')
 
     // Priority 1: Exact match on actual route
     const exactMatch = this.pages.find((page) => page.route === normalizedRoute)
