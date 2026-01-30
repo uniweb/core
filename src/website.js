@@ -73,6 +73,9 @@ export default class Website {
       value: l.code
     }))
 
+    // Route translations: locale → { forward, reverse } maps
+    this._routeTranslations = this._buildRouteTranslations(config)
+
     // Versioned scopes: route → { versions, latestId }
     // Scopes are routes where versioning starts (e.g., '/docs')
     this.versionedScopes = versionedScopes
@@ -119,6 +122,73 @@ export default class Website {
       ...locale,
       isDefault: locale.code === defaultLocale
     }))
+  }
+
+  /**
+   * Build forward and reverse route translation maps per locale
+   * @private
+   */
+  _buildRouteTranslations(config) {
+    const translations = config.i18n?.routeTranslations || {}
+    const result = {}
+    for (const [locale, routes] of Object.entries(translations)) {
+      const forward = new Map()  // canonical → translated
+      const reverse = new Map()  // translated → canonical
+      for (const [canonical, translated] of Object.entries(routes)) {
+        forward.set(canonical, translated)
+        reverse.set(translated, canonical)
+      }
+      result[locale] = { forward, reverse }
+    }
+    return result
+  }
+
+  /**
+   * Translate a canonical route to a locale-specific display route
+   * Supports exact match and prefix match (e.g., /blog → /noticias also applies to /blog/my-post)
+   *
+   * @param {string} canonicalRoute - Internal route (e.g., '/about')
+   * @param {string} [locale] - Target locale (defaults to active locale)
+   * @returns {string} Translated route or original if no translation exists
+   */
+  translateRoute(canonicalRoute, locale = this.activeLocale) {
+    if (!locale || locale === this.defaultLocale) return canonicalRoute
+    const entry = this._routeTranslations[locale]
+    if (!entry) return canonicalRoute
+    // Exact match
+    const translated = entry.forward.get(canonicalRoute)
+    if (translated) return translated
+    // Prefix match (e.g., /blog matches /blog/my-post → /noticias/my-post)
+    for (const [canonical, trans] of entry.forward) {
+      if (canonicalRoute.startsWith(canonical + '/')) {
+        return trans + canonicalRoute.slice(canonical.length)
+      }
+    }
+    return canonicalRoute
+  }
+
+  /**
+   * Reverse-translate a display route back to the canonical route
+   * Used when resolving incoming URLs to find the matching page
+   *
+   * @param {string} displayRoute - Display route (e.g., '/acerca-de')
+   * @param {string} [locale] - Source locale (defaults to active locale)
+   * @returns {string} Canonical route or original if no translation exists
+   */
+  reverseTranslateRoute(displayRoute, locale = this.activeLocale) {
+    if (!locale || locale === this.defaultLocale) return displayRoute
+    const entry = this._routeTranslations[locale]
+    if (!entry) return displayRoute
+    // Exact match
+    const canonical = entry.reverse.get(displayRoute)
+    if (canonical) return canonical
+    // Prefix match
+    for (const [trans, canon] of entry.reverse) {
+      if (displayRoute.startsWith(trans + '/')) {
+        return canon + displayRoute.slice(trans.length)
+      }
+    }
+    return displayRoute
   }
 
   /**
@@ -184,6 +254,9 @@ export default class Website {
         stripped = stripped.slice(prefix.length)
       }
     }
+
+    // Reverse-translate display route to canonical (e.g., '/acerca-de' → '/about')
+    stripped = this.reverseTranslateRoute(stripped)
 
     // Normalize trailing slashes for consistent matching
     // '/about/' and '/about' should match the same page
@@ -569,19 +642,35 @@ export default class Website {
    * @returns {string}
    */
   getLocaleUrl(localeCode, route = null) {
-    const targetRoute = route || this.activePage?.route || '/'
+    let targetRoute = route || this.activePage?.route || '/'
 
-    // Default locale uses root path (no prefix)
+    // Strip current locale prefix if present in route
+    if (this.activeLocale && this.activeLocale !== this.defaultLocale) {
+      const prefix = `/${this.activeLocale}`
+      if (targetRoute === prefix || targetRoute === `${prefix}/`) {
+        targetRoute = '/'
+      } else if (targetRoute.startsWith(`${prefix}/`)) {
+        targetRoute = targetRoute.slice(prefix.length)
+      }
+    }
+
+    // Reverse-translate from current locale to canonical route
+    targetRoute = this.reverseTranslateRoute(targetRoute)
+
+    // Default locale uses root path (no prefix), no translation needed
     if (localeCode === this.defaultLocale) {
       return targetRoute
     }
 
+    // Translate canonical route to target locale's display route
+    const translatedRoute = this.translateRoute(targetRoute, localeCode)
+
     // Other locales use /locale/ prefix
-    if (targetRoute === '/') {
+    if (translatedRoute === '/') {
       return `/${localeCode}/`
     }
 
-    return `/${localeCode}${targetRoute}`
+    return `/${localeCode}${translatedRoute}`
   }
 
   /**
@@ -776,19 +865,23 @@ export default class Website {
     // Already sorted by order in constructor, so no need to re-sort
 
     // Build page info objects
-    const buildPageInfo = (page) => ({
-      id: page.id,
-      route: page.getNavRoute(), // Use canonical nav route (e.g., '/' for index pages)
-      navigableRoute: page.getNavigableRoute(), // First route with content (for links)
-      title: page.title,
-      label: page.getLabel(),
-      description: page.description,
-      hasContent: page.hasContent(),
-      version: page.version || null, // Version metadata for filtering by version
-      children: nested && page.hasChildren()
-        ? page.children.filter(isPageVisible).map(buildPageInfo)
-        : []
-    })
+    const buildPageInfo = (page) => {
+      const navRoute = page.getNavRoute()
+      return {
+        id: page.id,
+        route: navRoute, // Use canonical nav route (e.g., '/' for index pages)
+        navigableRoute: page.getNavigableRoute(), // First route with content (for links)
+        translatedRoute: this.translateRoute(navRoute), // Locale-specific display route
+        title: page.title,
+        label: page.getLabel(),
+        description: page.description,
+        hasContent: page.hasContent(),
+        version: page.version || null, // Version metadata for filtering by version
+        children: nested && page.hasChildren()
+          ? page.children.filter(isPageVisible).map(buildPageInfo)
+          : []
+      }
+    }
 
     return filteredPages.map(buildPageInfo)
   }
@@ -872,7 +965,21 @@ export default class Website {
    * website.normalizeRoute('/')            // ''
    */
   normalizeRoute(route) {
-    return (route || '').replace(/^\/+/, '').replace(/\/+$/, '')
+    let normalized = (route || '').replace(/^\/+/, '').replace(/\/+$/, '')
+    // Strip locale prefix so '/es/about' normalizes to 'about'
+    if (this.activeLocale && this.activeLocale !== this.defaultLocale) {
+      const prefix = this.activeLocale
+      if (normalized === prefix) {
+        normalized = ''
+      } else if (normalized.startsWith(`${prefix}/`)) {
+        normalized = normalized.slice(prefix.length + 1)
+      }
+    }
+    // Reverse-translate display route to canonical (e.g., 'acerca-de' → 'about')
+    const withSlash = '/' + normalized
+    const reversed = this.reverseTranslateRoute(withSlash)
+    normalized = reversed.replace(/^\//, '')
+    return normalized
   }
 
   /**
