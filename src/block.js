@@ -47,6 +47,17 @@ export default class Block {
     this.standardOptions = blockConfig.standardOptions || {}
     this.properties = blockConfig.properties || blockConfig
 
+    // Extract background from params into standardOptions
+    // Content authors set background in section frontmatter; the runtime
+    // reads it from standardOptions to render the Background component.
+    const rawBg = blockConfig.background
+    if (rawBg && !this.standardOptions.background) {
+      this.standardOptions = {
+        ...this.standardOptions,
+        background: Block.normalizeBackground(rawBg)
+      }
+    }
+
     // Child blocks (subsections)
     this.childBlocks = blockData.subsections
       ? blockData.subsections.map((block, i) => new Block(block, `${id}_${i}`))
@@ -425,6 +436,50 @@ export default class Block {
       }
     }
     return null
+  }
+
+  /**
+   * Normalize a background value from section frontmatter
+   *
+   * Accepts:
+   * - String URL: "/images/hero.jpg" → { mode: 'image', image: { src } }
+   * - String URL (video): "/videos/bg.mp4" → { mode: 'video', video: { src } }
+   * - Object with mode: passed through as-is
+   * - Object without mode: mode inferred from which fields are present
+   *
+   * @param {string|Object} raw - Raw background value from frontmatter
+   * @returns {Object} Normalized background config with mode
+   */
+  static normalizeBackground(raw) {
+    // String URL shorthand
+    if (typeof raw === 'string') {
+      const ext = raw.split('.').pop()?.toLowerCase()
+      const isVideo = ['mp4', 'webm', 'ogv', 'ogg'].includes(ext)
+
+      if (isVideo) {
+        return { mode: 'video', video: { src: raw } }
+      }
+      return { mode: 'image', image: { src: raw } }
+    }
+
+    // Object with explicit mode — pass through
+    if (raw.mode) return raw
+
+    // Infer mode from fields
+    if (raw.video || raw.sources) return { mode: 'video', ...raw }
+    if (raw.image || raw.src) {
+      // Support flat { src, position, size } shorthand
+      if (raw.src) {
+        const { src, position, size, lazy, ...rest } = raw
+        return { mode: 'image', image: { src, position, size, lazy }, ...rest }
+      }
+      return { mode: 'image', ...raw }
+    }
+    if (raw.gradient) return { mode: 'gradient', ...raw }
+    if (raw.color) return { mode: 'color', ...raw }
+
+    // Can't infer — return as-is (BlockRenderer checks for mode)
+    return raw
   }
 
   /**
