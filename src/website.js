@@ -76,6 +76,9 @@ export default class Website {
     // Route translations: locale → { forward, reverse } maps
     this._routeTranslations = this._buildRouteTranslations(config)
 
+    // Deployment base path (set by runtime via setBasePath())
+    this.basePath = ''
+
     // Versioned scopes: route → { versions, latestId }
     // Scopes are routes where versioning starts (e.g., '/docs')
     this.versionedScopes = versionedScopes
@@ -502,6 +505,20 @@ export default class Website {
     const page = this.getPage(route)
     if (page) {
       this.activePage = page
+    }
+  }
+
+  /**
+   * Set the deployment base path
+   * Called by runtime during initialization from Vite's BASE_URL
+   *
+   * @param {string} path - The base path (e.g., '/templates/international')
+   */
+  setBasePath(path) {
+    if (!path || path === '/') {
+      this.basePath = ''
+    } else {
+      this.basePath = path.endsWith('/') ? path.slice(0, -1) : path
     }
   }
 
