@@ -15,6 +15,7 @@ export { default as Block } from './block.js'
 export { default as Input } from './input.js'
 export { default as Analytics } from './analytics.js'
 export { default as Theme } from './theme.js'
+export { default as DataStore } from './datastore.js'
 
 /**
  * The singleton Uniweb instance.

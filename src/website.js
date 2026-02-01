@@ -5,6 +5,7 @@
  */
 
 import Page from './page.js'
+import DataStore from './datastore.js'
 
 export default class Website {
   constructor(websiteData) {
@@ -78,6 +79,9 @@ export default class Website {
 
     // Deployment base path (set by runtime via setBasePath())
     this.basePath = ''
+
+    // Runtime data cache (fetcher registered by runtime at startup)
+    this.dataStore = new DataStore()
 
     // Versioned scopes: route → { versions, latestId }
     // Scopes are routes where versioning starts (e.g., '/docs')
