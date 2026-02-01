@@ -95,6 +95,49 @@ export default class EntityStore {
   }
 
   /**
+   * Build a fetch config for a single entity using the detail convention.
+   *
+   * @param {Object} collectionConfig - The collection's fetch config (must have `detail`)
+   * @param {Object} dynamicContext - { paramName, paramValue, schema }
+   * @returns {Object|null} A fetch config for the single entity, or null
+   */
+  _buildDetailConfig(collectionConfig, dynamicContext) {
+    const { detail } = collectionConfig
+    if (!detail) return null
+
+    const { paramName, paramValue } = dynamicContext
+    if (!paramName || paramValue === undefined) return null
+
+    const baseUrl = collectionConfig.url || collectionConfig.path
+    if (!baseUrl) return null
+
+    let detailUrl
+
+    if (detail === 'rest') {
+      // REST convention: {baseUrl}/{paramValue}
+      detailUrl = `${baseUrl.replace(/\/$/, '')}/${encodeURIComponent(paramValue)}`
+    } else if (detail === 'query') {
+      // Query param convention: {baseUrl}?{paramName}={paramValue}
+      const sep = baseUrl.includes('?') ? '&' : '?'
+      detailUrl = `${baseUrl}${sep}${paramName}=${encodeURIComponent(paramValue)}`
+    } else {
+      // Custom pattern: replace {paramName} placeholders
+      detailUrl = detail.replace(/\{(\w+)\}/g, (_, key) => {
+        if (key === paramName) return encodeURIComponent(paramValue)
+        return `{${key}}` // leave unknown placeholders
+      })
+    }
+
+    // Build a fetch config for the single item
+    const isLocalPath = !!collectionConfig.path && !collectionConfig.url
+    return {
+      ...(isLocalPath ? { path: detailUrl } : { url: detailUrl }),
+      schema: singularize(collectionConfig.schema) || collectionConfig.schema,
+      transform: collectionConfig.transform,
+    }
+  }
+
+  /**
    * Resolve singular item for dynamic routes.
    * If block/page has dynamicContext, find the matching item in the collection.
    *
@@ -143,19 +186,28 @@ export default class EntityStore {
     }
 
     // Check DataStore cache for each config
+    const dynamicContext = block.dynamicContext || block.page?.dynamicContext
     const data = {}
     let allCached = true
 
     for (const [schema, cfg] of configs) {
       if (this.dataStore.has(cfg)) {
         data[schema] = this.dataStore.get(cfg)
+      } else if (dynamicContext && cfg.detail) {
+        // Detail query: check if the single-entity result is cached
+        const detailCfg = this._buildDetailConfig(cfg, dynamicContext)
+        if (detailCfg && this.dataStore.has(detailCfg)) {
+          const singularKey = singularize(schema) || schema
+          data[singularKey] = this.dataStore.get(detailCfg)
+        } else {
+          allCached = false
+        }
       } else {
         allCached = false
       }
     }
 
     if (allCached) {
-      const dynamicContext = block.dynamicContext || block.page?.dynamicContext
       const resolved = this._resolveSingularItem(data, dynamicContext)
       return { status: 'ready', data: resolved }
     }
@@ -182,10 +234,30 @@ export default class EntityStore {
     }
 
     // Fetch all missing configs in parallel
+    const dynamicContext = block.dynamicContext || block.page?.dynamicContext
     const data = {}
     const fetchPromises = []
 
     for (const [schema, cfg] of configs) {
+      // Detail query optimization: on template pages, if the collection
+      // isn't cached and a detail convention is defined, fetch just the
+      // single entity instead of the full collection.
+      if (dynamicContext && cfg.detail && !this.dataStore.has(cfg)) {
+        const detailCfg = this._buildDetailConfig(cfg, dynamicContext)
+        if (detailCfg) {
+          fetchPromises.push(
+            this.dataStore.fetch(detailCfg).then((result) => {
+              if (result.data !== undefined && result.data !== null) {
+                const singularKey = singularize(schema) || schema
+                data[singularKey] = result.data
+              }
+            })
+          )
+          continue // skip collection fetch for this schema
+        }
+      }
+
+      // Default: fetch the full collection
       fetchPromises.push(
         this.dataStore.fetch(cfg).then((result) => {
           if (result.data !== undefined && result.data !== null) {
@@ -198,8 +270,6 @@ export default class EntityStore {
     if (fetchPromises.length > 0) {
       await Promise.all(fetchPromises)
     }
-
-    const dynamicContext = block.dynamicContext || block.page?.dynamicContext
     const resolved = this._resolveSingularItem(data, dynamicContext)
     return { data: resolved }
   }

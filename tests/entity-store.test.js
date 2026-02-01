@@ -238,6 +238,201 @@ describe('EntityStore', () => {
       expect(result.data).toBeNull()
     })
 
+    it('uses detail: rest to fetch single item on template page', async () => {
+      const dataStore = new DataStore()
+      const article = { slug: 'my-post', title: 'My Post' }
+      const fetcher = jest.fn().mockResolvedValue({ data: article })
+      dataStore.registerFetcher(fetcher)
+
+      const store = new EntityStore({ dataStore })
+
+      const fetchConfig = {
+        url: 'https://api.example.com/articles',
+        schema: 'articles',
+        detail: 'rest',
+      }
+      const dynamicContext = {
+        paramName: 'slug',
+        paramValue: 'my-post',
+        schema: 'articles',
+      }
+      const parent = makePage({ fetch: fetchConfig })
+      const page = makePage({ parent, dynamicContext })
+      const block = makeBlock({ page })
+      const meta = { inheritData: ['articles'] }
+
+      const result = await store.fetch(block, meta)
+      expect(result.data.article).toEqual(article)
+      // Should NOT have the plural key (no collection fetched)
+      expect(result.data.articles).toBeUndefined()
+      // Should have fetched the detail URL
+      expect(fetcher).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: 'https://api.example.com/articles/my-post',
+          schema: 'article',
+        })
+      )
+    })
+
+    it('uses detail: query to build query param URL', async () => {
+      const dataStore = new DataStore()
+      const article = { slug: 'my-post', title: 'My Post' }
+      const fetcher = jest.fn().mockResolvedValue({ data: article })
+      dataStore.registerFetcher(fetcher)
+
+      const store = new EntityStore({ dataStore })
+
+      const fetchConfig = {
+        url: 'https://api.example.com/articles',
+        schema: 'articles',
+        detail: 'query',
+      }
+      const dynamicContext = {
+        paramName: 'slug',
+        paramValue: 'my-post',
+        schema: 'articles',
+      }
+      const parent = makePage({ fetch: fetchConfig })
+      const page = makePage({ parent, dynamicContext })
+      const block = makeBlock({ page })
+      const meta = { inheritData: ['articles'] }
+
+      const result = await store.fetch(block, meta)
+      expect(result.data.article).toEqual(article)
+      expect(fetcher).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: 'https://api.example.com/articles?slug=my-post',
+          schema: 'article',
+        })
+      )
+    })
+
+    it('uses custom detail pattern with placeholder substitution', async () => {
+      const dataStore = new DataStore()
+      const article = { slug: 'my-post', title: 'My Post' }
+      const fetcher = jest.fn().mockResolvedValue({ data: article })
+      dataStore.registerFetcher(fetcher)
+
+      const store = new EntityStore({ dataStore })
+
+      const fetchConfig = {
+        url: 'https://api.example.com/articles',
+        schema: 'articles',
+        detail: 'https://api.example.com/article/{slug}',
+      }
+      const dynamicContext = {
+        paramName: 'slug',
+        paramValue: 'my-post',
+        schema: 'articles',
+      }
+      const parent = makePage({ fetch: fetchConfig })
+      const page = makePage({ parent, dynamicContext })
+      const block = makeBlock({ page })
+      const meta = { inheritData: ['articles'] }
+
+      const result = await store.fetch(block, meta)
+      expect(result.data.article).toEqual(article)
+      expect(fetcher).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: 'https://api.example.com/article/my-post',
+          schema: 'article',
+        })
+      )
+    })
+
+    it('skips detail query when collection is already cached', async () => {
+      const dataStore = new DataStore()
+      const articles = [
+        { slug: 'my-post', title: 'My Post' },
+        { slug: 'other', title: 'Other' },
+      ]
+      const fetchConfig = {
+        url: 'https://api.example.com/articles',
+        schema: 'articles',
+        detail: 'rest',
+      }
+      // Pre-populate cache with the collection
+      dataStore.set(fetchConfig, articles)
+
+      const fetcher = jest.fn()
+      dataStore.registerFetcher(fetcher)
+
+      const store = new EntityStore({ dataStore })
+
+      const dynamicContext = {
+        paramName: 'slug',
+        paramValue: 'my-post',
+        schema: 'articles',
+      }
+      const parent = makePage({ fetch: fetchConfig })
+      const page = makePage({ parent, dynamicContext })
+      const block = makeBlock({ page })
+      const meta = { inheritData: ['articles'] }
+
+      const result = await store.fetch(block, meta)
+      // Should use cached collection and extract singular item
+      expect(result.data.articles).toEqual(articles)
+      expect(result.data.article).toEqual({ slug: 'my-post', title: 'My Post' })
+      // Should NOT have made any fetch call (cache hit)
+      expect(fetcher).not.toHaveBeenCalled()
+    })
+
+    it('skips detail query when no dynamicContext', async () => {
+      const dataStore = new DataStore()
+      const articles = [{ slug: 'a' }]
+      const fetcher = jest.fn().mockResolvedValue({ data: articles })
+      dataStore.registerFetcher(fetcher)
+
+      const store = new EntityStore({ dataStore })
+
+      const fetchConfig = {
+        url: 'https://api.example.com/articles',
+        schema: 'articles',
+        detail: 'rest',
+      }
+      const page = makePage({ fetch: fetchConfig })
+      const block = makeBlock({ page })
+      const meta = { inheritData: ['articles'] }
+
+      const result = await store.fetch(block, meta)
+      // No dynamicContext — should fetch the full collection, not detail
+      expect(result.data.articles).toEqual(articles)
+      expect(fetcher).toHaveBeenCalledWith(fetchConfig)
+    })
+
+    it('falls back to collection fetch when detail is not defined', async () => {
+      const dataStore = new DataStore()
+      const articles = [
+        { slug: 'my-post', title: 'My Post' },
+        { slug: 'other', title: 'Other' },
+      ]
+      const fetcher = jest.fn().mockResolvedValue({ data: articles })
+      dataStore.registerFetcher(fetcher)
+
+      const store = new EntityStore({ dataStore })
+
+      const fetchConfig = {
+        url: 'https://api.example.com/articles',
+        schema: 'articles',
+        // No detail field
+      }
+      const dynamicContext = {
+        paramName: 'slug',
+        paramValue: 'my-post',
+        schema: 'articles',
+      }
+      const parent = makePage({ fetch: fetchConfig })
+      const page = makePage({ parent, dynamicContext })
+      const block = makeBlock({ page })
+      const meta = { inheritData: ['articles'] }
+
+      const result = await store.fetch(block, meta)
+      // Should fetch full collection and extract singular
+      expect(result.data.articles).toEqual(articles)
+      expect(result.data.article).toEqual({ slug: 'my-post', title: 'My Post' })
+      expect(fetcher).toHaveBeenCalledWith(fetchConfig)
+    })
+
     it('fetches multiple schemas in parallel', async () => {
       const dataStore = new DataStore()
       const articles = [{ slug: 'a' }]
