@@ -53,6 +53,9 @@ export default class Page {
       priority: pageData.seo?.priority || null,
     }
 
+    // Parent page (set by Website.buildPageHierarchy())
+    this.parent = null
+
     // Child pages (for nested hierarchy) - populated by Website
     this.children = []
 
