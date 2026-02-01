@@ -65,6 +65,10 @@ export default class Page {
     // Scroll position memory (for navigation restoration)
     this.scrollY = 0
 
+    // Fetch configuration (from page.yml data: field)
+    // Preserved at runtime so EntityStore can walk the page hierarchy
+    this.fetch = pageData.fetch || null
+
     // Dynamic route context (for pages created from dynamic routes like /blog/:slug)
     this.dynamicContext = pageData.dynamicContext || null
 

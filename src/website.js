@@ -6,6 +6,8 @@
 
 import Page from './page.js'
 import DataStore from './datastore.js'
+import EntityStore from './entity-store.js'
+import singularize from './singularize.js'
 
 export default class Website {
   constructor(websiteData) {
@@ -82,6 +84,9 @@ export default class Website {
 
     // Runtime data cache (fetcher registered by runtime at startup)
     this.dataStore = new DataStore()
+
+    // Entity-aware query resolution (uses DataStore for caching)
+    this.entityStore = new EntityStore({ dataStore: this.dataStore })
 
     // Versioned scopes: route → { versions, latestId }
     // Scopes are routes where versioning starts (e.g., '/docs')
@@ -372,51 +377,33 @@ export default class Website {
       singularSchema,
     }
 
-    // Get the parent page's data to find the items array
-    // Parent route is the template route without the :param suffix
+    // Set dynamic context on sections so Block instances receive it
+    if (pageData.sections && Array.isArray(pageData.sections)) {
+      for (const section of pageData.sections) {
+        section.dynamicContext = pageData.dynamicContext
+      }
+    }
+
+    // Try to resolve page metadata from parent's cascadedData
+    // (EntityStore handles full data resolution at render time)
     const parentRoute = templatePage.route.replace(/\/:[\w]+$/, '') || '/'
     const parentPage = this.pages.find(p => p.route === parentRoute || p.getNavRoute() === parentRoute)
 
-    // Get items from parent's cascaded data
-    let items = []
-    let currentItem = null
-
     if (parentPage && pluralSchema) {
-      // Get items from parent page's first section's cascadedData
-      // This is where the page-level fetch stores its data
       const firstSection = parentPage.pageBlocks?.body?.[0]
-      if (firstSection) {
-        items = firstSection.cascadedData?.[pluralSchema] || []
+      const items = firstSection?.cascadedData?.[pluralSchema] || []
+      const currentItem = items.find(item => String(item[paramName]) === String(paramValue))
+
+      if (currentItem) {
+        if (currentItem.title) pageData.title = currentItem.title
+        if (currentItem.description || currentItem.excerpt) {
+          pageData.description = currentItem.description || currentItem.excerpt
+        }
       }
 
-      // Find the current item using the param
-      if (items.length > 0) {
-        currentItem = items.find(item => String(item[paramName]) === String(paramValue))
-      }
-    }
-
-    // Store items in dynamic context for Block.getCurrentItem() / getAllItems()
-    pageData.dynamicContext.currentItem = currentItem
-    pageData.dynamicContext.allItems = items
-
-    // Inject cascaded data into sections for components with inheritData
-    // This provides both singular (article) and plural (articles) data
-    const cascadedData = {}
-    if (currentItem && singularSchema) {
-      cascadedData[singularSchema] = currentItem
-    }
-    if (items.length > 0 && pluralSchema) {
-      cascadedData[pluralSchema] = items
-    }
-
-    this._injectDynamicData(pageData.sections, cascadedData, pageData.dynamicContext)
-
-    // Update page metadata from current item if available
-    if (currentItem) {
-      if (currentItem.title) pageData.title = currentItem.title
-      if (currentItem.description || currentItem.excerpt) {
-        pageData.description = currentItem.description || currentItem.excerpt
-      }
+      // Store in dynamic context for Block.getCurrentItem() / getAllItems()
+      pageData.dynamicContext.currentItem = currentItem || null
+      pageData.dynamicContext.allItems = items
     }
 
     // Create the page instance
@@ -441,64 +428,7 @@ export default class Website {
    * @private
    */
   _singularize(name) {
-    if (!name) return name
-    // Common irregular plurals
-    const irregulars = {
-      people: 'person',
-      children: 'child',
-      men: 'men',
-      women: 'woman',
-      series: 'series',
-    }
-    if (irregulars[name]) return irregulars[name]
-    // -ies → -y (categories → category)
-    if (name.endsWith('ies')) return name.slice(0, -3) + 'y'
-    // -es endings that should only remove 's' (not 'es')
-    // e.g., articles → article, courses → course
-    if (name.endsWith('es')) {
-      // Check if the base word ends in a consonant that requires 'es' plural
-      // (boxes, dishes, classes, heroes) vs just 's' plural (articles, courses)
-      const base = name.slice(0, -2)
-      const lastChar = base.slice(-1)
-      // If base ends in s, x, z, ch, sh - these need 'es' for plural, so remove 'es'
-      if (['s', 'x', 'z'].includes(lastChar) || base.endsWith('ch') || base.endsWith('sh')) {
-        return base
-      }
-      // Otherwise just remove 's' (articles → article)
-      return name.slice(0, -1)
-    }
-    // Regular -s plurals
-    if (name.endsWith('s')) return name.slice(0, -1)
-    return name
-  }
-
-  /**
-   * Inject dynamic route data into sections for components with inheritData
-   * This provides both the current item (singular) and all items (plural)
-   *
-   * @private
-   * @param {Array} sections - Sections to update
-   * @param {Object} cascadedData - Data to inject { article: {...}, articles: [...] }
-   * @param {Object} dynamicContext - Dynamic route context
-   */
-  _injectDynamicData(sections, cascadedData, dynamicContext) {
-    if (!sections || !Array.isArray(sections)) return
-
-    for (const section of sections) {
-      // Merge cascaded data into section's existing cascadedData
-      section.cascadedData = {
-        ...(section.cascadedData || {}),
-        ...cascadedData,
-      }
-
-      // Also set dynamic context for Block.getDynamicContext()
-      section.dynamicContext = dynamicContext
-
-      // Recurse into subsections
-      if (section.subsections && section.subsections.length > 0) {
-        this._injectDynamicData(section.subsections, cascadedData, dynamicContext)
-      }
-    }
+    return singularize(name)
   }
 
   /**

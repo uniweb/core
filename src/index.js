@@ -16,6 +16,7 @@ export { default as Input } from './input.js'
 export { default as Analytics } from './analytics.js'
 export { default as Theme } from './theme.js'
 export { default as DataStore } from './datastore.js'
+export { default as EntityStore } from './entity-store.js'
 
 /**
  * The singleton Uniweb instance.
