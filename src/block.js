@@ -67,6 +67,10 @@ export default class Block {
     // Supports local files (path) or remote URLs (url)
     this.fetch = blockData.fetch || null
 
+    // Data loading state — set by BlockRenderer when a runtime fetch is in progress
+    // Components check this to show loading UI (spinners, skeletons)
+    this.dataLoading = false
+
     // Cascaded data from page/site level fetches
     // Populated during render for components with inheritData
     this.cascadedData = blockData.cascadedData || {}
