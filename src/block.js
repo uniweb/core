@@ -89,7 +89,7 @@ export default class Block {
    * Supports multiple content formats:
    * 1. Pre-parsed groups structure (from editor)
    * 2. ProseMirror document (from markdown collection)
-   * 3. Simple key-value content (PoC style)
+   * 3. Plain object (passed through directly)
    *
    * Uses @uniweb/semantic-parser for rich content extraction including:
    * - Pretitle detection (H3 before H1)
@@ -108,20 +108,18 @@ export default class Block {
       return this.extractFromProseMirror(content)
     }
 
-    // Simple key-value content (PoC style) - pass through directly
-    // This allows components to receive content like { title, subtitle, items }
+    // Plain object content — pass through directly.
+    // guaranteeContentStructure() in prepare-props will fill in missing fields.
     if (content && typeof content === 'object' && !Array.isArray(content)) {
-      // Mark as PoC format so runtime can detect and pass through
-      return {
-        _isPoc: true,
-        _pocContent: content
-      }
+      return content
     }
 
-    // Fallback
+    // Fallback — empty flat structure
     return {
-      main: { header: {}, body: {} },
-      items: []
+      title: '',
+      paragraphs: [],
+      items: [],
+      sequence: []
     }
   }
 
