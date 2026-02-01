@@ -384,14 +384,25 @@ export default class Website {
       }
     }
 
-    // Try to resolve page metadata from parent's cascadedData
-    // (EntityStore handles full data resolution at render time)
+    // Try to resolve page metadata from DataStore
+    // Look up the parent page's fetch config to find data in the store
     const parentRoute = templatePage.route.replace(/\/:[\w]+$/, '') || '/'
     const parentPage = this.pages.find(p => p.route === parentRoute || p.getNavRoute() === parentRoute)
 
     if (parentPage && pluralSchema) {
-      const firstSection = parentPage.pageBlocks?.body?.[0]
-      const items = firstSection?.cascadedData?.[pluralSchema] || []
+      // Find collection data from parent's fetch config via DataStore
+      const parentFetch = parentPage.fetch
+      let items = []
+
+      if (parentFetch) {
+        const fetchConfig = Array.isArray(parentFetch)
+          ? parentFetch.find(f => f.schema === pluralSchema)
+          : (parentFetch.schema === pluralSchema ? parentFetch : null)
+        if (fetchConfig) {
+          items = this.dataStore.get(fetchConfig) || []
+        }
+      }
+
       const currentItem = items.find(item => String(item[paramName]) === String(paramValue))
 
       if (currentItem) {
@@ -401,7 +412,7 @@ export default class Website {
         }
       }
 
-      // Store in dynamic context for Block.getCurrentItem() / getAllItems()
+      // Store in dynamic context for entity resolution
       pageData.dynamicContext.currentItem = currentItem || null
       pageData.dynamicContext.allItems = items
     }

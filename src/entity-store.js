@@ -42,8 +42,8 @@ export default class EntityStore {
 
   /**
    * Walk the hierarchy to find fetch configs for requested schemas.
-   * Order: block.fetch → page.fetch → parent.fetch → ... → site config.fetch
-   * First match per schema wins.
+   * Order: block.fetch → page.fetch → parent.fetch → site config.fetch
+   * First match per schema wins. Only walks one parent level (auto-wiring).
    *
    * @param {import('./block.js').default} block
    * @param {string[]} requested - Schema names (empty = collect all)
@@ -60,16 +60,18 @@ export default class EntityStore {
       sources.push(block.fetch)
     }
 
-    // 2. Page-level fetch, then walk parents
-    let page = block.page
-    while (page) {
-      if (page.fetch) {
-        sources.push(page.fetch)
-      }
-      page = page.parent
+    // 2. Page-level fetch
+    const page = block.page
+    if (page?.fetch) {
+      sources.push(page.fetch)
     }
 
-    // 3. Site-level fetch
+    // 3. Parent page fetch (one level — auto-wiring for dynamic routes)
+    if (page?.parent?.fetch) {
+      sources.push(page.parent.fetch)
+    }
+
+    // 4. Site-level fetch
     const siteFetch = block.website?.config?.fetch
     if (siteFetch) {
       sources.push(siteFetch)
@@ -122,7 +124,7 @@ export default class EntityStore {
   }
 
   /**
-   * Sync resolution. Checks build-provided cascadedData and DataStore cache.
+   * Sync resolution. Checks DataStore cache for fetch configs found in hierarchy.
    *
    * @param {import('./block.js').default} block
    * @param {Object} meta - Component runtime metadata
@@ -134,35 +136,17 @@ export default class EntityStore {
       return { status: 'none', data: null }
     }
 
-    // Check build-time cascadedData first
-    const cascaded = block.cascadedData
-    if (cascaded && Object.keys(cascaded).length > 0) {
-      const satisfies = requested.length === 0 || requested.every((s) => s in cascaded)
-      if (satisfies) {
-        const dynamicContext = block.dynamicContext || block.page.dynamicContext
-        const data = this._resolveSingularItem(cascaded, dynamicContext)
-        return { status: 'ready', data }
-      }
-    }
-
-    // Walk hierarchy for runtime fetch configs
+    // Walk hierarchy for fetch configs
     const configs = this._findFetchConfigs(block, requested)
     if (configs.size === 0) {
-      // No fetch configs found — if cascadedData had partial data, return it
-      if (cascaded && Object.keys(cascaded).length > 0) {
-        const dynamicContext = block.dynamicContext || block.page.dynamicContext
-        const data = this._resolveSingularItem(cascaded, dynamicContext)
-        return { status: 'ready', data }
-      }
       return { status: 'none', data: null }
     }
 
     // Check DataStore cache for each config
-    const data = { ...(cascaded || {}) }
+    const data = {}
     let allCached = true
 
     for (const [schema, cfg] of configs) {
-      if (data[schema] !== undefined) continue // already have from cascadedData
       if (this.dataStore.has(cfg)) {
         data[schema] = this.dataStore.get(cfg)
       } else {
@@ -171,7 +155,7 @@ export default class EntityStore {
     }
 
     if (allCached) {
-      const dynamicContext = block.dynamicContext || block.page.dynamicContext
+      const dynamicContext = block.dynamicContext || block.page?.dynamicContext
       const resolved = this._resolveSingularItem(data, dynamicContext)
       return { status: 'ready', data: resolved }
     }
@@ -194,21 +178,14 @@ export default class EntityStore {
 
     const configs = this._findFetchConfigs(block, requested)
     if (configs.size === 0) {
-      // Return cascadedData if available
-      const cascaded = block.cascadedData
-      if (cascaded && Object.keys(cascaded).length > 0) {
-        const dynamicContext = block.dynamicContext || block.page.dynamicContext
-        return { data: this._resolveSingularItem(cascaded, dynamicContext) }
-      }
       return { data: null }
     }
 
     // Fetch all missing configs in parallel
-    const data = { ...(block.cascadedData || {}) }
+    const data = {}
     const fetchPromises = []
 
     for (const [schema, cfg] of configs) {
-      if (data[schema] !== undefined) continue // already have from cascadedData
       fetchPromises.push(
         this.dataStore.fetch(cfg).then((result) => {
           if (result.data !== undefined && result.data !== null) {
@@ -222,7 +199,7 @@ export default class EntityStore {
       await Promise.all(fetchPromises)
     }
 
-    const dynamicContext = block.dynamicContext || block.page.dynamicContext
+    const dynamicContext = block.dynamicContext || block.page?.dynamicContext
     const resolved = this._resolveSingularItem(data, dynamicContext)
     return { data: resolved }
   }

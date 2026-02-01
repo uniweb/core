@@ -71,10 +71,6 @@ export default class Block {
     // Components check this to show loading UI (spinners, skeletons)
     this.dataLoading = false
 
-    // Cascaded data from page/site level fetches
-    // Populated during render for components with inheritData
-    this.cascadedData = blockData.cascadedData || {}
-
     // Dynamic route context (params from URL matching)
     // Set when accessing a dynamic page like /blog/:slug -> /blog/my-post
     this.dynamicContext = blockData.dynamicContext || null
@@ -381,63 +377,6 @@ export default class Block {
    */
   getDynamicContext() {
     return this.dynamicContext
-  }
-
-  /**
-   * Get the current item from cascaded data using dynamic route params
-   * Looks up the item in cascadedData that matches the URL param value
-   *
-   * @param {string} [schema] - Schema name to look up (e.g., 'articles'). If omitted, uses parentSchema from dynamicContext.
-   * @returns {Object|null} The matched item, or null if not found
-   *
-   * @example
-   * // URL: /blog/my-post, cascadedData: { articles: [{slug: 'my-post', title: 'My Post'}, ...] }
-   * block.getCurrentItem('articles')
-   * // { slug: 'my-post', title: 'My Post', ... }
-   */
-  getCurrentItem(schema) {
-    const ctx = this.dynamicContext
-    if (!ctx) return null
-
-    const { paramName, paramValue } = ctx
-
-    // If schema not provided, try to infer from cascadedData keys
-    const lookupSchema = schema || this._inferSchema()
-    if (!lookupSchema) return null
-
-    const items = this.cascadedData[lookupSchema]
-    if (!Array.isArray(items)) return null
-
-    // Find item where the param field matches the URL value
-    return items.find(item => String(item[paramName]) === String(paramValue)) || null
-  }
-
-  /**
-   * Get all items from cascaded data for the dynamic route's schema
-   *
-   * @param {string} [schema] - Schema name to look up. If omitted, uses parentSchema from dynamicContext.
-   * @returns {Array} Array of items, or empty array if not found
-   */
-  getAllItems(schema) {
-    const lookupSchema = schema || this._inferSchema()
-    if (!lookupSchema) return []
-
-    const items = this.cascadedData[lookupSchema]
-    return Array.isArray(items) ? items : []
-  }
-
-  /**
-   * Infer the schema name from cascaded data keys
-   * Looks for the first array in cascadedData
-   * @private
-   */
-  _inferSchema() {
-    for (const key of Object.keys(this.cascadedData)) {
-      if (Array.isArray(this.cascadedData[key])) {
-        return key
-      }
-    }
-    return null
   }
 
   /**

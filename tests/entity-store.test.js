@@ -8,7 +8,6 @@ import DataStore from '../src/datastore.js'
 function makeBlock(overrides = {}) {
   return {
     fetch: null,
-    cascadedData: {},
     dynamicContext: null,
     page: makePage(),
     website: null,
@@ -49,24 +48,16 @@ describe('EntityStore', () => {
       expect(result.status).toBe('none')
     })
 
-    it('returns ready from block.cascadedData (build-time data)', () => {
+    it('returns ready when DataStore is pre-populated', () => {
       const dataStore = new DataStore()
-      const store = new EntityStore({ dataStore })
+      const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
       const articles = [{ slug: 'a', title: 'A' }]
-      const block = makeBlock({ cascadedData: { articles } })
-      const meta = { inheritData: true }
+      dataStore.set(fetchConfig, articles)
 
-      const result = store.resolve(block, meta)
-      expect(result.status).toBe('ready')
-      expect(result.data.articles).toEqual(articles)
-    })
-
-    it('returns ready from cascadedData for selective inheritData', () => {
-      const dataStore = new DataStore()
       const store = new EntityStore({ dataStore })
-      const articles = [{ slug: 'a' }]
-      const block = makeBlock({ cascadedData: { articles, other: 'data' } })
-      const meta = { inheritData: ['articles'] }
+      const page = makePage({ fetch: fetchConfig })
+      const block = makeBlock({ page })
+      const meta = { inheritData: true }
 
       const result = store.resolve(block, meta)
       expect(result.status).toBe('ready')
@@ -103,7 +94,7 @@ describe('EntityStore', () => {
       expect(result.data).toBeNull()
     })
 
-    it('returns none when no fetch configs and no cascadedData', () => {
+    it('returns none when no fetch configs found', () => {
       const dataStore = new DataStore()
       const store = new EntityStore({ dataStore })
       const page = makePage()
@@ -125,8 +116,7 @@ describe('EntityStore', () => {
       const store = new EntityStore({ dataStore })
 
       const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
-      const grandparent = makePage({ fetch: fetchConfig })
-      const parent = makePage({ parent: grandparent })
+      const parent = makePage({ fetch: fetchConfig })
       const page = makePage({ parent })
       const block = makeBlock({ page })
       const meta = { inheritData: ['articles'] }
@@ -134,6 +124,26 @@ describe('EntityStore', () => {
       const result = await store.fetch(block, meta)
       expect(result.data.articles).toEqual(articles)
       expect(fetcher).toHaveBeenCalledWith(fetchConfig)
+    })
+
+    it('does not walk beyond parent page', async () => {
+      const dataStore = new DataStore()
+      const fetcher = jest.fn().mockResolvedValue({ data: [] })
+      dataStore.registerFetcher(fetcher)
+
+      const store = new EntityStore({ dataStore })
+
+      const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
+      const grandparent = makePage({ fetch: fetchConfig })
+      const parent = makePage({ parent: grandparent })
+      const page = makePage({ parent })
+      const block = makeBlock({ page })
+      const meta = { inheritData: ['articles'] }
+
+      const result = await store.fetch(block, meta)
+      // Should NOT find grandparent's fetch config — only walks one parent level
+      expect(result.data).toBeNull()
+      expect(fetcher).not.toHaveBeenCalled()
     })
 
     it('finds fetch config from site-level config', async () => {
@@ -217,6 +227,17 @@ describe('EntityStore', () => {
       expect(result.data).toBeNull()
     })
 
+    it('returns null data when no fetch configs found', async () => {
+      const dataStore = new DataStore()
+      const store = new EntityStore({ dataStore })
+      const page = makePage()
+      const block = makeBlock({ page })
+      const meta = { inheritData: true }
+
+      const result = await store.fetch(block, meta)
+      expect(result.data).toBeNull()
+    })
+
     it('fetches multiple schemas in parallel', async () => {
       const dataStore = new DataStore()
       const articles = [{ slug: 'a' }]
@@ -242,18 +263,6 @@ describe('EntityStore', () => {
       expect(result.data.articles).toEqual(articles)
       expect(result.data.categories).toEqual(categories)
       expect(fetcher).toHaveBeenCalledTimes(2)
-    })
-
-    it('returns cascadedData when no fetch configs found', async () => {
-      const dataStore = new DataStore()
-      const store = new EntityStore({ dataStore })
-      const articles = [{ slug: 'a' }]
-      const page = makePage()
-      const block = makeBlock({ page, cascadedData: { articles } })
-      const meta = { inheritData: true }
-
-      const result = await store.fetch(block, meta)
-      expect(result.data.articles).toEqual(articles)
     })
   })
 })
