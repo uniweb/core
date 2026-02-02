@@ -432,6 +432,11 @@ export default class Block {
     // Object with explicit mode — pass through
     if (raw.mode) return raw
 
+    // Normalize overlay shorthand: number → { enabled: true, type: 'dark', opacity }
+    if (typeof raw.overlay === 'number') {
+      raw = { ...raw, overlay: { enabled: true, type: 'dark', opacity: raw.overlay } }
+    }
+
     // Infer mode from fields
     if (raw.video || raw.sources) return { mode: 'video', ...raw }
     if (raw.image || raw.src) {
@@ -439,6 +444,11 @@ export default class Block {
       if (raw.src) {
         const { src, position, size, lazy, ...rest } = raw
         return { mode: 'image', image: { src, position, size, lazy }, ...rest }
+      }
+      // Support string shorthand: { image: "url" } → { image: { src: "url" } }
+      if (typeof raw.image === 'string') {
+        const { image, ...rest } = raw
+        return { mode: 'image', image: { src: image }, ...rest }
       }
       return { mode: 'image', ...raw }
     }
