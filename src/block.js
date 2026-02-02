@@ -43,7 +43,19 @@ export default class Block {
     // Block configuration
     const blockConfig = blockData.params || blockData.config || {}
     this.preset = blockData.preset
-    this.themeName = blockConfig.theme || 'light'
+
+    // Normalize theme: supports string ("light") or object ({ mode, ...tokenOverrides })
+    const rawTheme = blockConfig.theme
+    if (rawTheme && typeof rawTheme === 'object') {
+      const { mode, ...overrides } = rawTheme
+      this.themeName = mode || 'light'
+      this.contextOverrides = Object.keys(overrides).length > 0 ? overrides : null
+      blockConfig.theme = this.themeName // normalize so params.theme is always a string
+    } else {
+      this.themeName = rawTheme || 'light'
+      this.contextOverrides = null
+    }
+
     this.standardOptions = blockConfig.standardOptions || {}
     this.properties = blockConfig.properties || blockConfig
 
@@ -313,6 +325,7 @@ export default class Block {
     return {
       type: this.type,
       theme: this.themeName,
+      contextOverrides: this.contextOverrides,
       state: this.state,
       context: this.context
     }
