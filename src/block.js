@@ -50,7 +50,6 @@ export default class Block {
       const { mode, ...overrides } = rawTheme
       this.themeName = mode || 'light'
       this.contextOverrides = Object.keys(overrides).length > 0 ? overrides : null
-      blockConfig.theme = this.themeName // normalize so params.theme is always a string
     } else {
       this.themeName = rawTheme || 'light'
       this.contextOverrides = null
@@ -58,6 +57,12 @@ export default class Block {
 
     this.standardOptions = blockConfig.standardOptions || {}
     this.properties = blockConfig.properties || blockConfig
+
+    // Normalize params.theme to string so components always see "light"/"dark"/"medium",
+    // not the raw object. Done after properties assignment to avoid mutating source data.
+    if (this.properties.theme && typeof this.properties.theme === 'object') {
+      this.properties = { ...this.properties, theme: this.themeName }
+    }
 
     // Extract background from params into standardOptions
     // Content authors set background in section frontmatter; the runtime
