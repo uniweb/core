@@ -604,7 +604,7 @@ export default class Website {
    * @returns {string}
    */
   getLocaleUrl(localeCode, route = null) {
-    let targetRoute = route || this.activePage?.route || '/'
+    let targetRoute = route || this.activePage.route
 
     // Strip current locale prefix if present in route
     if (this.activeLocale && this.activeLocale !== this.defaultLocale) {
@@ -897,7 +897,7 @@ export default class Website {
    * website.getActiveRoute() // 'docs/getting-started'
    */
   getActiveRoute() {
-    return this.activePage?.getNormalizedRoute() || ''
+    return this.activePage.getNormalizedRoute()
   }
 
   /**
