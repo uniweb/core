@@ -16,22 +16,22 @@ const VALID_CONTEXTS = ['light', 'medium', 'dark']
 // Default semantic tokens by context
 const DEFAULT_CONTEXT_TOKENS = {
   light: {
-    bg: 'var(--neutral-50)',
-    text: 'var(--neutral-950)',
-    heading: 'var(--neutral-900)',
-    link: 'var(--primary-600)',
+    bg: 'var(--color-neutral-50)',
+    text: 'var(--color-neutral-950)',
+    heading: 'var(--color-neutral-900)',
+    link: 'var(--color-primary-600)',
   },
   medium: {
-    bg: 'var(--neutral-100)',
-    text: 'var(--neutral-950)',
-    heading: 'var(--neutral-900)',
-    link: 'var(--primary-600)',
+    bg: 'var(--color-neutral-100)',
+    text: 'var(--color-neutral-950)',
+    heading: 'var(--color-neutral-900)',
+    link: 'var(--color-primary-600)',
   },
   dark: {
-    bg: 'var(--neutral-900)',
-    text: 'var(--neutral-50)',
+    bg: 'var(--color-neutral-900)',
+    text: 'var(--color-neutral-50)',
     heading: 'white',
-    link: 'var(--primary-400)',
+    link: 'var(--color-primary-400)',
   },
 }
 
@@ -142,10 +142,10 @@ export default class Theme {
    * @returns {string} CSS var() reference
    *
    * @example
-   * theme.getColorVar('primary', 600) // → "var(--primary-600)"
+   * theme.getColorVar('primary', 600) // → "var(--color-primary-600)"
    */
   getColorVar(name, shade = 500) {
-    return `var(--${name}-${shade})`
+    return `var(--color-${name}-${shade})`
   }
 
   // ============================================================
@@ -160,8 +160,8 @@ export default class Theme {
    * @returns {string|null} Token value or null
    *
    * @example
-   * theme.getContextToken('light', 'bg') // → "var(--neutral-50)"
-   * theme.getContextToken('dark', 'text') // → "var(--neutral-50)"
+   * theme.getContextToken('light', 'bg') // → "var(--color-neutral-50)"
+   * theme.getContextToken('dark', 'text') // → "var(--color-neutral-50)"
    */
   getContextToken(context, token) {
     // Check custom context tokens first
