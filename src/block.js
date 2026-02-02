@@ -392,15 +392,23 @@ export default class Block {
    * @returns {Object} Normalized background config with mode
    */
   static normalizeBackground(raw) {
-    // String URL shorthand
+    // String shorthand — classify by content
     if (typeof raw === 'string') {
-      const ext = raw.split('.').pop()?.toLowerCase()
-      const isVideo = ['mp4', 'webm', 'ogv', 'ogg'].includes(ext)
-
-      if (isVideo) {
-        return { mode: 'video', video: { src: raw } }
+      // URL or path → image/video
+      if (/^(\/|\.\/|\.\.\/|https?:\/\/)/.test(raw) || /\.(jpe?g|png|webp|gif|svg|avif|mp4|webm|ogv|ogg)$/i.test(raw)) {
+        const ext = raw.split('.').pop()?.toLowerCase()
+        const isVideo = ['mp4', 'webm', 'ogv', 'ogg'].includes(ext)
+        if (isVideo) return { mode: 'video', video: { src: raw } }
+        return { mode: 'image', image: { src: raw } }
       }
-      return { mode: 'image', image: { src: raw } }
+
+      // CSS gradient function
+      if (/^(linear|radial|conic)-gradient\(/.test(raw)) {
+        return { mode: 'gradient', gradient: raw }
+      }
+
+      // Anything else → CSS color (hex, rgb, hsl, oklch, named color, var())
+      return { mode: 'color', color: raw }
     }
 
     // Object with explicit mode — pass through
