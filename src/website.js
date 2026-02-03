@@ -18,21 +18,19 @@ export default class Website {
     this.description = config.description || ''
     this.url = config.url || ''
 
-    // Store special pages (layout areas)
+    // Store layout panels (header, footer, left, right)
     // These come from top-level properties set by content-collector
-    // Fallback to searching pages array for backwards compatibility
-    this.headerPage = header || pages.find((p) => p.route === '/@header') || null
-    this.footerPage = footer || pages.find((p) => p.route === '/@footer') || null
-    this.leftPage = left || pages.find((p) => p.route === '/@left') || null
-    this.rightPage = right || pages.find((p) => p.route === '/@right') || null
+    this.headerPage = header || null
+    this.footerPage = footer || null
+    this.leftPage = left || null
+    this.rightPage = right || null
 
     // Store 404 page (for SPA routing)
     // Convention: pages/404/ directory
     this.notFoundPage = notFound || pages.find((p) => p.route === '/404') || null
 
-    // Filter out special pages from regular pages array
-    const specialRoutes = ['/@header', '/@footer', '/@left', '/@right', '/404']
-    const regularPages = pages.filter((page) => !specialRoutes.includes(page.route))
+    // Filter out 404 from regular pages array
+    const regularPages = pages.filter((page) => page.route !== '/404')
 
     // Store original page data for dynamic pages (needed to create instances on-demand)
     this._dynamicPageData = new Map()
@@ -792,9 +790,6 @@ export default class Website {
 
     // Filter pages based on navigation type and visibility
     const isPageVisible = (page) => {
-      // Always exclude special pages (header/footer are already separated)
-      if (page.route.startsWith('/@')) return false
-
       // Always exclude dynamic route template pages (e.g., /blog/:slug)
       // These are templates for generating pages, not actual navigable pages
       if (page.route.includes(':')) return false
