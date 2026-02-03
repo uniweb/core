@@ -158,7 +158,12 @@ describe('EntityStore', () => {
       const page = makePage()
       const block = makeBlock({
         page,
-        website: { config: { fetch: fetchConfig }, dataStore },
+        website: {
+          config: { fetch: fetchConfig },
+          dataStore,
+          getActiveLocale: () => 'en',
+          getDefaultLocale: () => 'en',
+        },
       })
       const meta = { inheritData: true }
 
@@ -431,6 +436,124 @@ describe('EntityStore', () => {
       expect(result.data.articles).toEqual(articles)
       expect(result.data.article).toEqual({ slug: 'my-post', title: 'My Post' })
       expect(fetcher).toHaveBeenCalledWith(fetchConfig)
+    })
+
+    it('localizes /data/ paths for non-default locale', async () => {
+      const dataStore = new DataStore()
+      const articles = [{ slug: 'a', title: 'Bonjour' }]
+      const fetcher = jest.fn().mockResolvedValue({ data: articles })
+      dataStore.registerFetcher(fetcher)
+
+      const store = new EntityStore({ dataStore })
+
+      const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
+      const website = {
+        getActiveLocale: () => 'fr',
+        getDefaultLocale: () => 'en',
+        config: {},
+        dataStore,
+      }
+      const page = makePage({ fetch: fetchConfig })
+      const block = makeBlock({ page, website })
+      const meta = { inheritData: true }
+
+      const result = await store.fetch(block, meta)
+      expect(result.data.articles).toEqual(articles)
+      expect(fetcher).toHaveBeenCalledWith(
+        expect.objectContaining({ path: '/fr/data/articles.json', schema: 'articles' })
+      )
+    })
+
+    it('does not localize /data/ paths for default locale', async () => {
+      const dataStore = new DataStore()
+      const articles = [{ slug: 'a' }]
+      const fetcher = jest.fn().mockResolvedValue({ data: articles })
+      dataStore.registerFetcher(fetcher)
+
+      const store = new EntityStore({ dataStore })
+
+      const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
+      const website = {
+        getActiveLocale: () => 'en',
+        getDefaultLocale: () => 'en',
+        config: {},
+        dataStore,
+      }
+      const page = makePage({ fetch: fetchConfig })
+      const block = makeBlock({ page, website })
+      const meta = { inheritData: true }
+
+      const result = await store.fetch(block, meta)
+      expect(fetcher).toHaveBeenCalledWith(fetchConfig)
+    })
+
+    it('does not localize remote URLs', async () => {
+      const dataStore = new DataStore()
+      const articles = [{ slug: 'a' }]
+      const fetcher = jest.fn().mockResolvedValue({ data: articles })
+      dataStore.registerFetcher(fetcher)
+
+      const store = new EntityStore({ dataStore })
+
+      const fetchConfig = { url: 'https://api.example.com/articles', schema: 'articles' }
+      const website = {
+        getActiveLocale: () => 'fr',
+        getDefaultLocale: () => 'en',
+        config: {},
+        dataStore,
+      }
+      const page = makePage({ fetch: fetchConfig })
+      const block = makeBlock({ page, website })
+      const meta = { inheritData: true }
+
+      const result = await store.fetch(block, meta)
+      expect(fetcher).toHaveBeenCalledWith(fetchConfig)
+    })
+
+    it('does not localize non-/data/ local paths', async () => {
+      const dataStore = new DataStore()
+      const result_data = { key: 'value' }
+      const fetcher = jest.fn().mockResolvedValue({ data: result_data })
+      dataStore.registerFetcher(fetcher)
+
+      const store = new EntityStore({ dataStore })
+
+      const fetchConfig = { path: '/api/config.json', schema: 'config' }
+      const website = {
+        getActiveLocale: () => 'fr',
+        getDefaultLocale: () => 'en',
+        config: {},
+        dataStore,
+      }
+      const page = makePage({ fetch: fetchConfig })
+      const block = makeBlock({ page, website })
+      const meta = { inheritData: true }
+
+      await store.fetch(block, meta)
+      expect(fetcher).toHaveBeenCalledWith(fetchConfig)
+    })
+
+    it('resolve() uses localized path for cache lookup', () => {
+      const dataStore = new DataStore()
+      const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
+      const articles = [{ slug: 'a', title: 'Bonjour' }]
+      // Cache with the localized key
+      dataStore.set({ path: '/fr/data/articles.json', schema: 'articles' }, articles)
+
+      const store = new EntityStore({ dataStore })
+      const website = {
+        getActiveLocale: () => 'fr',
+        getDefaultLocale: () => 'en',
+        config: {},
+        dataStore,
+      }
+      const page = makePage({ fetch: fetchConfig })
+      const block = makeBlock({ page, website })
+      const meta = { inheritData: true }
+
+      const result = store.resolve(block, meta)
+      expect(result.status).toBe('ready')
+      expect(result.data.articles).toEqual(articles)
     })
 
     it('fetches multiple schemas in parallel', async () => {

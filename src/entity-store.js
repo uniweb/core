@@ -41,6 +41,27 @@ export default class EntityStore {
   }
 
   /**
+   * Return a localized copy of a fetch config for collection data.
+   * For non-default locales, prepends /{locale} to /data/ paths so the
+   * client fetches the translated JSON (e.g. /fr/data/articles.json).
+   *
+   * @param {Object} cfg - Fetch config
+   * @param {import('./website.js').default|null} website
+   * @returns {Object} Localized config (or original if no change needed)
+   */
+  _localizeConfig(cfg, website) {
+    if (!cfg.path || !website) return cfg
+
+    const locale = website.getActiveLocale()
+    const defaultLocale = website.getDefaultLocale()
+    if (!locale || locale === defaultLocale) return cfg
+
+    if (!cfg.path.startsWith('/data/')) return cfg
+
+    return { ...cfg, path: `/${locale}${cfg.path}` }
+  }
+
+  /**
    * Walk the hierarchy to find fetch configs for requested schemas.
    * Order: block.fetch → page.fetch → parent.fetch → site config.fetch
    * First match per schema wins. Only walks one parent level (auto-wiring).
@@ -77,6 +98,8 @@ export default class EntityStore {
       sources.push(siteFetch)
     }
 
+    const website = block.website
+
     for (const source of sources) {
       // Normalize: single config or array of configs
       const configList = Array.isArray(source) ? source : [source]
@@ -86,7 +109,7 @@ export default class EntityStore {
         if (configs.has(cfg.schema)) continue // first match wins
 
         if (collectAll || requested.includes(cfg.schema)) {
-          configs.set(cfg.schema, cfg)
+          configs.set(cfg.schema, this._localizeConfig(cfg, website))
         }
       }
     }
