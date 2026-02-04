@@ -16,6 +16,7 @@ export default class Uniweb {
     this.foundation = null // The loaded foundation module
     this.foundationConfig = {} // Configuration from foundation (capabilities)
     this.meta = {} // Per-component runtime metadata (from meta.js)
+    this.extensions = [] // Array of { foundation, meta } objects
     this.language = 'en'
 
     // Icon resolver: (library, name) => Promise<string|null>
@@ -68,12 +69,29 @@ export default class Uniweb {
   }
 
   /**
+   * Register an extension (secondary foundation)
+   * @param {Object} foundation - The loaded ESM extension module
+   */
+  registerExtension(foundation) {
+    const meta = foundation.meta || {}
+    this.extensions.push({ foundation, meta })
+  }
+
+  /**
    * Get runtime metadata for a component
    * @param {string} componentName
    * @returns {Object|null} Meta with defaults, context, initialState, background, data
    */
   getComponentMeta(componentName) {
-    return this.meta[componentName] || null
+    const primary = this.meta[componentName]
+    if (primary) return primary
+
+    for (const ext of this.extensions) {
+      const meta = ext.meta[componentName]
+      if (meta) return meta
+    }
+
+    return null
   }
 
   /**
@@ -82,7 +100,7 @@ export default class Uniweb {
    * @returns {Object} Default values (empty object if none)
    */
   getComponentDefaults(componentName) {
-    return this.meta[componentName]?.defaults || {}
+    return this.getComponentMeta(componentName)?.defaults || {}
   }
 
   /**
@@ -96,8 +114,17 @@ export default class Uniweb {
       return undefined
     }
 
-    // Look in components object first, then direct access (named export)
-    return this.foundation.components?.[name] || this.foundation[name]
+    // Primary foundation first
+    const primary = this.foundation.components?.[name] || this.foundation[name]
+    if (primary) return primary
+
+    // Fall through to extensions (declared order)
+    for (const ext of this.extensions) {
+      const component = ext.foundation.components?.[name] || ext.foundation[name]
+      if (component) return component
+    }
+
+    return undefined
   }
 
   /**
@@ -105,14 +132,23 @@ export default class Uniweb {
    * @returns {string[]}
    */
   listComponents() {
-    if (!this.foundation) return []
+    const names = new Set()
 
-    // Use components object if available
-    if (this.foundation.components) {
-      return Object.keys(this.foundation.components)
+    if (this.foundation?.components) {
+      for (const name of Object.keys(this.foundation.components)) {
+        names.add(name)
+      }
     }
 
-    return []
+    for (const ext of this.extensions) {
+      if (ext.foundation.components) {
+        for (const name of Object.keys(ext.foundation.components)) {
+          names.add(name)
+        }
+      }
+    }
+
+    return [...names]
   }
 
   /**
