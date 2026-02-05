@@ -467,7 +467,7 @@ export default class Website {
    * Get default block type from foundation config
    */
   getDefaultBlockType() {
-    return globalThis.uniweb?.foundationConfig?.defaultType || 'Section'
+    return globalThis.uniweb?.foundationConfig?.defaultSection || 'Section'
   }
 
   // ─────────────────────────────────────────────────────────────────
