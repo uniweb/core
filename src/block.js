@@ -8,16 +8,13 @@
 import { parseContent as parseSemanticContent } from '@uniweb/semantic-parser'
 
 export default class Block {
-  constructor(blockData, id) {
+  constructor(blockData, id, page) {
     this.id = id
     this.stableId = blockData.stableId || null // Stable section ID for scroll targeting (from filename or frontmatter)
-    // 'type' matches frontmatter convention; 'component' supported for backwards compatibility
-    this.type = blockData.type || blockData.component || 'Section'
+    this.page = page
+    this.website = page.website
+    this.type = blockData.type || this.website.getDefaultBlockType()
     this.Component = null
-
-    // Back-references (set by Page when creating blocks)
-    this.page = null
-    this.website = null
 
     // Content structure
     // The content can be:
@@ -77,7 +74,7 @@ export default class Block {
 
     // Child blocks (subsections)
     this.childBlocks = blockData.subsections
-      ? blockData.subsections.map((block, i) => new Block(block, `${id}_${i}`))
+      ? blockData.subsections.map((block, i) => new Block(block, `${id}_${i}`, this.page))
       : []
 
     // Fetch configuration (from section frontmatter)

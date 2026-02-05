@@ -18,12 +18,12 @@ export default class Website {
     this.description = config.description || ''
     this.url = config.url || ''
 
-    // Store layout panels (header, footer, left, right)
-    // These come from top-level properties set by content-collector
-    this.headerPage = header || null
-    this.footerPage = footer || null
-    this.leftPage = left || null
-    this.rightPage = right || null
+    // Layout panels as Page objects (header, footer, left, right)
+    // They build their own blocks lazily, just like regular pages
+    this.headerPage = header ? new Page(header, 'header', this) : null
+    this.footerPage = footer ? new Page(footer, 'footer', this) : null
+    this.leftPage = left ? new Page(left, 'left', this) : null
+    this.rightPage = right ? new Page(right, 'right', this) : null
 
     // Store 404 page (for SPA routing)
     // Convention: pages/404/ directory
@@ -44,8 +44,7 @@ export default class Website {
     this._dynamicPageCache = new Map()
 
     this.pages = regularPages.map(
-      (page, index) =>
-        new Page(page, index, this, this.headerPage, this.footerPage, this.leftPage, this.rightPage)
+      (page, index) => new Page(page, index, this)
     )
 
     // Build parent-child relationships based on route structure
@@ -416,15 +415,7 @@ export default class Website {
     }
 
     // Create the page instance
-    const dynamicPage = new Page(
-      pageData,
-      `dynamic-${concreteRoute}`,
-      this,
-      this.headerPage,
-      this.footerPage,
-      this.leftPage,
-      this.rightPage
-    )
+    const dynamicPage = new Page(pageData, `dynamic-${concreteRoute}`, this)
 
     // Copy parent reference from template
     dynamicPage.parent = templatePage.parent
@@ -470,6 +461,33 @@ export default class Website {
    */
   getRemoteLayout() {
     return globalThis.uniweb?.foundationConfig?.Layout || null
+  }
+
+  /**
+   * Get default block type from foundation config
+   */
+  getDefaultBlockType() {
+    return globalThis.uniweb?.foundationConfig?.defaultType || 'Section'
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Layout Blocks (from layout panel pages)
+  // ─────────────────────────────────────────────────────────────────
+
+  getHeaderBlocks() {
+    return this.headerPage?.bodyBlocks || null
+  }
+
+  getFooterBlocks() {
+    return this.footerPage?.bodyBlocks || null
+  }
+
+  getLeftBlocks() {
+    return this.leftPage?.bodyBlocks || null
+  }
+
+  getRightBlocks() {
+    return this.rightPage?.bodyBlocks || null
   }
 
   /**

@@ -8,15 +8,7 @@
 import Block from './block.js'
 
 export default class Page {
-  constructor(
-    pageData,
-    id,
-    website,
-    pageHeader,
-    pageFooter,
-    pageLeft,
-    pageRight,
-  ) {
+  constructor(pageData, id, website) {
     this.id = id
     this.stableId = pageData.id || null // Stable page ID for page: links (from page.yml)
     this.route = pageData.route
@@ -77,14 +69,25 @@ export default class Page {
     this.versionMeta = pageData.versionMeta || null // { versions, latestId }
     this.versionScope = pageData.versionScope || null // The route where versioning starts
 
-    // Build block groups for all layout areas
-    this.pageBlocks = this.buildPageBlocks(
-      pageData.sections,
-      pageHeader?.sections,
-      pageFooter?.sections,
-      pageLeft?.sections,
-      pageRight?.sections,
-    )
+    // Store raw section data for lazy block building
+    // Blocks are created on first access (when page is rendered), not during Website init
+    // This ensures foundationConfig is available for getDefaultBlockType()
+    // Layout panels (header, footer, left, right) are shared at Website level
+    this._bodySections = pageData.sections
+    this._bodyBlocks = null
+  }
+
+  /**
+   * Lazy getter for body blocks
+   * Blocks are built on first access, ensuring foundation is loaded
+   */
+  get bodyBlocks() {
+    if (!this._bodyBlocks) {
+      this._bodyBlocks = (this._bodySections || []).map(
+        (section, index) => new Block(section, index, this)
+      )
+    }
+    return this._bodyBlocks
   }
 
   /**
@@ -141,65 +144,17 @@ export default class Page {
   }
 
   /**
-   * Build the page block structure for all layout areas.
-   * Each area can have multiple sections/blocks.
-   *
-   * @param {Array} body - Body sections from page content
-   * @param {Array} header - Header sections from @header page
-   * @param {Array} footer - Footer sections from @footer page
-   * @param {Array} left - Left panel sections from @left page
-   * @param {Array} right - Right panel sections from @right page
-   * @returns {Object} Block groups for each layout area
-   */
-  buildPageBlocks(body, header, footer, left, right) {
-    const buildBlocks = (sections, prefix) => {
-      if (!sections || sections.length === 0) return null
-      return sections.map((section, index) => {
-        const block = new Block(section, `${prefix}-${index}`)
-        this.initBlockReferences(block)
-        return block
-      })
-    }
-
-    const bodyBlocks = (body || []).map((section, index) => {
-      const block = new Block(section, index)
-      this.initBlockReferences(block)
-      return block
-    })
-
-    return {
-      header: buildBlocks(header, 'header'),
-      body: bodyBlocks,
-      footer: buildBlocks(footer, 'footer'),
-      left: buildBlocks(left, 'left'),
-      right: buildBlocks(right, 'right'),
-    }
-  }
-
-  /**
-   * Initialize block back-references to page and website.
-   * Also recursively sets references for child blocks.
-   *
-   * @param {Block} block - The block to initialize
-   */
-  initBlockReferences(block) {
-    block.page = this
-    block.website = this.website
-
-    // Recursively set references for child blocks
-    if (block.childBlocks?.length) {
-      for (const childBlock of block.childBlocks) {
-        this.initBlockReferences(childBlock)
-      }
-    }
-  }
-
-  /**
    * Get all block groups (for Layout component)
    * @returns {Object} { header, body, footer, left, right }
    */
   getBlockGroups() {
-    return this.pageBlocks
+    return {
+      header: this.getHeaderBlocks(),
+      body: this.bodyBlocks,
+      footer: this.getFooterBlocks(),
+      left: this.getLeftBlocks(),
+      right: this.getRightBlocks(),
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────
@@ -238,8 +193,7 @@ export default class Page {
    * @returns {Object|null} First body block's info or null
    */
   getFirstBodyBlockInfo() {
-    const bodyBlocks = this.pageBlocks.body
-    return bodyBlocks?.[0]?.getBlockInfo() || null
+    return this.bodyBlocks?.[0]?.getBlockInfo() || null
   }
 
   /**
@@ -249,62 +203,58 @@ export default class Page {
    */
   getPageBlocks() {
     const blocks = []
+    const headerBlocks = this.getHeaderBlocks()
+    const footerBlocks = this.getFooterBlocks()
 
-    if (this.hasHeader() && this.pageBlocks.header) {
-      blocks.push(...this.pageBlocks.header)
-    }
-
-    blocks.push(...this.pageBlocks.body)
-
-    if (this.hasFooter() && this.pageBlocks.footer) {
-      blocks.push(...this.pageBlocks.footer)
-    }
+    if (headerBlocks) blocks.push(...headerBlocks)
+    blocks.push(...this.bodyBlocks)
+    if (footerBlocks) blocks.push(...footerBlocks)
 
     return blocks
   }
 
   /**
-   * Get just body blocks
+   * Get body blocks
    * @returns {Block[]}
    */
   getBodyBlocks() {
-    return this.pageBlocks.body
+    return this.bodyBlocks
   }
 
   /**
-   * Get header blocks (respects layout preference)
+   * Get header blocks (respects layout preference, delegates to website)
    * @returns {Block[]|null}
    */
   getHeaderBlocks() {
     if (!this.hasHeader()) return null
-    return this.pageBlocks.header
+    return this.website.getHeaderBlocks()
   }
 
   /**
-   * Get footer blocks (respects layout preference)
+   * Get footer blocks (respects layout preference, delegates to website)
    * @returns {Block[]|null}
    */
   getFooterBlocks() {
     if (!this.hasFooter()) return null
-    return this.pageBlocks.footer
+    return this.website.getFooterBlocks()
   }
 
   /**
-   * Get left panel blocks (respects layout preference)
+   * Get left panel blocks (respects layout preference, delegates to website)
    * @returns {Block[]|null}
    */
   getLeftBlocks() {
     if (!this.hasLeftPanel()) return null
-    return this.pageBlocks.left
+    return this.website.getLeftBlocks()
   }
 
   /**
-   * Get right panel blocks (respects layout preference)
+   * Get right panel blocks (respects layout preference, delegates to website)
    * @returns {Block[]|null}
    */
   getRightBlocks() {
     if (!this.hasRightPanel()) return null
-    return this.pageBlocks.right
+    return this.website.getRightBlocks()
   }
 
   /**
@@ -313,7 +263,7 @@ export default class Page {
    * @deprecated Use getHeaderBlocks() instead
    */
   getHeader() {
-    return this.pageBlocks.header?.[0] || null
+    return this.getHeaderBlocks()?.[0] || null
   }
 
   /**
@@ -322,7 +272,7 @@ export default class Page {
    * @deprecated Use getFooterBlocks() instead
    */
   getFooter() {
-    return this.pageBlocks.footer?.[0] || null
+    return this.getFooterBlocks()?.[0] || null
   }
 
   /**
@@ -330,11 +280,11 @@ export default class Page {
    */
   resetBlockStates() {
     const allBlocks = [
-      ...(this.pageBlocks.header || []),
-      ...this.pageBlocks.body,
-      ...(this.pageBlocks.footer || []),
-      ...(this.pageBlocks.left || []),
-      ...(this.pageBlocks.right || []),
+      ...(this.getHeaderBlocks() || []),
+      ...this.bodyBlocks,
+      ...(this.getFooterBlocks() || []),
+      ...(this.getLeftBlocks() || []),
+      ...(this.getRightBlocks() || []),
     ]
 
     for (const block of allBlocks) {
@@ -435,7 +385,7 @@ export default class Page {
    * @returns {boolean}
    */
   hasContent() {
-    return this.pageBlocks.body.length > 0
+    return this.bodyBlocks.length > 0
   }
 
   // ─────────────────────────────────────────────────────────────────
