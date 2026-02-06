@@ -11,15 +11,30 @@ import singularize from './singularize.js'
 
 export default class Website {
   constructor(websiteData) {
-    const { pages = [], theme = {}, config = {}, header, footer, left, right, notFound, versionedScopes = {} } = websiteData
+    const { pages = [], theme = {}, config = {}, layouts, header, footer, left, right, notFound, versionedScopes = {} } = websiteData
 
     // Site metadata
     this.name = config.name || ''
     this.description = config.description || ''
     this.url = config.url || ''
 
+    // Named layout section sets (when site has layout subdirectories)
+    if (layouts && typeof layouts === 'object') {
+      this._layoutSets = {}
+      for (const [name, panelData] of Object.entries(layouts)) {
+        this._layoutSets[name] = {
+          headerPage: panelData.header ? new Page(panelData.header, `layout-${name}-header`, this) : null,
+          footerPage: panelData.footer ? new Page(panelData.footer, `layout-${name}-footer`, this) : null,
+          leftPage: panelData.left ? new Page(panelData.left, `layout-${name}-left`, this) : null,
+          rightPage: panelData.right ? new Page(panelData.right, `layout-${name}-right`, this) : null,
+        }
+      }
+    } else {
+      this._layoutSets = null
+    }
+
     // Layout panels as Page objects (header, footer, left, right)
-    // They build their own blocks lazily, just like regular pages
+    // Flat fields for backward compatibility (used when no named layouts)
     this.headerPage = header ? new Page(header, 'header', this) : null
     this.footerPage = footer ? new Page(footer, 'footer', this) : null
     this.leftPage = left ? new Page(left, 'left', this) : null
@@ -458,9 +473,25 @@ export default class Website {
 
   /**
    * Get remote layout component from foundation config
+   * @param {string|null} layoutName - Named layout to look up (null = default)
    */
-  getRemoteLayout() {
-    return globalThis.uniweb?.foundationConfig?.Layout || null
+  getRemoteLayout(layoutName) {
+    const config = globalThis.uniweb?.foundationConfig
+    if (!config) return null
+    // Named layouts map
+    if (layoutName && config.layouts?.[layoutName]) {
+      return config.layouts[layoutName]
+    }
+    // Single Layout (backward compat)
+    return config.Layout || null
+  }
+
+  /**
+   * Get default layout name from foundation config
+   * @returns {string|null}
+   */
+  getDefaultLayoutName() {
+    return globalThis.uniweb?.foundationConfig?.defaultLayout || null
   }
 
   /**
@@ -474,19 +505,31 @@ export default class Website {
   // Layout Blocks (from layout panel pages)
   // ─────────────────────────────────────────────────────────────────
 
-  getHeaderBlocks() {
+  getHeaderBlocks(layoutName) {
+    if (layoutName && this._layoutSets?.[layoutName]) {
+      return this._layoutSets[layoutName].headerPage?.bodyBlocks || null
+    }
     return this.headerPage?.bodyBlocks || null
   }
 
-  getFooterBlocks() {
+  getFooterBlocks(layoutName) {
+    if (layoutName && this._layoutSets?.[layoutName]) {
+      return this._layoutSets[layoutName].footerPage?.bodyBlocks || null
+    }
     return this.footerPage?.bodyBlocks || null
   }
 
-  getLeftBlocks() {
+  getLeftBlocks(layoutName) {
+    if (layoutName && this._layoutSets?.[layoutName]) {
+      return this._layoutSets[layoutName].leftPage?.bodyBlocks || null
+    }
     return this.leftPage?.bodyBlocks || null
   }
 
-  getRightBlocks() {
+  getRightBlocks(layoutName) {
+    if (layoutName && this._layoutSets?.[layoutName]) {
+      return this._layoutSets[layoutName].rightPage?.bodyBlocks || null
+    }
     return this.rightPage?.bodyBlocks || null
   }
 

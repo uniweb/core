@@ -26,8 +26,9 @@ export default class Page {
     this.hideInHeader = pageData.hideInHeader || false
     this.hideInFooter = pageData.hideInFooter || false
 
-    // Layout options (per-page overrides for header/footer/panels)
+    // Layout options (named layout + per-page overrides for header/footer/panels)
     this.layout = {
+      name: pageData.layout?.name || null,
       header: pageData.layout?.header !== false,
       footer: pageData.layout?.footer !== false,
       leftPanel: pageData.layout?.leftPanel !== false,
@@ -144,6 +145,15 @@ export default class Page {
   }
 
   /**
+   * Get the resolved layout name for this page.
+   * Cascade: page.layout.name > foundation defaultLayout > null
+   * @returns {string|null}
+   */
+  getLayoutName() {
+    return this.layout.name || this.website?.getDefaultLayoutName() || null
+  }
+
+  /**
    * Get all block groups (for Layout component)
    * @returns {Object} { header, body, footer, left, right }
    */
@@ -227,7 +237,7 @@ export default class Page {
    */
   getHeaderBlocks() {
     if (!this.hasHeader()) return null
-    return this.website.getHeaderBlocks()
+    return this.website.getHeaderBlocks(this.getLayoutName())
   }
 
   /**
@@ -236,7 +246,7 @@ export default class Page {
    */
   getFooterBlocks() {
     if (!this.hasFooter()) return null
-    return this.website.getFooterBlocks()
+    return this.website.getFooterBlocks(this.getLayoutName())
   }
 
   /**
@@ -245,7 +255,7 @@ export default class Page {
    */
   getLeftBlocks() {
     if (!this.hasLeftPanel()) return null
-    return this.website.getLeftBlocks()
+    return this.website.getLeftBlocks(this.getLayoutName())
   }
 
   /**
@@ -254,7 +264,7 @@ export default class Page {
    */
   getRightBlocks() {
     if (!this.hasRightPanel()) return null
-    return this.website.getRightBlocks()
+    return this.website.getRightBlocks(this.getLayoutName())
   }
 
   /**
