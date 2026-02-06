@@ -26,13 +26,11 @@ export default class Page {
     this.hideInHeader = pageData.hideInHeader || false
     this.hideInFooter = pageData.hideInFooter || false
 
-    // Layout options (named layout + per-page overrides for header/footer/panels)
+    // Layout options (named layout + per-page overrides)
     this.layout = {
       name: pageData.layout?.name || null,
-      header: pageData.layout?.header !== false,
-      footer: pageData.layout?.footer !== false,
-      leftPanel: pageData.layout?.leftPanel !== false,
-      rightPanel: pageData.layout?.rightPanel !== false,
+      hide: pageData.layout?.hide || [],
+      params: pageData.layout?.params || {},
     }
 
     // SEO configuration
@@ -155,15 +153,12 @@ export default class Page {
 
   /**
    * Get all block groups (for Layout component)
-   * @returns {Object} { header, body, footer, left, right }
+   * @returns {Object} { body, ...areas }
    */
   getBlockGroups() {
     return {
-      header: this.getHeaderBlocks(),
       body: this.bodyBlocks,
-      footer: this.getFooterBlocks(),
-      left: this.getLeftBlocks(),
-      right: this.getRightBlocks(),
+      ...this.getLayoutAreas(),
     }
   }
 
@@ -208,13 +203,14 @@ export default class Page {
 
   /**
    * Get all blocks (header, body, footer) as flat array
-   * Respects page layout preferences (hasHeader, hasFooter, etc.)
+   * Respects page layout preferences (hide list)
    * @returns {Block[]}
    */
   getPageBlocks() {
     const blocks = []
-    const headerBlocks = this.getHeaderBlocks()
-    const footerBlocks = this.getFooterBlocks()
+    const areas = this.getLayoutAreas()
+    const headerBlocks = areas.header
+    const footerBlocks = areas.footer
 
     if (headerBlocks) blocks.push(...headerBlocks)
     blocks.push(...this.bodyBlocks)
@@ -232,69 +228,46 @@ export default class Page {
   }
 
   /**
-   * Get header blocks (respects layout preference, delegates to website)
+   * Get blocks for a specific area, respecting hide list
+   * @param {string} areaName - Area name (e.g., 'header', 'footer', 'left')
    * @returns {Block[]|null}
    */
-  getHeaderBlocks() {
-    if (!this.hasHeader()) return null
-    return this.website.getHeaderBlocks(this.getLayoutName())
+  getAreaBlocks(areaName) {
+    if (this.layout.hide.includes(areaName)) return null
+    return this.website.getAreaBlocks(areaName, this.getLayoutName())
   }
 
   /**
-   * Get footer blocks (respects layout preference, delegates to website)
-   * @returns {Block[]|null}
+   * Get all areas for this page's layout, excluding hidden areas
+   * @returns {Object} Map of areaName -> Block[]
    */
-  getFooterBlocks() {
-    if (!this.hasFooter()) return null
-    return this.website.getFooterBlocks(this.getLayoutName())
+  getLayoutAreas() {
+    const allAreas = this.website.getLayoutAreas(this.getLayoutName())
+    const result = {}
+    for (const [name, blocks] of Object.entries(allAreas)) {
+      if (!this.layout.hide.includes(name)) {
+        result[name] = blocks
+      }
+    }
+    return result
   }
 
   /**
-   * Get left panel blocks (respects layout preference, delegates to website)
-   * @returns {Block[]|null}
+   * Get layout params for this page (merged with defaults at render time)
+   * @returns {Object}
    */
-  getLeftBlocks() {
-    if (!this.hasLeftPanel()) return null
-    return this.website.getLeftBlocks(this.getLayoutName())
-  }
-
-  /**
-   * Get right panel blocks (respects layout preference, delegates to website)
-   * @returns {Block[]|null}
-   */
-  getRightBlocks() {
-    if (!this.hasRightPanel()) return null
-    return this.website.getRightBlocks(this.getLayoutName())
-  }
-
-  /**
-   * Get header block (legacy - returns first block)
-   * @returns {Block|null}
-   * @deprecated Use getHeaderBlocks() instead
-   */
-  getHeader() {
-    return this.getHeaderBlocks()?.[0] || null
-  }
-
-  /**
-   * Get footer block (legacy - returns first block)
-   * @returns {Block|null}
-   * @deprecated Use getFooterBlocks() instead
-   */
-  getFooter() {
-    return this.getFooterBlocks()?.[0] || null
+  getLayoutParams() {
+    return this.layout.params
   }
 
   /**
    * Reset block states (for scroll restoration)
    */
   resetBlockStates() {
+    const areas = this.getLayoutAreas()
     const allBlocks = [
-      ...(this.getHeaderBlocks() || []),
       ...this.bodyBlocks,
-      ...(this.getFooterBlocks() || []),
-      ...(this.getLeftBlocks() || []),
-      ...(this.getRightBlocks() || []),
+      ...Object.values(areas).flat(),
     ]
 
     for (const block of allBlocks) {
@@ -348,38 +321,6 @@ export default class Page {
    */
   showInFooter() {
     return !this.hidden && !this.hideInFooter
-  }
-
-  /**
-   * Check if header should be rendered on this page
-   * @returns {boolean}
-   */
-  hasHeader() {
-    return this.layout.header
-  }
-
-  /**
-   * Check if footer should be rendered on this page
-   * @returns {boolean}
-   */
-  hasFooter() {
-    return this.layout.footer
-  }
-
-  /**
-   * Check if left panel should be rendered on this page
-   * @returns {boolean}
-   */
-  hasLeftPanel() {
-    return this.layout.leftPanel
-  }
-
-  /**
-   * Check if right panel should be rendered on this page
-   * @returns {boolean}
-   */
-  hasRightPanel() {
-    return this.layout.rightPanel
   }
 
   /**

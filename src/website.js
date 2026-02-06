@@ -11,34 +11,25 @@ import singularize from './singularize.js'
 
 export default class Website {
   constructor(websiteData) {
-    const { pages = [], theme = {}, config = {}, layouts, header, footer, left, right, notFound, versionedScopes = {} } = websiteData
+    const { pages = [], theme = {}, config = {}, layouts, notFound, versionedScopes = {} } = websiteData
 
     // Site metadata
     this.name = config.name || ''
     this.description = config.description || ''
     this.url = config.url || ''
 
-    // Named layout section sets (when site has layout subdirectories)
+    // General area storage: { layoutName: { areaName: Page } }
+    this._layoutSets = {}
     if (layouts && typeof layouts === 'object') {
-      this._layoutSets = {}
-      for (const [name, panelData] of Object.entries(layouts)) {
-        this._layoutSets[name] = {
-          headerPage: panelData.header ? new Page(panelData.header, `layout-${name}-header`, this) : null,
-          footerPage: panelData.footer ? new Page(panelData.footer, `layout-${name}-footer`, this) : null,
-          leftPage: panelData.left ? new Page(panelData.left, `layout-${name}-left`, this) : null,
-          rightPage: panelData.right ? new Page(panelData.right, `layout-${name}-right`, this) : null,
+      for (const [name, areaData] of Object.entries(layouts)) {
+        this._layoutSets[name] = {}
+        for (const [areaName, pageData] of Object.entries(areaData)) {
+          if (pageData) {
+            this._layoutSets[name][areaName] = new Page(pageData, `layout-${name}-${areaName}`, this)
+          }
         }
       }
-    } else {
-      this._layoutSets = null
     }
-
-    // Layout panels as Page objects (header, footer, left, right)
-    // Flat fields for backward compatibility (used when no named layouts)
-    this.headerPage = header ? new Page(header, 'header', this) : null
-    this.footerPage = footer ? new Page(footer, 'footer', this) : null
-    this.leftPage = left ? new Page(left, 'left', this) : null
-    this.rightPage = right ? new Page(right, 'right', this) : null
 
     // Store 404 page (for SPA routing)
     // Convention: pages/404/ directory
@@ -477,13 +468,11 @@ export default class Website {
    */
   getRemoteLayout(layoutName) {
     const config = globalThis.uniweb?.foundationConfig
-    if (!config) return null
-    // Named layouts map
-    if (layoutName && config.layouts?.[layoutName]) {
+    if (!config?.layouts) return null
+    if (layoutName && config.layouts[layoutName]) {
       return config.layouts[layoutName]
     }
-    // Single Layout (backward compat)
-    return config.Layout || null
+    return null
   }
 
   /**
@@ -502,35 +491,52 @@ export default class Website {
   }
 
   // ─────────────────────────────────────────────────────────────────
-  // Layout Blocks (from layout panel pages)
+  // Layout Areas (general named areas)
   // ─────────────────────────────────────────────────────────────────
 
-  getHeaderBlocks(layoutName) {
-    if (layoutName && this._layoutSets?.[layoutName]) {
-      return this._layoutSets[layoutName].headerPage?.bodyBlocks || null
+  /**
+   * Get blocks for a specific area, with layout name resolution
+   * @param {string} areaName - Area name (e.g., 'header', 'footer', 'left', 'sidebar')
+   * @param {string} [layoutName] - Named layout to look in (falls back to 'default')
+   * @returns {Block[]|null}
+   */
+  getAreaBlocks(areaName, layoutName) {
+    if (layoutName && this._layoutSets[layoutName]) {
+      return this._layoutSets[layoutName][areaName]?.bodyBlocks || null
     }
-    return this.headerPage?.bodyBlocks || null
+    // Fallback to 'default' layout
+    if (this._layoutSets.default) {
+      return this._layoutSets.default[areaName]?.bodyBlocks || null
+    }
+    return null
   }
 
-  getFooterBlocks(layoutName) {
-    if (layoutName && this._layoutSets?.[layoutName]) {
-      return this._layoutSets[layoutName].footerPage?.bodyBlocks || null
+  /**
+   * Get all areas for a layout as { areaName: Block[] }
+   * @param {string} [layoutName] - Named layout (falls back to 'default')
+   * @returns {Object} Map of areaName -> Block[]
+   */
+  getLayoutAreas(layoutName) {
+    const setName = layoutName || 'default'
+    const layoutSet = this._layoutSets[setName] || this._layoutSets.default
+    if (!layoutSet) return {}
+
+    const areas = {}
+    for (const [areaName, page] of Object.entries(layoutSet)) {
+      if (page?.bodyBlocks) {
+        areas[areaName] = page.bodyBlocks
+      }
     }
-    return this.footerPage?.bodyBlocks || null
+    return areas
   }
 
-  getLeftBlocks(layoutName) {
-    if (layoutName && this._layoutSets?.[layoutName]) {
-      return this._layoutSets[layoutName].leftPage?.bodyBlocks || null
-    }
-    return this.leftPage?.bodyBlocks || null
-  }
-
-  getRightBlocks(layoutName) {
-    if (layoutName && this._layoutSets?.[layoutName]) {
-      return this._layoutSets[layoutName].rightPage?.bodyBlocks || null
-    }
-    return this.rightPage?.bodyBlocks || null
+  /**
+   * Get layout metadata from foundation config
+   * @param {string} layoutName - Layout name
+   * @returns {Object|null} Layout meta { areas, transitions, defaults }
+   */
+  getLayoutMeta(layoutName) {
+    return globalThis.uniweb?.foundationConfig?.layoutMeta?.[layoutName] || null
   }
 
   /**
