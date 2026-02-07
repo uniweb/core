@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from '@jest/globals'
 import Uniweb from '../src/uniweb.js'
 
-// Minimal foundation mock
+// Minimal foundation mock — components as direct properties, meta under default
 function mockFoundation(components, meta = {}) {
-  return { components, meta }
+  return { ...components, default: { meta } }
 }
 
 describe('Uniweb', () => {

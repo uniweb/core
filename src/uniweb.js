@@ -62,9 +62,9 @@ export default class Uniweb {
   setFoundation(foundation) {
     this.foundation = foundation
 
-    // Store per-component metadata if present
-    if (foundation.meta) {
-      this.meta = foundation.meta
+    // Store per-component metadata if present (lives under default export)
+    if (foundation.default?.meta) {
+      this.meta = foundation.default.meta
     }
   }
 
@@ -73,7 +73,7 @@ export default class Uniweb {
    * @param {Object} foundation - The loaded ESM extension module
    */
   registerExtension(foundation) {
-    const meta = foundation.meta || {}
+    const meta = foundation.default?.meta || {}
     this.extensions.push({ foundation, meta })
   }
 
@@ -114,13 +114,13 @@ export default class Uniweb {
       return undefined
     }
 
-    // Primary foundation first
-    const primary = this.foundation.components?.[name] || this.foundation[name]
+    // Primary foundation first (components are named exports)
+    const primary = this.foundation[name]
     if (primary) return primary
 
     // Fall through to extensions (declared order)
     for (const ext of this.extensions) {
-      const component = ext.foundation.components?.[name] || ext.foundation[name]
+      const component = ext.foundation[name]
       if (component) return component
     }
 
@@ -134,17 +134,15 @@ export default class Uniweb {
   listComponents() {
     const names = new Set()
 
-    if (this.foundation?.components) {
-      for (const name of Object.keys(this.foundation.components)) {
-        names.add(name)
+    if (this.foundation) {
+      for (const name of Object.keys(this.foundation)) {
+        if (name !== 'default') names.add(name)
       }
     }
 
     for (const ext of this.extensions) {
-      if (ext.foundation.components) {
-        for (const name of Object.keys(ext.foundation.components)) {
-          names.add(name)
-        }
+      for (const name of Object.keys(ext.foundation)) {
+        if (name !== 'default') names.add(name)
       }
     }
 
