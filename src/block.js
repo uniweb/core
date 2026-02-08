@@ -77,6 +77,23 @@ export default class Block {
       ? blockData.subsections.map((block, i) => new Block(block, `${id}_${i}`, this.page))
       : []
 
+    // Inline child blocks (from @ component references in markdown)
+    if (blockData.inlineChildren?.length > 0) {
+      const start = this.childBlocks.length
+      for (let i = 0; i < blockData.inlineChildren.length; i++) {
+        const ref = blockData.inlineChildren[i]
+        const child = new Block(
+          { type: ref.type, params: ref.params || {}, content: {}, stableId: ref.refId },
+          `${id}_${start + i}`,
+          this.page
+        )
+        child.inline = true
+        child.refId = ref.refId
+        child.alt = ref.alt || ''
+        this.childBlocks.push(child)
+      }
+    }
+
     // Fetch configuration (from section frontmatter)
     // Supports local files (path) or remote URLs (url)
     this.fetch = blockData.fetch || null
@@ -263,6 +280,15 @@ export default class Block {
    */
   getBlockProperties() {
     return this.properties
+  }
+
+  /**
+   * Get an inline child block by its refId
+   * @param {string} refId - The reference ID (e.g., 'inline_0')
+   * @returns {Block|null}
+   */
+  getInlineChild(refId) {
+    return this.childBlocks.find(c => c.refId === refId) || null
   }
 
   /**
