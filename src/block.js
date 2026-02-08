@@ -77,20 +77,26 @@ export default class Block {
       ? blockData.subsections.map((block, i) => new Block(block, `${id}_${i}`, this.page))
       : []
 
-    // Inline child blocks (from @ component references in markdown)
-    if (blockData.inlineChildren?.length > 0) {
-      const start = this.childBlocks.length
-      for (let i = 0; i < blockData.inlineChildren.length; i++) {
-        const ref = blockData.inlineChildren[i]
+    // Insets — inline @-referenced components positioned in content flow
+    this.insets = []
+    const insetData = blockData.insets || blockData.inlineChildren  // backward compat
+    if (insetData?.length > 0) {
+      for (let i = 0; i < insetData.length; i++) {
+        const ref = insetData[i]
+        const description = ref.description || ref.alt || ''
         const child = new Block(
-          { type: ref.type, params: ref.params || {}, content: {}, stableId: ref.refId },
-          `${id}_${start + i}`,
+          {
+            type: ref.type,
+            params: ref.params || {},
+            content: { title: description },
+            stableId: ref.refId,
+          },
+          `${id}_inset_${i}`,
           this.page
         )
         child.inline = true
         child.refId = ref.refId
-        child.alt = ref.alt || ''
-        this.childBlocks.push(child)
+        this.insets.push(child)
       }
     }
 
@@ -283,12 +289,19 @@ export default class Block {
   }
 
   /**
-   * Get an inline child block by its refId
-   * @param {string} refId - The reference ID (e.g., 'inline_0')
+   * Get an inset block by its refId
+   * @param {string} refId - The reference ID (e.g., 'inset_0')
    * @returns {Block|null}
    */
+  getInset(refId) {
+    return this.insets.find(c => c.refId === refId) || null
+  }
+
+  /**
+   * @deprecated Use getInset() instead
+   */
   getInlineChild(refId) {
-    return this.childBlocks.find(c => c.refId === refId) || null
+    return this.getInset(refId)
   }
 
   /**
