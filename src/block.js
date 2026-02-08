@@ -79,11 +79,11 @@ export default class Block {
 
     // Insets — inline @-referenced components positioned in content flow
     this.insets = []
-    const insetData = blockData.insets || blockData.inlineChildren  // backward compat
+    const insetData = blockData.insets
     if (insetData?.length > 0) {
       for (let i = 0; i < insetData.length; i++) {
         const ref = insetData[i]
-        const description = ref.description || ref.alt || ''
+        const description = ref.description || ''
         const child = new Block(
           {
             type: ref.type,
@@ -297,12 +297,6 @@ export default class Block {
     return this.insets.find(c => c.refId === refId) || null
   }
 
-  /**
-   * @deprecated Use getInset() instead
-   */
-  getInlineChild(refId) {
-    return this.getInset(refId)
-  }
 
   /**
    * Get child block renderer from runtime
