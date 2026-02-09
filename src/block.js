@@ -300,7 +300,7 @@ export default class Block {
 
   /**
    * Get child block renderer from runtime.
-   * @deprecated Use `getChildBlockRenderer()` from `@uniweb/kit` instead.
+   * @deprecated Use `ChildBlocks` from `@uniweb/kit` instead.
    */
   getChildBlockRenderer() {
     return globalThis.uniweb.childBlockRenderer
