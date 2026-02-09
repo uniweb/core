@@ -243,6 +243,14 @@ export default class Website {
       if (routeId && !this._pageIdMap.has(routeId)) {
         this._pageIdMap.set(routeId, page)
       }
+      // Folder-name fallback — allows page:home for homepage, page:docs/intro for index pages
+      // Homepage route normalizes to '' (falsy, skipped above), but sourcePath '/home' → 'home' works
+      if (page.sourcePath) {
+        const folderId = page.sourcePath.replace(/^\//, '').replace(/\/$/, '')
+        if (folderId && !this._pageIdMap.has(folderId)) {
+          this._pageIdMap.set(folderId, page)
+        }
+      }
     }
   }
 
