@@ -13,54 +13,52 @@ function mockPage() {
 }
 
 describe('Block', () => {
-  describe('inline children (@ component references)', () => {
-    it('creates child blocks from inlineChildren', () => {
+  describe('insets (@ component references)', () => {
+    it('creates inset blocks from insets data', () => {
       const page = mockPage()
       const blockData = {
         type: 'SplitContent',
         content: {},
-        inlineChildren: [
-          { refId: 'inline_0', type: 'NetworkDiagram', params: { variant: 'compact' }, alt: 'diagram' },
-          { refId: 'inline_1', type: 'Chart', params: {}, alt: null },
+        insets: [
+          { refId: 'inline_0', type: 'NetworkDiagram', params: { variant: 'compact' }, description: 'diagram' },
+          { refId: 'inline_1', type: 'Chart', params: {} },
         ],
       }
 
       const block = new Block(blockData, '1', page)
 
-      expect(block.childBlocks).toHaveLength(2)
-      expect(block.childBlocks[0].inline).toBe(true)
-      expect(block.childBlocks[0].refId).toBe('inline_0')
-      expect(block.childBlocks[0].type).toBe('NetworkDiagram')
-      expect(block.childBlocks[0].alt).toBe('diagram')
-      expect(block.childBlocks[0].properties.variant).toBe('compact')
+      expect(block.insets).toHaveLength(2)
+      expect(block.insets[0].inline).toBe(true)
+      expect(block.insets[0].refId).toBe('inline_0')
+      expect(block.insets[0].type).toBe('NetworkDiagram')
+      expect(block.insets[0].properties.variant).toBe('compact')
 
-      expect(block.childBlocks[1].inline).toBe(true)
-      expect(block.childBlocks[1].refId).toBe('inline_1')
-      expect(block.childBlocks[1].type).toBe('Chart')
-      expect(block.childBlocks[1].alt).toBe('')
+      expect(block.insets[1].inline).toBe(true)
+      expect(block.insets[1].refId).toBe('inline_1')
+      expect(block.insets[1].type).toBe('Chart')
     })
 
-    it('getInlineChild returns correct child by refId', () => {
+    it('getInset returns correct inset by refId', () => {
       const page = mockPage()
       const blockData = {
         type: 'Hero',
         content: {},
-        inlineChildren: [
-          { refId: 'inline_0', type: 'Widget', params: {}, alt: null },
+        insets: [
+          { refId: 'inline_0', type: 'Widget', params: {} },
         ],
       }
 
       const block = new Block(blockData, '1', page)
 
-      const child = block.getInlineChild('inline_0')
-      expect(child).not.toBeNull()
-      expect(child.type).toBe('Widget')
-      expect(child.inline).toBe(true)
+      const inset = block.getInset('inline_0')
+      expect(inset).not.toBeNull()
+      expect(inset.type).toBe('Widget')
+      expect(inset.inline).toBe(true)
 
-      expect(block.getInlineChild('nonexistent')).toBeNull()
+      expect(block.getInset('nonexistent')).toBeNull()
     })
 
-    it('merges inline children with file-based subsections', () => {
+    it('insets are separate from file-based childBlocks', () => {
       const page = mockPage()
       const blockData = {
         type: 'SplitContent',
@@ -68,45 +66,44 @@ describe('Block', () => {
         subsections: [
           { type: 'ChildA', content: {} },
         ],
-        inlineChildren: [
-          { refId: 'inline_0', type: 'ChildB', params: {}, alt: null },
+        insets: [
+          { refId: 'inline_0', type: 'ChildB', params: {} },
         ],
       }
 
       const block = new Block(blockData, '1', page)
 
-      // Should have both file-based and inline children
-      expect(block.childBlocks).toHaveLength(2)
+      // childBlocks has file-based children only
+      expect(block.childBlocks).toHaveLength(1)
       expect(block.childBlocks[0].type).toBe('ChildA')
-      expect(block.childBlocks[0].inline).toBeUndefined()
-      expect(block.childBlocks[1].type).toBe('ChildB')
-      expect(block.childBlocks[1].inline).toBe(true)
+      // insets are separate
+      expect(block.insets).toHaveLength(1)
+      expect(block.insets[0].type).toBe('ChildB')
+      expect(block.insets[0].inline).toBe(true)
     })
 
-    it('inline children have empty content', () => {
+    it('insets have description as title content', () => {
       const page = mockPage()
       const blockData = {
         type: 'Hero',
         content: {},
-        inlineChildren: [
-          { refId: 'inline_0', type: 'Diagram', params: {}, alt: null },
+        insets: [
+          { refId: 'inline_0', type: 'Diagram', params: {}, description: 'Architecture overview' },
         ],
       }
 
       const block = new Block(blockData, '1', page)
-      const child = block.childBlocks[0]
+      const inset = block.insets[0]
 
-      // Inline children receive empty content (plain object pass-through)
-      expect(child.rawContent).toEqual({})
-      expect(child.childBlocks).toHaveLength(0)
+      expect(inset.childBlocks).toHaveLength(0)
     })
 
-    it('no inline children when inlineChildren is absent', () => {
+    it('no insets when insets data is absent', () => {
       const page = mockPage()
       const blockData = { type: 'Hero', content: {} }
 
       const block = new Block(blockData, '1', page)
-      expect(block.childBlocks).toHaveLength(0)
+      expect(block.insets).toHaveLength(0)
     })
   })
 })
