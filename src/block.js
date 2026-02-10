@@ -480,7 +480,8 @@ export default class Block {
       }
 
       // Anything else → CSS color (hex, rgb, hsl, oklch, named color, var())
-      return { mode: 'color', color: raw }
+      // Resolve bare palette refs (e.g. "primary-900" → "var(--primary-900)")
+      return { mode: 'color', color: resolveOverrideValue(raw) }
     }
 
     // Object with explicit mode — pass through
