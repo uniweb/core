@@ -280,31 +280,6 @@ export default class Block {
   }
 
   /**
-   * Get structured block content for components
-   * Returns flat content structure
-   */
-  getBlockContent() {
-    const c = this.parsedContent || {}
-
-    return {
-      pretitle: c.pretitle || '',
-      title: c.title || '',
-      subtitle: c.subtitle || '',
-      description: c.headings?.[0] || '',
-      paragraphs: c.paragraphs || [],
-      images: c.images || [],
-      links: c.links || [],
-      icons: c.icons || [],
-      properties: c.propertyBlocks?.[0] || c.properties || {},
-      videos: c.videos || [],
-      lists: c.lists || [],
-      buttons: c.buttons || [],
-      items: c.items || [],
-      data: c.data || {}
-    }
-  }
-
-  /**
    * Get block properties
    */
   getBlockProperties() {
