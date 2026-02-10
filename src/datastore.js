@@ -25,6 +25,8 @@ export default class DataStore {
     this._cache = new Map()
     this._inflight = new Map()
     this._fetcher = null
+
+    Object.seal(this)
   }
 
   /**

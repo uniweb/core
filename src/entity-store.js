@@ -18,6 +18,8 @@ export default class EntityStore {
    */
   constructor({ dataStore }) {
     this.dataStore = dataStore
+
+    Object.seal(this)
   }
 
   /**

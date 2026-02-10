@@ -113,12 +113,11 @@ export default class Block {
             params: ref.params || {},
             content: { title },
             stableId: ref.refId,
+            refId: ref.refId,
           },
           `${id}_inset_${i}`,
           this.page
         )
-        child.inline = true
-        child.refId = ref.refId
         this.insets.push(child)
       }
     }
@@ -131,6 +130,13 @@ export default class Block {
     // Components check this to show loading UI (spinners, skeletons)
     this.dataLoading = false
 
+    // Whether engine-level background is active (set by BlockRenderer/prerender)
+    // Components check this to skip their own opaque background
+    this.hasBackground = false
+
+    // Inset identity — set on inset blocks for lookup via getInset()
+    this.refId = blockData.refId || null
+
     // Dynamic route context (params from URL matching)
     // Set when accessing a dynamic page like /blog/:slug -> /blog/my-post
     this.dynamicContext = blockData.dynamicContext || null
@@ -142,6 +148,8 @@ export default class Block {
 
     // Context (static, defined per component type)
     this.context = null
+
+    Object.seal(this)
   }
 
   /**

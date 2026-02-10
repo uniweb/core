@@ -29,6 +29,8 @@ export default class Uniweb {
 
     // Initialize analytics (disabled by default, configure via site config)
     this.analytics = new Analytics(configData.analytics || {})
+
+    Object.seal(this)
   }
 
   /**

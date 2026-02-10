@@ -74,6 +74,8 @@ export default class Page {
     // Layout panels (header, footer, left, right) are shared at Website level
     this._bodySections = pageData.sections
     this._bodyBlocks = null
+
+    Object.seal(this)
   }
 
   /**

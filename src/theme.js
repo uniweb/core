@@ -61,6 +61,8 @@ export default class Theme {
     this._appearance = themeData.appearance || { default: 'light' }
     this._foundationVars = themeData.foundationVars || {}
     this._css = themeData.css || null
+
+    Object.seal(this)
   }
 
   /**

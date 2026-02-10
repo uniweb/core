@@ -48,11 +48,16 @@ export default class Analytics {
     this.sessionId = this.generateSessionId()
     this.sessionStart = Date.now()
 
+    // Flush interval ID (for cleanup)
+    this.flushIntervalId = null
+
     // Only set up browser handlers if in browser and configured
     if (isBrowser && this.isEnabled()) {
       this.setupFlushInterval()
       this.setupUnloadHandler()
     }
+
+    Object.seal(this)
   }
 
   /**

@@ -94,6 +94,8 @@ export default class Website {
     // Versioned scopes: route → { versions, latestId }
     // Scopes are routes where versioning starts (e.g., '/docs')
     this.versionedScopes = versionedScopes
+
+    Object.seal(this)
   }
 
   /**

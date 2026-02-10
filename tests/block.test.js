@@ -28,12 +28,10 @@ describe('Block', () => {
       const block = new Block(blockData, '1', page)
 
       expect(block.insets).toHaveLength(2)
-      expect(block.insets[0].inline).toBe(true)
       expect(block.insets[0].refId).toBe('inline_0')
       expect(block.insets[0].type).toBe('NetworkDiagram')
       expect(block.insets[0].properties.variant).toBe('compact')
 
-      expect(block.insets[1].inline).toBe(true)
       expect(block.insets[1].refId).toBe('inline_1')
       expect(block.insets[1].type).toBe('Chart')
     })
@@ -53,7 +51,7 @@ describe('Block', () => {
       const inset = block.getInset('inline_0')
       expect(inset).not.toBeNull()
       expect(inset.type).toBe('Widget')
-      expect(inset.inline).toBe(true)
+      expect(inset.refId).toBe('inline_0')
 
       expect(block.getInset('nonexistent')).toBeNull()
     })
@@ -79,7 +77,7 @@ describe('Block', () => {
       // insets are separate
       expect(block.insets).toHaveLength(1)
       expect(block.insets[0].type).toBe('ChildB')
-      expect(block.insets[0].inline).toBe(true)
+      expect(block.insets[0].refId).toBe('inline_0')
     })
 
     it('insets have alt text as title content', () => {
@@ -104,6 +102,26 @@ describe('Block', () => {
 
       const block = new Block(blockData, '1', page)
       expect(block.insets).toHaveLength(0)
+    })
+  })
+
+  describe('sealed object shape', () => {
+    it('rejects new properties on block instances', () => {
+      const page = mockPage()
+      const block = new Block({ type: 'Hero', content: {} }, '0', page)
+
+      expect(() => { block.newProp = 'nope' }).toThrow(TypeError)
+    })
+
+    it('allows modification of existing properties', () => {
+      const page = mockPage()
+      const block = new Block({ type: 'Hero', content: {} }, '0', page)
+
+      block.dataLoading = true
+      expect(block.dataLoading).toBe(true)
+
+      block.hasBackground = true
+      expect(block.hasBackground).toBe(true)
     })
   })
 })
