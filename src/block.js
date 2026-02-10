@@ -290,7 +290,7 @@ export default class Block {
       pretitle: c.pretitle || '',
       title: c.title || '',
       subtitle: c.subtitle || '',
-      description: c.subtitle2 || '',
+      description: c.headings?.[0] || '',
       paragraphs: c.paragraphs || [],
       images: c.images || [],
       links: c.links || [],
