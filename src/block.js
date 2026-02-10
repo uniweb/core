@@ -106,12 +106,12 @@ export default class Block {
     if (insetData?.length > 0) {
       for (let i = 0; i < insetData.length; i++) {
         const ref = insetData[i]
-        const description = ref.description || ''
+        const title = ref.title || ''
         const child = new Block(
           {
             type: ref.type,
             params: ref.params || {},
-            content: { title: description },
+            content: { title },
             stableId: ref.refId,
           },
           `${id}_inset_${i}`,

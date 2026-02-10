@@ -82,13 +82,13 @@ describe('Block', () => {
       expect(block.insets[0].inline).toBe(true)
     })
 
-    it('insets have description as title content', () => {
+    it('insets have alt text as title content', () => {
       const page = mockPage()
       const blockData = {
         type: 'Hero',
         content: {},
         insets: [
-          { refId: 'inline_0', type: 'Diagram', params: {}, description: 'Architecture overview' },
+          { refId: 'inline_0', type: 'Diagram', params: {}, title: 'Architecture overview' },
         ],
       }
 
