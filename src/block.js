@@ -49,7 +49,7 @@ export default class Block {
     }
 
     // Flat content structure - no more nested main/items
-    // parsedContent now has: title, pretitle, paragraphs, links, imgs, items, etc.
+    // parsedContent now has: title, pretitle, paragraphs, links, images, items, etc.
     this.items = this.parsedContent.items || []
 
     // Block configuration
@@ -212,7 +212,7 @@ export default class Block {
       subtitle: '',
       paragraphs: [],
       links: [],
-      imgs: [],
+      images: [],
       lists: [],
       icons: [],
       items: [],
@@ -292,7 +292,7 @@ export default class Block {
       subtitle: c.subtitle || '',
       description: c.subtitle2 || '',
       paragraphs: c.paragraphs || [],
-      images: c.imgs || [],
+      images: c.images || [],
       links: c.links || [],
       icons: c.icons || [],
       properties: c.propertyBlocks?.[0] || c.properties || {},
