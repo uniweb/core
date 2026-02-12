@@ -74,7 +74,7 @@ export default class Website {
 
     // Legacy language support (for editor multilingual)
     this.activeLang = this.activeLocale
-    this.langs = config.languages || this.locales.map(l => ({
+    this.langs = this.locales.map(l => ({
       label: l.label || l.code,
       value: l.code
     }))
@@ -107,7 +107,7 @@ export default class Website {
    */
   buildLocalesList(config) {
     const defaultLocale = config.defaultLanguage || 'en'
-    const i18nLocales = config.i18n?.locales || []
+    const languages = config.languages || []
 
     // Normalize input: convert strings to objects, keep objects as-is
     const normalizeLocale = (locale) => {
@@ -118,14 +118,14 @@ export default class Website {
       return { code: locale.code, ...(locale.label && { label: locale.label }) }
     }
 
-    // Start with default locale (may not be in i18nLocales)
+    // Start with default locale (may not be in languages list)
     const localeMap = new Map()
     localeMap.set(defaultLocale, { code: defaultLocale })
 
-    // Add i18n locales (may include objects with labels)
-    for (const locale of i18nLocales) {
+    // Add configured languages (may include objects with labels)
+    for (const locale of languages) {
       const normalized = normalizeLocale(locale)
-      // Merge with existing (to preserve labels if default locale also in i18n with label)
+      // Merge with existing (to preserve labels if default locale also in languages with label)
       if (localeMap.has(normalized.code)) {
         const existing = localeMap.get(normalized.code)
         localeMap.set(normalized.code, { ...existing, ...normalized })
