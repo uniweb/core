@@ -6,21 +6,7 @@
  */
 
 import { parseContent as parseSemanticContent } from '@uniweb/semantic-parser'
-
-/**
- * Resolve bare palette references to var() in theme overrides.
- * Allows content authors to write `primary: neutral-900` in frontmatter
- * instead of `primary: var(--neutral-900)`.
- */
-const SHADE_LEVELS = new Set([50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950])
-
-function resolveOverrideValue(value) {
-  if (typeof value !== 'string' || value.includes('(') || value.startsWith('#')) return value
-  const bare = value.replace(/^-{0,2}/, '')
-  const match = bare.match(/^([a-z][a-z0-9]*)-(\d+)$/)
-  if (match && SHADE_LEVELS.has(parseInt(match[2], 10))) return `var(--${bare})`
-  return value
-}
+import { normalizeTokenValue } from '@uniweb/theming'
 
 export default class Block {
   constructor(blockData, id, page) {
@@ -58,20 +44,26 @@ export default class Block {
 
     // Normalize theme: supports string ("light") or object ({ mode, ...tokenOverrides })
     // Resolve bare palette refs (e.g. "primary: neutral-900" → var(--neutral-900))
+    //
+    // themeName values:
+    //   '' (empty) = Auto — section inherits from site's appearance/scheme
+    //   'light'    = Pinned to light context
+    //   'medium'   = Pinned to dim context
+    //   'dark'     = Pinned to dark context
     const rawTheme = blockConfig.theme
     if (rawTheme && typeof rawTheme === 'object') {
       const { mode, ...overrides } = rawTheme
-      this.themeName = mode || 'light'
+      this.themeName = mode || ''
       if (Object.keys(overrides).length > 0) {
         for (const key of Object.keys(overrides)) {
-          overrides[key] = resolveOverrideValue(overrides[key])
+          overrides[key] = normalizeTokenValue(overrides[key])
         }
         this.contextOverrides = overrides
       } else {
         this.contextOverrides = null
       }
     } else {
-      this.themeName = rawTheme || 'light'
+      this.themeName = rawTheme ?? ''
       this.contextOverrides = null
     }
 
@@ -464,7 +456,7 @@ export default class Block {
 
       // Anything else → CSS color (hex, rgb, hsl, oklch, named color, var())
       // Resolve bare palette refs (e.g. "primary-900" → "var(--primary-900)")
-      return { mode: 'color', color: resolveOverrideValue(raw) }
+      return { mode: 'color', color: normalizeTokenValue(raw) }
     }
 
     // Object with explicit mode — pass through

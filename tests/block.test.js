@@ -105,6 +105,56 @@ describe('Block', () => {
     })
   })
 
+  describe('themeName (Auto context)', () => {
+    it('defaults to empty string (Auto) when no theme specified', () => {
+      const page = mockPage()
+      const block = new Block({ type: 'Hero', content: {} }, '0', page)
+      expect(block.themeName).toBe('')
+    })
+
+    it('preserves explicit context string', () => {
+      const page = mockPage()
+      const block = new Block({
+        type: 'Hero',
+        content: {},
+        params: { theme: 'dark' },
+      }, '0', page)
+      expect(block.themeName).toBe('dark')
+    })
+
+    it('preserves medium context', () => {
+      const page = mockPage()
+      const block = new Block({
+        type: 'Hero',
+        content: {},
+        params: { theme: 'medium' },
+      }, '0', page)
+      expect(block.themeName).toBe('medium')
+    })
+
+    it('extracts mode from theme object', () => {
+      const page = mockPage()
+      const block = new Block({
+        type: 'Hero',
+        content: {},
+        params: { theme: { mode: 'dark', heading: 'neutral-100' } },
+      }, '0', page)
+      expect(block.themeName).toBe('dark')
+      expect(block.contextOverrides).toEqual({ heading: 'var(--neutral-100)' })
+    })
+
+    it('defaults to Auto when theme object has no mode', () => {
+      const page = mockPage()
+      const block = new Block({
+        type: 'Hero',
+        content: {},
+        params: { theme: { heading: 'neutral-900' } },
+      }, '0', page)
+      expect(block.themeName).toBe('')
+      expect(block.contextOverrides).toEqual({ heading: 'var(--neutral-900)' })
+    })
+  })
+
   describe('sealed object shape', () => {
     it('rejects new properties on block instances', () => {
       const page = mockPage()
