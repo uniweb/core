@@ -172,6 +172,11 @@ export default class Block {
       return this.extractFromProseMirror(content)
     }
 
+    // Wrapped ProseMirror document (Content API format: { doc: { type: "doc", ... } })
+    if (content?.doc?.type === 'doc') {
+      return this.extractFromProseMirror(content.doc)
+    }
+
     // Plain object content — pass through directly.
     // guaranteeContentStructure() in prepare-props will fill in missing fields.
     if (content && typeof content === 'object' && !Array.isArray(content)) {
