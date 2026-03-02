@@ -141,6 +141,10 @@ export default class Block {
     // Context (static, defined per component type)
     this.context = null
 
+    // Component-level CSS variables (merged meta.js defaults + frontmatter overrides)
+    // Populated by initComponent() — context-independent, emitted on #section-{id}
+    this.componentVars = null
+
     Object.seal(this)
   }
 
@@ -275,6 +279,12 @@ export default class Block {
     // Initialize context (static, per component type)
     // Source: meta.js context field
     this.context = meta.context ? { ...meta.context } : null
+
+    // Merge component-level CSS vars: meta.js defaults + frontmatter overrides
+    // Source: meta.js vars field (defaults), section frontmatter vars: key (overrides)
+    if (meta.vars) {
+      this.componentVars = Block.mergeComponentVars(meta.vars, this.properties.vars)
+    }
 
     return this.Component
   }
@@ -424,6 +434,38 @@ export default class Block {
    */
   getDynamicContext() {
     return this.dynamicContext
+  }
+
+  /**
+   * Merge component-level CSS variable defaults with frontmatter overrides.
+   *
+   * Schema vars (from meta.js) can be:
+   * - String shorthand: 'card-gap': '1.5rem' → { default: '1.5rem' }
+   * - Object: 'card-gap': { default: '1.5rem', label: 'Card Gap' }
+   *
+   * @param {Object} schemaVars - Var definitions from meta.js
+   * @param {Object} [frontmatterVars] - Overrides from section frontmatter
+   * @returns {Object} Flat { name: value } object for CSS emission
+   */
+  static mergeComponentVars(schemaVars, frontmatterVars = {}) {
+    const merged = {}
+
+    for (const [name, config] of Object.entries(schemaVars)) {
+      const defaultVal = typeof config === 'string' ? config : config?.default
+      if (defaultVal != null) {
+        merged[name] = defaultVal
+      }
+    }
+
+    if (frontmatterVars && typeof frontmatterVars === 'object') {
+      for (const [name, value] of Object.entries(frontmatterVars)) {
+        if (value != null && name in schemaVars) {
+          merged[name] = String(value)
+        }
+      }
+    }
+
+    return Object.keys(merged).length > 0 ? merged : null
   }
 
   /**
