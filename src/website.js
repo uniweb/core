@@ -577,12 +577,19 @@ export default class Website {
    * makeHref('/about')                         // → '/about' (passthrough)
    */
   makeHref(href) {
-    if (!href || !href.startsWith('page:')) {
+    if (!href) return href
+
+    // Support both page: (current) and topic: (legacy) prefixes
+    let withoutPrefix
+    if (href.startsWith('page:')) {
+      withoutPrefix = href.slice(5)
+    } else if (href.startsWith('topic:')) {
+      withoutPrefix = href.slice(6)
+    } else {
       return href
     }
 
     // Parse page reference: page:pageId#sectionId
-    const withoutPrefix = href.slice(5) // Remove 'page:'
     const [pageId, sectionId] = withoutPrefix.split('#')
 
     // Look up page by ID (explicit or route-based)
