@@ -885,6 +885,10 @@ export default class Website {
         if (navType === 'footer' && page.hideInFooter) return false
       }
 
+      // Skip empty folders (no content) that have no visible children.
+      // Folders with children still appear as dropdown parents.
+      if (!page.hasContent() && !page.children?.some(isPageVisible)) return false
+
       // Apply custom filter if provided
       if (customFilter && !customFilter(page)) return false
 
