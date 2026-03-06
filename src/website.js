@@ -900,7 +900,9 @@ export default class Website {
     // When nested, only include root-level pages at top level
     // (children will be nested inside their parents)
     if (nested) {
-      filteredPages = filteredPages.filter(page => !page.parent)
+      // Exclude child pages from root list. Also exclude orphans whose parent
+      // was removed (e.g., hidden) — they have parentRoute but no resolved parent.
+      filteredPages = filteredPages.filter(page => !page.parent && !page.parentRoute)
     }
 
     // Apply custom sort or default to order
