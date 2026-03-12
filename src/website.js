@@ -289,7 +289,16 @@ export default class Website {
 
     // Priority 1: Exact match on actual route
     const exactMatch = this.pages.find((page) => page.route === normalizedRoute)
-    if (exactMatch) return exactMatch
+    if (exactMatch) {
+      // Priority 1.5: folder page with an isIndex child — resolve to the index child.
+      // This makes /Articles resolve to the /Articles/index page for rendering,
+      // keeping the URL clean while serving real content.
+      if (!exactMatch.hasContent()) {
+        const indexChild = exactMatch.children.find((c) => c.isIndex)
+        if (indexChild) return indexChild
+      }
+      return exactMatch
+    }
 
     // Priority 2: Index page nav route match
     const indexMatch = this.pages.find((page) => page.isIndex && page.getNavRoute() === normalizedRoute)
@@ -878,6 +887,10 @@ export default class Website {
       // These are templates for generating pages, not actual navigable pages
       if (page.route.includes(':')) return false
 
+      // Exclude index pages (route ends in /index) from navigation — they are
+      // represented by their parent folder entry which links to them via navigableRoute
+      if (page.isIndex && page.route.endsWith('/index')) return false
+
       // Check visibility based on navigation type
       if (!includeHidden) {
         if (page.hidden) return false
@@ -885,9 +898,11 @@ export default class Website {
         if (navType === 'footer' && page.hideInFooter) return false
       }
 
-      // Skip empty folders (no content) that have no visible children.
-      // Folders with children still appear as dropdown parents.
-      if (!page.hasContent() && !page.children?.some(isPageVisible)) return false
+      // Skip empty folders that have no visible children AND no index child.
+      // Folders with an isIndex child are navigable (they link to the index page)
+      // even after the index child itself is filtered out above.
+      const hasNavigableIndex = !page.hasContent() && page.children?.some((c) => c.isIndex)
+      if (!page.hasContent() && !hasNavigableIndex && !page.children?.some(isPageVisible)) return false
 
       // Apply custom filter if provided
       if (customFilter && !customFilter(page)) return false
@@ -919,7 +934,7 @@ export default class Website {
         route: navRoute, // Use canonical nav route (e.g., '/' for index pages)
         navigableRoute: page.getNavigableRoute(), // First route with content (for links)
         translatedRoute: this.translateRoute(navRoute), // Locale-specific display route
-        title: page.title,
+        title: page.getTitle(),
         label: page.getLabel(),
         description: page.description,
         hasContent: page.hasContent(),

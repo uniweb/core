@@ -284,13 +284,33 @@ export default class Page {
   // ─────────────────────────────────────────────────────────────────
 
   /**
-   * Get the navigation route (canonical route for links)
-   * With the new routing model, route is already the canonical nav route.
-   * Index pages have route set to parent route (e.g., '/' for homepage).
+   * Get the navigation route (canonical route for links).
+   * For index pages whose route ends in /index (e.g., /Articles/index),
+   * returns the parent folder route (/Articles) so nav comparisons and
+   * active-route highlighting work against the clean URL.
    * @returns {string}
    */
   getNavRoute() {
+    if (this.isIndex && this.route.endsWith('/index')) {
+      return this.route.slice(0, -'/index'.length) || '/'
+    }
     return this.route
+  }
+
+  /**
+   * Get display title for the page.
+   * For index pages with no meaningful title (empty or the literal string "index"),
+   * falls back to the parent folder's title so /Articles/index shows "Articles".
+   * @returns {string}
+   */
+  getTitle() {
+    if (this.isIndex && this.route.endsWith('/index')) {
+      const own = this.title?.trim()
+      if (!own || own.toLowerCase() === 'index') {
+        return this.parent?.title || own || ''
+      }
+    }
+    return this.title
   }
 
   /**
@@ -298,7 +318,7 @@ export default class Page {
    * @returns {string}
    */
   getLabel() {
-    return this.label || this.title
+    return this.label || this.getTitle()
   }
 
   /**
@@ -362,9 +382,10 @@ export default class Page {
   getNavigableRoute() {
     if (this.hasContent()) return this.route
     const children = this.children || []
-    // Prefer the index child (designated landing page for this folder)
+    // Prefer the index child (designated landing page for this folder).
+    // Return this folder's own route so the URL stays clean (/Articles, not /Articles/index).
     const indexChild = children.find((c) => c.isIndex)
-    if (indexChild) return indexChild.getNavigableRoute()
+    if (indexChild) return this.route
     // Fall back to first child with content
     for (const child of children) {
       const route = child.getNavigableRoute()
