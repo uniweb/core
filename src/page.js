@@ -96,14 +96,15 @@ export default class Page {
    * @returns {Object} Head metadata
    */
   getHeadMeta() {
+    const resolvedTitle = this.getTitle()
     return {
-      title: this.title,
+      title: resolvedTitle,
       description: this.description,
       keywords: this.keywords,
       canonical: this.seo.canonical,
       robots: this.seo.noindex ? 'noindex, nofollow' : null,
       og: {
-        title: this.seo.ogTitle || this.title,
+        title: this.seo.ogTitle || resolvedTitle,
         description: this.seo.ogDescription || this.description,
         image: this.seo.image,
         url: this.route,
