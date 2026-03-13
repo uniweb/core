@@ -25,6 +25,7 @@ export default class DataStore {
     this._cache = new Map()
     this._inflight = new Map()
     this._fetcher = null
+    this._transforms = new Map()
 
     Object.seal(this)
   }
@@ -35,6 +36,16 @@ export default class DataStore {
    */
   registerFetcher(fn) {
     this._fetcher = fn
+  }
+
+  /**
+   * Register a named transform function.
+   * Named transforms are applied after the fetcher returns, before caching.
+   * @param {string} name - Transform name (e.g. 'profiles')
+   * @param {Function} fn - (data, config) => transformedData
+   */
+  registerTransform(name, fn) {
+    this._transforms.set(name, fn)
   }
 
   /**
@@ -95,10 +106,21 @@ export default class DataStore {
     // Miss — execute fetch
     const promise = this._fetcher(config).then((result) => {
       this._inflight.delete(key)
-      if (result.data !== undefined && result.data !== null) {
-        this._cache.set(key, result.data)
+      let data = result.data
+      // Apply named transform if registered (dot-path transforms
+      // are handled by the fetcher itself via getNestedValue)
+      if (
+        data !== undefined &&
+        data !== null &&
+        config.transform &&
+        this._transforms.has(config.transform)
+      ) {
+        data = this._transforms.get(config.transform)(data, config)
       }
-      return result
+      if (data !== undefined && data !== null) {
+        this._cache.set(key, data)
+      }
+      return { ...result, data }
     })
 
     this._inflight.set(key, promise)
@@ -111,5 +133,6 @@ export default class DataStore {
   clear() {
     this._cache.clear()
     this._inflight.clear()
+    this._transforms.clear()
   }
 }

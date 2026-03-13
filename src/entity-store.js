@@ -199,13 +199,40 @@ export default class EntityStore {
    * @returns {{ status: 'ready'|'pending'|'none', data: Object|null }}
    */
   resolve(block, meta) {
-    const requested = this._getRequestedSchemas(meta)
+    let requested = this._getRequestedSchemas(meta)
+
+    // If the component doesn't declare inheritData but the block itself
+    // has a fetch config (e.g. data_source_info converted to fetch),
+    // use the block's schema directly. Block-level fetch is an explicit
+    // data assignment, not inheritance.
+    if (requested === null && block.fetch) {
+      const blockFetchList = Array.isArray(block.fetch) ? block.fetch : [block.fetch]
+      const schemas = blockFetchList
+        .filter((cfg) => cfg.schema)
+        .map((cfg) => cfg.schema)
+      if (schemas.length > 0) {
+        requested = schemas
+      }
+    }
+
+    // DEBUG: trace entity resolution
+    console.log(`[EntityStore.resolve] ${block.type}`, {
+      requested,
+      'meta?.inheritData': meta?.inheritData,
+      'block.fetch': block.fetch,
+      'page.fetch': block.page?.fetch,
+    })
+
     if (requested === null) {
       return { status: 'none', data: null }
     }
 
     // Walk hierarchy for fetch configs
     const configs = this._findFetchConfigs(block, requested)
+
+    // DEBUG
+    console.log(`[EntityStore.resolve] configs found:`, [...configs.entries()])
+
     if (configs.size === 0) {
       return { status: 'none', data: null }
     }
@@ -248,7 +275,19 @@ export default class EntityStore {
    * @returns {Promise<{ data: Object|null }>}
    */
   async fetch(block, meta) {
-    const requested = this._getRequestedSchemas(meta)
+    let requested = this._getRequestedSchemas(meta)
+
+    // Same block-level fetch fallback as resolve()
+    if (requested === null && block.fetch) {
+      const blockFetchList = Array.isArray(block.fetch) ? block.fetch : [block.fetch]
+      const schemas = blockFetchList
+        .filter((cfg) => cfg.schema)
+        .map((cfg) => cfg.schema)
+      if (schemas.length > 0) {
+        requested = schemas
+      }
+    }
+
     if (requested === null) {
       return { data: null }
     }
