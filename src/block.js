@@ -149,6 +149,45 @@ export default class Block {
   }
 
   /**
+   * The resolved URL path of the current page (e.g. /blog or /blog/1).
+   * Use this to build child links: `${block.path}/${item.id}`
+   *
+   * Uses page.getNavRoute() which returns the path with its leading slash intact
+   * and normalizes /index suffixes to the folder route. getNormalizedRoute() is
+   * intentionally NOT used here — it strips the leading slash (designed for route
+   * comparison), which would produce relative paths and cause double-segment URLs.
+   *
+   * Works in all scenarios:
+   * - Static pages: page.route (/blog)
+   * - Dynamic pages: concrete route (/blog/1), set by _createDynamicPage
+   * - Editor: set by the editor to the page being previewed
+   * - SSR/prerender: set from page data at build time
+   */
+  get path() {
+    return this.page.getNavRoute()
+  }
+
+  /**
+   * The parent page's URL path, one level up from the current page.
+   * Use this for "Back" links in detail pages: /blog/1 → /blog
+   *
+   * For dynamic pages uses templateRoute (/blog/:id → /blog) rather than
+   * the concrete route, so it correctly points to the index page regardless
+   * of the param value.
+   */
+  get parentPath() {
+    // Dynamic page: derive parent from the route template, not the concrete URL
+    // e.g. templateRoute = '/blog/:id' → parent = '/blog'
+    if (this.dynamicContext?.templateRoute) {
+      const tmpl = this.dynamicContext.templateRoute
+      return tmpl.split('/').slice(0, -1).join('/') || '/'
+    }
+    // Static page: go one level up from the normalized route
+    const p = this.path
+    return p.split('/').slice(0, -1).join('/') || '/'
+  }
+
+  /**
    * Parse content into structured format using semantic-parser
    * Supports multiple content formats:
    * 1. Pre-parsed groups structure (from editor)

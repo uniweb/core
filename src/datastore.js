@@ -26,8 +26,20 @@ export default class DataStore {
     this._inflight = new Map()
     this._fetcher = null
     this._transforms = new Map()
+    this._listeners = new Set()
 
     Object.seal(this)
+  }
+
+  /**
+   * Subscribe to data updates. Returns an unsubscribe function.
+   * Called by PageRenderer to re-render when dynamic page data arrives.
+   * @param {Function} fn - Called whenever new data is stored
+   * @returns {Function} unsubscribe
+   */
+  onUpdate(fn) {
+    this._listeners.add(fn)
+    return () => this._listeners.delete(fn)
   }
 
   /**
@@ -74,6 +86,7 @@ export default class DataStore {
    */
   set(config, data) {
     this._cache.set(cacheKey(config), data)
+    this._listeners.forEach((fn) => fn())
   }
 
   /**
@@ -119,6 +132,7 @@ export default class DataStore {
       }
       if (data !== undefined && data !== null) {
         this._cache.set(key, data)
+        this._listeners.forEach((fn) => fn())
       }
       return { ...result, data }
     })

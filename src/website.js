@@ -50,6 +50,7 @@ export default class Website {
     // Cache for dynamically created page instances
     this._dynamicPageCache = new Map()
 
+
     this.pages = regularPages.map(
       (page, index) => new Page(page, index, this)
     )
@@ -319,10 +320,15 @@ export default class Website {
       const match = this._matchDynamicRoute(page.route, normalizedRoute)
       if (match) {
         // Create a dynamic page instance with the concrete route and params
-        const dynamicPage = this._createDynamicPage(page, normalizedRoute, match.params)
-        if (dynamicPage) {
-          // Cache for future requests
-          this._dynamicPageCache.set(normalizedRoute, dynamicPage)
+        const result = this._createDynamicPage(page, normalizedRoute, match.params)
+        if (result) {
+          const { page: dynamicPage, collectionLoaded } = result
+          // Only cache when collection data was available at creation time.
+          // If DataStore was empty, skip caching so the next render recreates
+          // the page with fresh data (correct title, not-found state, etc.).
+          if (collectionLoaded) {
+            this._dynamicPageCache.set(normalizedRoute, dynamicPage)
+          }
           return dynamicPage
         }
       }
@@ -433,11 +439,18 @@ export default class Website {
         if (currentItem.description || currentItem.excerpt) {
           pageData.description = currentItem.description || currentItem.excerpt
         }
+      } else if (items.length > 0) {
+        // Collection is loaded but this ID isn't in it — definitive not found
+        pageData.title = 'Not found'
+        pageData.notFound = true
       }
 
       // Store in dynamic context for entity resolution
       pageData.dynamicContext.currentItem = currentItem || null
       pageData.dynamicContext.allItems = items
+
+      // Track whether collection data was available at creation time
+      pageData._collectionLoaded = items.length > 0
     }
 
     // Create the page instance
@@ -446,7 +459,7 @@ export default class Website {
     // Copy parent reference from template
     dynamicPage.parent = templatePage.parent
 
-    return dynamicPage
+    return { page: dynamicPage, collectionLoaded: pageData._collectionLoaded ?? true }
   }
 
   /**

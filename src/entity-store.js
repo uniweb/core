@@ -23,6 +23,19 @@ export default class EntityStore {
   }
 
   /**
+   * Whether a component wants detail-URL resolution on dynamic pages.
+   * Default true. Set to false via `data: { inherit: true, detail: false }`
+   * to receive the full collection (minus the active item) instead.
+   *
+   * @param {Object} meta
+   * @returns {boolean}
+   */
+  _shouldInheritDetail(meta) {
+    if (!meta) return true
+    return meta.inheritDetail !== false
+  }
+
+  /**
    * Determine which schemas a component requests.
    *
    * @param {Object} meta - Component runtime metadata
@@ -140,7 +153,10 @@ export default class EntityStore {
 
     if (detail === 'rest') {
       // REST convention: {baseUrl}/{paramValue}
-      detailUrl = `${baseUrl.replace(/\/$/, '')}/${encodeURIComponent(paramValue)}`
+      // Strip query string from the collection URL before appending the detail segment.
+      // e.g. /posts?_limit=12 → /posts/2  (not /posts?_limit=12/2)
+      const basePath = baseUrl.split('?')[0].replace(/\/$/, '')
+      detailUrl = `${basePath}/${encodeURIComponent(paramValue)}`
     } else if (detail === 'query') {
       // Query param convention: {baseUrl}?{paramName}={paramValue}
       const sep = baseUrl.includes('?') ? '&' : '?'
@@ -215,14 +231,6 @@ export default class EntityStore {
       }
     }
 
-    // DEBUG: trace entity resolution
-    console.log(`[EntityStore.resolve] ${block.type}`, {
-      requested,
-      'meta?.inheritData': meta?.inheritData,
-      'block.fetch': block.fetch,
-      'page.fetch': block.page?.fetch,
-    })
-
     if (requested === null) {
       return { status: 'none', data: null }
     }
@@ -230,30 +238,59 @@ export default class EntityStore {
     // Walk hierarchy for fetch configs
     const configs = this._findFetchConfigs(block, requested)
 
-    // DEBUG
-    console.log(`[EntityStore.resolve] configs found:`, [...configs.entries()])
-
     if (configs.size === 0) {
       return { status: 'none', data: null }
     }
 
     // Check DataStore cache for each config
     const dynamicContext = block.dynamicContext || block.page?.dynamicContext
+    const inheritDetail = this._shouldInheritDetail(meta)
     const data = {}
     let allCached = true
 
     for (const [schema, cfg] of configs) {
-      if (this.dataStore.has(cfg)) {
-        data[schema] = this.dataStore.get(cfg)
-      } else if (dynamicContext && cfg.detail) {
-        // Detail query: check if the single-entity result is cached
-        const detailCfg = this._buildDetailConfig(cfg, dynamicContext)
-        if (detailCfg && this.dataStore.has(detailCfg)) {
-          const singularKey = singularize(schema) || schema
-          data[singularKey] = this.dataStore.get(detailCfg)
+      if (dynamicContext && cfg.detail && !inheritDetail) {
+        // detail: false — return collection minus the active item (sidebar/related use case)
+        if (this.dataStore.has(cfg)) {
+          const { paramName, paramValue } = dynamicContext
+          const items = this.dataStore.get(cfg)
+          data[schema] = Array.isArray(items)
+            ? items.filter((item) => String(item[paramName]) !== String(paramValue))
+            : items
         } else {
           allCached = false
         }
+      } else if (dynamicContext && cfg.detail) {
+        // Collection-first detail resolution:
+        // The collection acts as the access gate — the item must exist in the
+        // cached collection before we'll serve (or fetch) its detail data.
+        if (this.dataStore.has(cfg)) {
+          const collectionItems = this.dataStore.get(cfg)
+          const { paramName, paramValue } = dynamicContext
+          const singularKey = singularize(schema) || schema
+          const match = Array.isArray(collectionItems)
+            ? collectionItems.find((item) => String(item[paramName]) === String(paramValue))
+            : null
+
+          if (!match) {
+            // Item not in collection — definitive "not found" (content gate).
+            data[singularKey] = null
+          } else {
+            // Item is valid. Check if the detail result is already cached.
+            const detailCfg = this._buildDetailConfig(cfg, dynamicContext)
+            if (detailCfg && this.dataStore.has(detailCfg)) {
+              data[singularKey] = this.dataStore.get(detailCfg)
+            } else if (detailCfg) {
+              allCached = false // Collection cached, item valid, detail still needed
+            } else {
+              data[singularKey] = match // No detail URL — use collection item directly
+            }
+          }
+        } else {
+          allCached = false // Collection not yet cached — must fetch it first
+        }
+      } else if (this.dataStore.has(cfg)) {
+        data[schema] = this.dataStore.get(cfg)
       } else {
         allCached = false
       }
@@ -297,42 +334,77 @@ export default class EntityStore {
       return { data: null }
     }
 
-    // Fetch all missing configs in parallel
+    // Fetch all missing configs
     const dynamicContext = block.dynamicContext || block.page?.dynamicContext
+    const inheritDetail = this._shouldInheritDetail(meta)
     const data = {}
-    const fetchPromises = []
+    const parallelFetches = []
 
     for (const [schema, cfg] of configs) {
-      // Detail query optimization: on template pages, if the collection
-      // isn't cached and a detail convention is defined, fetch just the
-      // single entity instead of the full collection.
-      if (dynamicContext && cfg.detail && !this.dataStore.has(cfg)) {
+      if (dynamicContext && cfg.detail && !inheritDetail) {
+        // detail: false — fetch collection and return it minus the active item
+        // (sidebar / related-posts use case on a dynamic page)
+        let collectionItems = this.dataStore.has(cfg) ? this.dataStore.get(cfg) : null
+        if (collectionItems === null) {
+          const result = await this.dataStore.fetch(cfg)
+          collectionItems = Array.isArray(result.data) ? result.data : null
+        }
+        const { paramName, paramValue } = dynamicContext
+        data[schema] = Array.isArray(collectionItems)
+          ? collectionItems.filter((item) => String(item[paramName]) !== String(paramValue))
+          : (collectionItems ?? [])
+      } else if (dynamicContext && cfg.detail) {
+        // Collection-first detail resolution:
+        // 1. Ensure the collection is in DataStore (fetching if needed).
+        // 2. Validate that paramValue exists in the collection (content gate).
+        // 3. Only then fetch the detail URL for richer item data.
+        const { paramName, paramValue } = dynamicContext
+        const singularKey = singularize(schema) || schema
+
+        // Step 1: ensure collection is cached (sequential — needed for validation)
+        let collectionItems = this.dataStore.has(cfg) ? this.dataStore.get(cfg) : null
+        if (collectionItems === null) {
+          const result = await this.dataStore.fetch(cfg)
+          collectionItems = Array.isArray(result.data) ? result.data : null
+        }
+
+        // Step 2: validate paramValue is in the collection (content gate)
+        const match = collectionItems?.find(
+          (item) => String(item[paramName]) === String(paramValue)
+        ) ?? null
+
+        if (!match) {
+          data[singularKey] = null // Not in collection — content gate
+          continue
+        }
+
+        // Step 3: fetch detail URL for richer data; fall back to collection item
         const detailCfg = this._buildDetailConfig(cfg, dynamicContext)
         if (detailCfg) {
-          fetchPromises.push(
+          parallelFetches.push(
             this.dataStore.fetch(detailCfg).then((result) => {
-              if (result.data !== undefined && result.data !== null) {
-                const singularKey = singularize(schema) || schema
-                data[singularKey] = result.data
-              }
+              data[singularKey] = (result.data !== undefined && result.data !== null)
+                ? result.data
+                : match // fallback: collection item is still valid
             })
           )
-          continue // skip collection fetch for this schema
+        } else {
+          data[singularKey] = match // No detail URL — collection item is enough
         }
+      } else {
+        // Default: fetch the full collection
+        parallelFetches.push(
+          this.dataStore.fetch(cfg).then((result) => {
+            if (result.data !== undefined && result.data !== null) {
+              data[schema] = result.data
+            }
+          })
+        )
       }
-
-      // Default: fetch the full collection
-      fetchPromises.push(
-        this.dataStore.fetch(cfg).then((result) => {
-          if (result.data !== undefined && result.data !== null) {
-            data[schema] = result.data
-          }
-        })
-      )
     }
 
-    if (fetchPromises.length > 0) {
-      await Promise.all(fetchPromises)
+    if (parallelFetches.length > 0) {
+      await Promise.all(parallelFetches)
     }
     const resolved = this._resolveSingularItem(data, dynamicContext)
     return { data: resolved }
