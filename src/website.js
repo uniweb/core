@@ -33,7 +33,8 @@ export default class Website {
 
     // Store 404 page (for SPA routing)
     // Convention: pages/404/ directory
-    this.notFoundPage = notFound || pages.find((p) => p.route === '/404') || null
+    const notFoundData = notFound || pages.find((p) => p.route === '/404') || null
+    this.notFoundPage = notFoundData ? new Page(notFoundData, 'notFound', this) : null
 
     // Filter out 404 from regular pages array
     const regularPages = pages.filter((page) => page.route !== '/404')
