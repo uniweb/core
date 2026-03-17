@@ -30,9 +30,19 @@ export default class EntityStore {
    * @param {Object} meta
    * @returns {boolean}
    */
-  _shouldInheritDetail(meta) {
+  _shouldInheritDetail(meta, block) {
+    // Block-level fetch inherit override takes priority over meta
+    const bf = block?.fetch
+    if (bf?.inherit === true && bf?.detail !== undefined) return bf.detail !== false
     if (!meta) return true
     return meta.inheritDetail !== false
+  }
+
+  _inheritLimit(meta, block) {
+    // Block-level fetch inherit override takes priority over meta
+    const bf = block?.fetch
+    if (bf?.inherit === true && bf?.limit > 0) return bf.limit
+    return (meta?.inheritLimit > 0) ? meta.inheritLimit : null
   }
 
   /**
@@ -91,8 +101,8 @@ export default class EntityStore {
 
     const sources = []
 
-    // 1. Block-level fetch
-    if (block.fetch) {
+    // 1. Block-level fetch (skip inherit-merge configs — they have no URL, only override props)
+    if (block.fetch && !block.fetch.inherit) {
       sources.push(block.fetch)
     }
 
@@ -244,7 +254,8 @@ export default class EntityStore {
 
     // Check DataStore cache for each config
     const dynamicContext = block.dynamicContext || block.page?.dynamicContext
-    const inheritDetail = this._shouldInheritDetail(meta)
+    const inheritDetail = this._shouldInheritDetail(meta, block)
+    const limit = this._inheritLimit(meta, block)
     const data = {}
     let allCached = true
 
@@ -254,9 +265,10 @@ export default class EntityStore {
         if (this.dataStore.has(cfg)) {
           const { paramName, paramValue } = dynamicContext
           const items = this.dataStore.get(cfg)
-          data[schema] = Array.isArray(items)
+          const filtered = Array.isArray(items)
             ? items.filter((item) => String(item[paramName]) !== String(paramValue))
             : items
+          data[schema] = limit && Array.isArray(filtered) ? filtered.slice(0, limit) : filtered
         } else {
           allCached = false
         }
@@ -336,7 +348,8 @@ export default class EntityStore {
 
     // Fetch all missing configs
     const dynamicContext = block.dynamicContext || block.page?.dynamicContext
-    const inheritDetail = this._shouldInheritDetail(meta)
+    const inheritDetail = this._shouldInheritDetail(meta, block)
+    const limit = this._inheritLimit(meta, block)
     const data = {}
     const parallelFetches = []
 
@@ -350,9 +363,10 @@ export default class EntityStore {
           collectionItems = Array.isArray(result.data) ? result.data : null
         }
         const { paramName, paramValue } = dynamicContext
-        data[schema] = Array.isArray(collectionItems)
+        const filtered = Array.isArray(collectionItems)
           ? collectionItems.filter((item) => String(item[paramName]) !== String(paramValue))
           : (collectionItems ?? [])
+        data[schema] = limit && Array.isArray(filtered) ? filtered.slice(0, limit) : filtered
       } else if (dynamicContext && cfg.detail) {
         // Collection-first detail resolution:
         // 1. Ensure the collection is in DataStore (fetching if needed).
