@@ -156,17 +156,22 @@ export default class EntityStore {
     const { paramName, paramValue } = dynamicContext
     if (!paramName || paramValue === undefined) return null
 
-    const baseUrl = collectionConfig.url || collectionConfig.path
+    // Prefer detailBase (auth params only) over the full collection URL to avoid
+    // passing collection-scoping params (from, ids, types) to single-entity endpoints.
+    const baseUrl = collectionConfig.detailBase || collectionConfig.url || collectionConfig.path
     if (!baseUrl) return null
 
     let detailUrl
 
     if (detail === 'rest') {
       // REST convention: {baseUrl}/{paramValue}
-      // Strip query string from the collection URL before appending the detail segment.
-      // e.g. /posts?_limit=12 → /posts/2  (not /posts?_limit=12/2)
-      const basePath = baseUrl.split('?')[0].replace(/\/$/, '')
-      detailUrl = `${basePath}/${encodeURIComponent(paramValue)}`
+      // Preserve query string (auth params like token, profileLang) — only insert
+      // the param value before the '?', not after.
+      const [basePath, queryString] = baseUrl.split('?')
+      const cleanBase = basePath.replace(/\/$/, '')
+      detailUrl = queryString
+        ? `${cleanBase}/${encodeURIComponent(paramValue)}?${queryString}`
+        : `${cleanBase}/${encodeURIComponent(paramValue)}`
     } else if (detail === 'query') {
       // Query param convention: {baseUrl}?{paramName}={paramValue}
       const sep = baseUrl.includes('?') ? '&' : '?'
@@ -350,6 +355,7 @@ export default class EntityStore {
     const dynamicContext = block.dynamicContext || block.page?.dynamicContext
     const inheritDetail = this._shouldInheritDetail(meta, block)
     const limit = this._inheritLimit(meta, block)
+
     const data = {}
     const parallelFetches = []
 
