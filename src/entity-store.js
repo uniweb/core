@@ -45,6 +45,26 @@ export default class EntityStore {
     return (meta?.inheritLimit > 0) ? meta.inheritLimit : null
   }
 
+  _inheritOrder(block) {
+    const bf = block?.fetch
+    if (bf?.inherit === true && bf?.order?.orderBy) return bf.order
+    return null
+  }
+
+  _sortItems(items, order) {
+    if (!order?.orderBy || !Array.isArray(items) || items.length === 0) return items
+    const { orderBy, sortOrder = 'ASC' } = order
+    const desc = sortOrder === 'DESC'
+    return [...items].sort((a, b) => {
+      const av = a[orderBy] ?? ''
+      const bv = b[orderBy] ?? ''
+      const cmp = typeof av === 'string' && typeof bv === 'string'
+        ? av.localeCompare(bv)
+        : (av > bv ? 1 : av < bv ? -1 : 0)
+      return desc ? -cmp : cmp
+    })
+  }
+
   /**
    * Determine which schemas a component requests.
    *
@@ -261,6 +281,7 @@ export default class EntityStore {
     const dynamicContext = block.dynamicContext || block.page?.dynamicContext
     const inheritDetail = this._shouldInheritDetail(meta, block)
     const limit = this._inheritLimit(meta, block)
+    const order = this._inheritOrder(block)
     const data = {}
     let allCached = true
 
@@ -270,9 +291,10 @@ export default class EntityStore {
         if (this.dataStore.has(cfg)) {
           const { paramName, paramValue } = dynamicContext
           const items = this.dataStore.get(cfg)
-          const filtered = Array.isArray(items)
+          let filtered = Array.isArray(items)
             ? items.filter((item) => String(item[paramName]) !== String(paramValue))
             : items
+          if (order) filtered = this._sortItems(filtered, order)
           data[schema] = limit && Array.isArray(filtered) ? filtered.slice(0, limit) : filtered
         } else {
           allCached = false
@@ -307,7 +329,8 @@ export default class EntityStore {
           allCached = false // Collection not yet cached — must fetch it first
         }
       } else if (this.dataStore.has(cfg)) {
-        data[schema] = this.dataStore.get(cfg)
+        const items = this.dataStore.get(cfg)
+        data[schema] = order ? this._sortItems(items, order) : items
       } else {
         allCached = false
       }
@@ -355,6 +378,7 @@ export default class EntityStore {
     const dynamicContext = block.dynamicContext || block.page?.dynamicContext
     const inheritDetail = this._shouldInheritDetail(meta, block)
     const limit = this._inheritLimit(meta, block)
+    const order = this._inheritOrder(block)
 
     const data = {}
     const parallelFetches = []
@@ -369,9 +393,10 @@ export default class EntityStore {
           collectionItems = Array.isArray(result.data) ? result.data : null
         }
         const { paramName, paramValue } = dynamicContext
-        const filtered = Array.isArray(collectionItems)
+        let filtered = Array.isArray(collectionItems)
           ? collectionItems.filter((item) => String(item[paramName]) !== String(paramValue))
           : (collectionItems ?? [])
+        if (order) filtered = this._sortItems(filtered, order)
         data[schema] = limit && Array.isArray(filtered) ? filtered.slice(0, limit) : filtered
       } else if (dynamicContext && cfg.detail) {
         // Collection-first detail resolution:
