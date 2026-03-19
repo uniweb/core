@@ -176,9 +176,7 @@ export default class EntityStore {
     const { paramName, paramValue } = dynamicContext
     if (!paramName || paramValue === undefined) return null
 
-    // Prefer detailBase (auth params only) over the full collection URL to avoid
-    // passing collection-scoping params (from, ids, types) to single-entity endpoints.
-    const baseUrl = collectionConfig.detailBase || collectionConfig.url || collectionConfig.path
+    const baseUrl = collectionConfig.url || collectionConfig.path
     if (!baseUrl) return null
 
     let detailUrl
