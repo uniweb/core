@@ -282,6 +282,23 @@ export default class Website {
       }
     }
 
+    // Normalize trailing slashes for consistent matching
+    const normalizedStripped = stripped === '/' ? '/' : stripped.replace(/\/$/, '')
+
+    // Priority 1: Direct match on the (possibly display) route.
+    // Handles published-payload sites where the page map may already contain
+    // locale-translated display routes (e.g. fr pages have fr routes).
+    // For file-system sites whose page map uses canonical routes this will
+    // simply fall through to the reverse-translate path below.
+    const directMatch = this.pages.find((page) => page.route === normalizedStripped)
+    if (directMatch) {
+      if (!directMatch.hasContent()) {
+        const indexChild = directMatch.children.find((c) => c.isIndex)
+        if (indexChild) return indexChild
+      }
+      return directMatch
+    }
+
     // Reverse-translate display route to canonical (e.g., '/acerca-de' → '/about')
     stripped = this.reverseTranslateRoute(stripped)
 
@@ -289,7 +306,7 @@ export default class Website {
     // '/about/' and '/about' should match the same page
     const normalizedRoute = stripped === '/' ? '/' : stripped.replace(/\/$/, '')
 
-    // Priority 1: Exact match on actual route
+    // Priority 1b: Exact match on canonical route
     const exactMatch = this.pages.find((page) => page.route === normalizedRoute)
     if (exactMatch) {
       // Priority 1.5: folder page with an isIndex child — resolve to the index child.
