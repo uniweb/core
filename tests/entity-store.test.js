@@ -246,7 +246,14 @@ describe('EntityStore', () => {
     it('uses detail: rest to fetch single item on template page', async () => {
       const dataStore = new DataStore()
       const article = { slug: 'my-post', title: 'My Post' }
-      const fetcher = jest.fn().mockResolvedValue({ data: article })
+      const detailArticle = { ...article, body: 'Full content' }
+      // Collection-first: fetcher is called for collection then detail
+      const fetcher = jest.fn().mockImplementation((config) => {
+        if (config.schema === 'articles') {
+          return Promise.resolve({ data: [article] })
+        }
+        return Promise.resolve({ data: detailArticle })
+      })
       dataStore.registerFetcher(fetcher)
 
       const store = new EntityStore({ dataStore })
@@ -267,8 +274,8 @@ describe('EntityStore', () => {
       const meta = { inheritData: ['articles'] }
 
       const result = await store.fetch(block, meta)
-      expect(result.data.article).toEqual(article)
-      // Should NOT have the plural key (no collection fetched)
+      expect(result.data.article).toEqual(detailArticle)
+      // Collection-first: only singular key is returned
       expect(result.data.articles).toBeUndefined()
       // Should have fetched the detail URL
       expect(fetcher).toHaveBeenCalledWith(
@@ -282,7 +289,13 @@ describe('EntityStore', () => {
     it('uses detail: query to build query param URL', async () => {
       const dataStore = new DataStore()
       const article = { slug: 'my-post', title: 'My Post' }
-      const fetcher = jest.fn().mockResolvedValue({ data: article })
+      const detailArticle = { ...article, body: 'Full content' }
+      const fetcher = jest.fn().mockImplementation((config) => {
+        if (config.schema === 'articles') {
+          return Promise.resolve({ data: [article] })
+        }
+        return Promise.resolve({ data: detailArticle })
+      })
       dataStore.registerFetcher(fetcher)
 
       const store = new EntityStore({ dataStore })
@@ -303,7 +316,7 @@ describe('EntityStore', () => {
       const meta = { inheritData: ['articles'] }
 
       const result = await store.fetch(block, meta)
-      expect(result.data.article).toEqual(article)
+      expect(result.data.article).toEqual(detailArticle)
       expect(fetcher).toHaveBeenCalledWith(
         expect.objectContaining({
           url: 'https://api.example.com/articles?slug=my-post',
@@ -315,7 +328,13 @@ describe('EntityStore', () => {
     it('uses custom detail pattern with placeholder substitution', async () => {
       const dataStore = new DataStore()
       const article = { slug: 'my-post', title: 'My Post' }
-      const fetcher = jest.fn().mockResolvedValue({ data: article })
+      const detailArticle = { ...article, body: 'Full content' }
+      const fetcher = jest.fn().mockImplementation((config) => {
+        if (config.schema === 'articles') {
+          return Promise.resolve({ data: [article] })
+        }
+        return Promise.resolve({ data: detailArticle })
+      })
       dataStore.registerFetcher(fetcher)
 
       const store = new EntityStore({ dataStore })
@@ -336,7 +355,7 @@ describe('EntityStore', () => {
       const meta = { inheritData: ['articles'] }
 
       const result = await store.fetch(block, meta)
-      expect(result.data.article).toEqual(article)
+      expect(result.data.article).toEqual(detailArticle)
       expect(fetcher).toHaveBeenCalledWith(
         expect.objectContaining({
           url: 'https://api.example.com/article/my-post',
@@ -345,12 +364,13 @@ describe('EntityStore', () => {
       )
     })
 
-    it('skips detail query when collection is already cached', async () => {
+    it('uses cached collection as gate then fetches detail', async () => {
       const dataStore = new DataStore()
       const articles = [
         { slug: 'my-post', title: 'My Post' },
         { slug: 'other', title: 'Other' },
       ]
+      const detailArticle = { slug: 'my-post', title: 'My Post', body: 'Full' }
       const fetchConfig = {
         url: 'https://api.example.com/articles',
         schema: 'articles',
@@ -359,7 +379,8 @@ describe('EntityStore', () => {
       // Pre-populate cache with the collection
       dataStore.set(fetchConfig, articles)
 
-      const fetcher = jest.fn()
+      // Collection-first: still fetches detail URL for richer data
+      const fetcher = jest.fn().mockResolvedValue({ data: detailArticle })
       dataStore.registerFetcher(fetcher)
 
       const store = new EntityStore({ dataStore })
@@ -375,11 +396,17 @@ describe('EntityStore', () => {
       const meta = { inheritData: ['articles'] }
 
       const result = await store.fetch(block, meta)
-      // Should use cached collection and extract singular item
-      expect(result.data.articles).toEqual(articles)
-      expect(result.data.article).toEqual({ slug: 'my-post', title: 'My Post' })
-      // Should NOT have made any fetch call (cache hit)
-      expect(fetcher).not.toHaveBeenCalled()
+      // Collection-first: only singular key with detail data
+      expect(result.data.article).toEqual(detailArticle)
+      expect(result.data.articles).toBeUndefined()
+      // Should have fetched detail URL (collection was gate, not the final data)
+      expect(fetcher).toHaveBeenCalledTimes(1)
+      expect(fetcher).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: 'https://api.example.com/articles/my-post',
+          schema: 'article',
+        })
+      )
     })
 
     it('skips detail query when no dynamicContext', async () => {
