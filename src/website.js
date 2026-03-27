@@ -68,7 +68,11 @@ export default class Website {
     this.config = config
 
     // Locale configuration
-    this.defaultLocale = config.defaultLanguage || 'en'
+    // siteDefaultLocale: the site's true default language (for route translations)
+    // defaultLocale: effective default for URL prefix logic — domainLocale overrides
+    //   to prevent unnecessary /{locale}/ prefixes on domain-locale pages
+    this.siteDefaultLocale = config.defaultLanguage || 'en'
+    this.defaultLocale = config.domainLocale || this.siteDefaultLocale
     this.activeLocale = config.activeLocale || this.defaultLocale
 
     // Build locales list from i18n config
@@ -171,7 +175,7 @@ export default class Website {
    * @returns {string} Translated route or original if no translation exists
    */
   translateRoute(canonicalRoute, locale = this.activeLocale) {
-    if (!locale || locale === this.defaultLocale) return canonicalRoute
+    if (!locale || locale === this.siteDefaultLocale) return canonicalRoute
     const entry = this._routeTranslations[locale]
     if (!entry) return canonicalRoute
     // Exact match
@@ -195,7 +199,7 @@ export default class Website {
    * @returns {string} Canonical route or original if no translation exists
    */
   reverseTranslateRoute(displayRoute, locale = this.activeLocale) {
-    if (!locale || locale === this.defaultLocale) return displayRoute
+    if (!locale || locale === this.siteDefaultLocale) return displayRoute
     const entry = this._routeTranslations[locale]
     if (!entry) return displayRoute
     // Exact match
@@ -740,6 +744,18 @@ export default class Website {
 
     // Reverse-translate from current locale to canonical route
     targetRoute = this.reverseTranslateRoute(targetRoute)
+
+    // Per-domain locale: if a domain is designated for this locale,
+    // return a full cross-domain URL instead of a path-based prefix.
+    const domainLocales = this.config?.domainLocales
+    if (domainLocales) {
+      const designated = Object.entries(domainLocales).find(([, lang]) => lang === localeCode)
+      if (designated) {
+        const domain = designated[0]
+        const translatedRoute = this.translateRoute(targetRoute, localeCode)
+        return `https://${domain}${translatedRoute === '/' ? '/' : translatedRoute}`
+      }
+    }
 
     // Default locale uses root path (no prefix), no translation needed
     if (localeCode === this.defaultLocale) {
