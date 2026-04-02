@@ -21,6 +21,9 @@ export default class Page {
     this.keywords = pageData.keywords || null
     this.lastModified = pageData.lastModified || null
 
+    // Redirect target (if set, this page redirects instead of rendering content)
+    this.redirect = pageData.redirect || null
+
     // Navigation visibility options
     this.hidden = pageData.hidden || false
     this.hideInHeader = pageData.hideInHeader || false
