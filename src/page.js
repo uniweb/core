@@ -23,6 +23,8 @@ export default class Page {
 
     // Redirect target (if set, this page redirects instead of rendering content)
     this.redirect = pageData.redirect || null
+    // Rewrite target (if set, this route is served by an external site)
+    this.rewrite = pageData.rewrite || null
 
     // Navigation visibility options
     this.hidden = pageData.hidden || false
