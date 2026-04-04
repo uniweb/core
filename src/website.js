@@ -295,13 +295,7 @@ export default class Website {
     // For file-system sites whose page map uses canonical routes this will
     // simply fall through to the reverse-translate path below.
     const directMatch = this.pages.find((page) => page.route === normalizedStripped)
-    if (directMatch) {
-      if (!directMatch.hasContent()) {
-        const indexChild = directMatch.children.find((c) => c.isIndex)
-        if (indexChild) return indexChild
-      }
-      return directMatch
-    }
+    if (directMatch) return directMatch
 
     // Reverse-translate display route to canonical (e.g., '/acerca-de' → '/about')
     stripped = this.reverseTranslateRoute(stripped)
@@ -312,16 +306,7 @@ export default class Website {
 
     // Priority 1b: Exact match on canonical route
     const exactMatch = this.pages.find((page) => page.route === normalizedRoute)
-    if (exactMatch) {
-      // Priority 1.5: folder page with an isIndex child — resolve to the index child.
-      // This makes /Articles resolve to the /Articles/index page for rendering,
-      // keeping the URL clean while serving real content.
-      if (!exactMatch.hasContent()) {
-        const indexChild = exactMatch.children.find((c) => c.isIndex)
-        if (indexChild) return indexChild
-      }
-      return exactMatch
-    }
+    if (exactMatch) return exactMatch
 
     // Priority 2: Index page nav route match
     const indexMatch = this.pages.find((page) => page.isIndex && page.getNavRoute() === normalizedRoute)
@@ -945,11 +930,11 @@ export default class Website {
         if (navType === 'footer' && page.hideInFooter) return false
       }
 
-      // Skip empty folders that have no visible children AND no index child.
-      // Folders with an isIndex child are navigable (they link to the index page)
-      // even after the index child itself is filtered out above.
-      const hasNavigableIndex = !page.hasContent() && page.children?.some((c) => c.isIndex)
-      if (!page.hasContent() && !hasNavigableIndex && !page.children?.some(isPageVisible)) return false
+      // Skip content-less containers that have no visible children.
+      // Containers WITH visible children stay in the hierarchy as group nodes
+      // (hasContent: false) — navigation components can render them as headers
+      // or link them via navigableRoute to the first descendant with content.
+      if (!page.hasContent() && !page.children?.some(isPageVisible)) return false
 
       // Apply custom filter if provided
       if (customFilter && !customFilter(page)) return false
