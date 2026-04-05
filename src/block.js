@@ -168,6 +168,15 @@ export default class Block {
   }
 
   /**
+   * Unique key for this block across all pages.
+   * Combines the page route with the block's positional id.
+   * Use as a React key when cross-page uniqueness matters.
+   */
+  get key() {
+    return `${this.path}-${this.id}`
+  }
+
+  /**
    * The parent page's URL path, one level up from the current page.
    * Use this for "Back" links in detail pages: /blog/1 → /blog
    *
