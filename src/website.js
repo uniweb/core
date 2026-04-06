@@ -238,6 +238,23 @@ export default class Website {
       }
     }
 
+    // Fallback: infer parent-child from route structure for unlinked pages.
+    // The editor sets parentRoute via buildEnginePreviewPayload(), but published
+    // payloads may not include it. Infer from route nesting so children arrays
+    // are always populated (needed for nav filtering and getNavigableRoute).
+    // Only applies to nested routes (e.g., /Articles/index → parent /Articles).
+    // Top-level pages (e.g., /Features) are NOT children of the homepage.
+    for (const page of this.pages) {
+      if (page.parent || page.route === '/') continue
+      const inferredParent = page.route.replace(/\/[^/]+$/, '')
+      if (!inferredParent || inferredParent === '/' || inferredParent === page.route) continue
+      const parent = pageMap.get(inferredParent)
+      if (parent) {
+        parent.children.push(page)
+        page.parent = parent
+      }
+    }
+
     // Build page ID map for makeHref() resolution
     // Supports both explicit IDs and route-based lookup
     this._pageIdMap = new Map()
@@ -295,7 +312,13 @@ export default class Website {
     // For file-system sites whose page map uses canonical routes this will
     // simply fall through to the reverse-translate path below.
     const directMatch = this.pages.find((page) => page.route === normalizedStripped)
-    if (directMatch) return directMatch
+    if (directMatch) {
+      // Folder with index child: always resolve to the index page.
+      // The index child is the designated landing page for this folder URL.
+      const indexChild = directMatch.children.find((c) => c.isIndex)
+      if (indexChild) return indexChild
+      return directMatch
+    }
 
     // Reverse-translate display route to canonical (e.g., '/acerca-de' → '/about')
     stripped = this.reverseTranslateRoute(stripped)
@@ -306,7 +329,11 @@ export default class Website {
 
     // Priority 1b: Exact match on canonical route
     const exactMatch = this.pages.find((page) => page.route === normalizedRoute)
-    if (exactMatch) return exactMatch
+    if (exactMatch) {
+      const indexChild = exactMatch.children.find((c) => c.isIndex)
+      if (indexChild) return indexChild
+      return exactMatch
+    }
 
     // Priority 2: Index page nav route match
     const indexMatch = this.pages.find((page) => page.isIndex && page.getNavRoute() === normalizedRoute)
@@ -930,11 +957,14 @@ export default class Website {
         if (navType === 'footer' && page.hideInFooter) return false
       }
 
-      // Skip content-less containers that have no visible children.
-      // Containers WITH visible children stay in the hierarchy as group nodes
-      // (hasContent: false) — navigation components can render them as headers
-      // or link them via navigableRoute to the first descendant with content.
-      if (!page.hasContent() && !page.children?.some(isPageVisible)) return false
+      // Skip content-less containers that have no visible or navigable children.
+      // Folders with an isIndex child are navigable (they link to the index page)
+      // even though the index child itself is filtered out of the nav tree above.
+      // Containers with other visible children stay as group nodes.
+      if (!page.hasContent()) {
+        const hasNavigableIndex = page.children?.some((c) => c.isIndex)
+        if (!hasNavigableIndex && !page.children?.some(isPageVisible)) return false
+      }
 
       // Apply custom filter if provided
       if (customFilter && !customFilter(page)) return false

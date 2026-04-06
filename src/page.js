@@ -387,8 +387,13 @@ export default class Page {
    */
   getNavigableRoute() {
     if (this.hasContent()) return this.route
-    // Content-less containers: find first descendant with content
-    for (const child of this.children || []) {
+    const children = this.children || []
+    // Prefer the index child (designated landing page for this folder).
+    // Return this folder's own route so the URL stays clean (/Articles, not /Articles/index).
+    const indexChild = children.find((c) => c.isIndex)
+    if (indexChild) return this.route
+    // Fall back to first child with content
+    for (const child of children) {
       const route = child.getNavigableRoute()
       if (route) return route
     }
