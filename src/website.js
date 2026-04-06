@@ -742,7 +742,9 @@ export default class Website {
    * @returns {string}
    */
   getLocaleUrl(localeCode, route = null) {
-    let targetRoute = route || this.activePage.route
+    // Use getNavRoute() so index pages return the clean folder URL
+    // (e.g., /Articles instead of /Articles/index)
+    let targetRoute = route || this.activePage.getNavRoute()
 
     // Strip current locale prefix if present in route
     if (this.activeLocale && this.activeLocale !== this.defaultLocale) {
