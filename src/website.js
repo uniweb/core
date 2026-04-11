@@ -606,6 +606,14 @@ export default class Website {
   }
 
   /**
+   * Whether the foundation has opted into view transitions.
+   * @type {boolean}
+   */
+  get viewTransitions() {
+    return !!globalThis.uniweb?.foundationConfig?.viewTransitions
+  }
+
+  /**
    * Get remote props from foundation config
    */
   getRemoteProps() {
