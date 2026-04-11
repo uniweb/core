@@ -606,11 +606,14 @@ export default class Website {
   }
 
   /**
-   * Whether the foundation has opted into view transitions.
+   * Whether view transitions are enabled for SPA navigation.
+   * Defaults to true — the browser's default crossfade is progressive
+   * enhancement with no downside. Foundations can set viewTransitions: false
+   * in foundation.js to disable.
    * @type {boolean}
    */
   get viewTransitions() {
-    return !!globalThis.uniweb?.foundationConfig?.viewTransitions
+    return globalThis.uniweb.foundationConfig?.viewTransitions !== false
   }
 
   /**
