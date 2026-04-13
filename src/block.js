@@ -215,6 +215,21 @@ export default class Block {
       return content.groups
     }
 
+    // Foundation content handler hook
+    // Runs BEFORE semantic parsing. Foundations can declare a handler
+    // in foundation.js `handlers.content` to transform raw ProseMirror
+    // content — typically for template engine instantiation of
+    // {placeholder} expressions against profile/report data.
+    const contentHandler = globalThis.uniweb?.foundationConfig?.handlers?.content
+    if (contentHandler && typeof contentHandler === 'function') {
+      try {
+        const transformed = contentHandler(content, this)
+        if (transformed !== undefined) content = transformed
+      } catch (err) {
+        console.error('Foundation content handler failed:', err)
+      }
+    }
+
     // ProseMirror document - use semantic-parser
     if (content?.type === 'doc') {
       return this.extractFromProseMirror(content)
