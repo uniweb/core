@@ -73,12 +73,24 @@ export default class Page {
     this.versionMeta = pageData.versionMeta || null // { versions, latestId }
     this.versionScope = pageData.versionScope || null // The route where versioning starts
 
+    // Build-time flag: does this page have renderable content?
+    // Distinct from "are sections loaded?" — content-less containers
+    // (folders with page.yml but no markdown) are always false.
+    // Falls back to checking sections for backward compat (non-split mode).
+    this._hasContent = pageData.hasContent ?? (pageData.sections?.length > 0)
+
     // Store raw section data for lazy block building
     // Blocks are created on first access (when page is rendered), not during Website init
     // This ensures foundationConfig is available for getDefaultBlockType()
     // Layout panels (header, footer, left, right) are shared at Website level
+    // undefined = not yet loaded (split mode, non-current page)
+    // [] = loaded but empty (content-less container)
+    // [...] = loaded with content
     this._bodySections = pageData.sections
     this._bodyBlocks = null
+
+    // Guard against concurrent loadContent() calls
+    this._loadingContent = null
 
     Object.seal(this)
   }
@@ -89,6 +101,9 @@ export default class Page {
    */
   get bodyBlocks() {
     if (!this._bodyBlocks) {
+      // If sections haven't been loaded yet (split mode), return empty array.
+      // PageRenderer will call loadContent() before rendering.
+      if (this._bodySections === undefined) return []
       this._bodyBlocks = (this._bodySections || []).map(
         (section, index) => new Block(section, index, this)
       )
@@ -360,11 +375,58 @@ export default class Page {
   }
 
   /**
-   * Check if page has body content (sections)
+   * Check if page has body content (sections).
+   * Uses a build-time flag — always reflects whether the page has markdown,
+   * regardless of whether section content has been loaded yet (split mode).
    * @returns {boolean}
    */
   hasContent() {
-    return this.bodyBlocks.length > 0
+    return this._hasContent
+  }
+
+  /**
+   * Check if section content has been loaded.
+   * In non-split mode, always true (sections are always present).
+   * In split mode, true for the pre-embedded current page and any page
+   * whose content has been fetched via loadContent().
+   * @returns {boolean}
+   */
+  isContentLoaded() {
+    return this._bodySections !== undefined
+  }
+
+  /**
+   * Fetch and store section content from the server.
+   * Deduplicates concurrent calls (e.g., rapid navigation).
+   * No-op if content is already loaded or embedded.
+   * @returns {Promise<void>}
+   */
+  async loadContent() {
+    if (this._bodySections !== undefined) return  // already loaded or embedded
+    if (this._loadingContent) return this._loadingContent  // deduplicate
+
+    this._loadingContent = (async () => {
+      try {
+        const base = this.website.basePath || ''
+        // Locale-aware URL: non-default locale pages live under /{locale}/_pages/
+        const localePrefix = this.website.activeLocale !== this.website.defaultLocale
+          ? `/${this.website.activeLocale}` : ''
+        const routePath = this.route === '/' ? '/index' : this.route
+        const res = await fetch(`${base}${localePrefix}/_pages${routePath}.json`)
+        if (!res.ok) {
+          console.warn(`[Page] Failed to load content for ${this.route}: ${res.status}`)
+          this._bodySections = []  // Mark as loaded (empty) to prevent retries
+          return
+        }
+        const data = await res.json()
+        this._bodySections = data.sections || []
+        this._bodyBlocks = null  // Reset lazy cache so getter rebuilds
+      } finally {
+        this._loadingContent = null
+      }
+    })()
+
+    return this._loadingContent
   }
 
   // ─────────────────────────────────────────────────────────────────
