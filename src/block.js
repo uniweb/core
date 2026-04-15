@@ -207,9 +207,9 @@ export default class Block {
    *
    * Pure and idempotent — safe to call more than once on the same block.
    * The constructor calls it once to populate `this.parsedContent`; the
-   * render pipeline may call it again after a foundation content handler
-   * transforms `rawContent` at render time (see
-   * runtime/src/prepare-props.js `applyContentHandler`).
+   * runtime's `prepareProps` may call it again after a foundation content
+   * handler transforms `rawContent`, to produce fresh semantic content
+   * from the instantiated tree.
    */
   parseContent(content) {
     // If content is already parsed with groups structure
