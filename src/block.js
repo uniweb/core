@@ -197,37 +197,24 @@ export default class Block {
   }
 
   /**
-   * Parse content into structured format using semantic-parser
-   * Supports multiple content formats:
-   * 1. Pre-parsed groups structure (from editor)
-   * 2. ProseMirror document (from markdown collection)
-   * 3. Plain object (passed through directly)
+   * Parse content into a flat semantic structure using @uniweb/semantic-parser.
    *
-   * Uses @uniweb/semantic-parser for rich content extraction including:
-   * - Pretitle detection (H3 before H1)
-   * - Banner/background image detection
-   * - Semantic grouping (main + items)
-   * - Lists, links, buttons, etc.
+   * Supports multiple input shapes:
+   * 1. Pre-parsed groups structure (from the editor)
+   * 2. ProseMirror document (from markdown collection)
+   * 3. Wrapped ProseMirror document (content-API format)
+   * 4. Plain object (passed through directly)
+   *
+   * Pure and idempotent — safe to call more than once on the same block.
+   * The constructor calls it once to populate `this.parsedContent`; the
+   * render pipeline may call it again after a foundation content handler
+   * transforms `rawContent` at render time (see
+   * runtime/src/prepare-props.js `applyContentHandler`).
    */
   parseContent(content) {
     // If content is already parsed with groups structure
     if (content?.groups) {
       return content.groups
-    }
-
-    // Foundation content handler hook
-    // Runs BEFORE semantic parsing. Foundations can declare a handler
-    // in foundation.js `handlers.content` to transform raw ProseMirror
-    // content — typically for template engine instantiation of
-    // {placeholder} expressions against profile/report data.
-    const contentHandler = globalThis.uniweb?.foundationConfig?.handlers?.content
-    if (contentHandler && typeof contentHandler === 'function') {
-      try {
-        const transformed = contentHandler(content, this)
-        if (transformed !== undefined) content = transformed
-      } catch (err) {
-        console.error('Foundation content handler failed:', err)
-      }
     }
 
     // ProseMirror document - use semantic-parser

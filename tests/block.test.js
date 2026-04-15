@@ -155,6 +155,68 @@ describe('Block', () => {
     })
   })
 
+  describe('parseContent purity', () => {
+    const sampleDoc = {
+      type: 'doc',
+      content: [
+        {
+          type: 'heading',
+          attrs: { level: 1 },
+          content: [{ type: 'text', text: 'Hello' }],
+        },
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text: 'World' }],
+        },
+      ],
+    }
+
+    beforeEach(() => {
+      delete globalThis.uniweb
+    })
+
+    it('does not read from globalThis.uniweb.foundationConfig', () => {
+      const page = mockPage()
+
+      // First block: no globalThis.uniweb at all
+      const noGlobal = new Block({ type: 'Hero', content: sampleDoc }, '0', page)
+
+      // Second block: globalThis.uniweb with a handler that would mutate content
+      // if parseContent still read it. The handler must NOT run.
+      let handlerCalls = 0
+      globalThis.uniweb = {
+        foundationConfig: {
+          handlers: {
+            content: (content) => {
+              handlerCalls++
+              return { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'MUTATED' }] }] }
+            },
+          },
+        },
+      }
+      const withGlobal = new Block({ type: 'Hero', content: sampleDoc }, '1', page)
+
+      expect(handlerCalls).toBe(0)
+      expect(withGlobal.parsedContent.title).toBe(noGlobal.parsedContent.title)
+      expect(withGlobal.parsedContent.title).toBe('Hello')
+    })
+
+    it('is idempotent — re-parsing the same raw content yields structurally equal output', () => {
+      const page = mockPage()
+      const block = new Block({ type: 'Hero', content: sampleDoc }, '0', page)
+
+      const first = block.parsedContent
+      const second = block.parseContent(block.rawContent)
+
+      // Not the same reference — parseContent returns a fresh object
+      expect(second).not.toBe(first)
+      // But the semantic shape matches
+      expect(second.title).toBe(first.title)
+      expect(second.paragraphs).toEqual(first.paragraphs)
+      expect(second.sequence).toEqual(first.sequence)
+    })
+  })
+
   describe('sealed object shape', () => {
     it('rejects new properties on block instances', () => {
       const page = mockPage()
