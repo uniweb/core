@@ -18,15 +18,12 @@
  *   page.state.set('selectedQuery', 'X')      // fires listeners
  *   page.state.delete('selectedQuery')        // fires listeners if the key existed
  *
- *   page.state.subscribe(fn)                  // all changes
- *   page.state.subscribe('selectedQuery', fn) // only this key
+ *   page.state.subscribe('selectedQuery', fn) // listener for this key only
  */
 export default class ObservableState {
   constructor() {
     // key → value
     this._values = new Map()
-    // Listeners that fire on any change.
-    this._listeners = new Set()
     // key → Set<fn> — listeners for a specific key.
     this._keyListeners = new Map()
 
@@ -76,26 +73,17 @@ export default class ObservableState {
   }
 
   /**
-   * Subscribe to changes.
+   * Subscribe to changes for a specific key. Returns an unsubscribe function.
    *
-   *   subscribe(fn)            — fires on any key change.
-   *   subscribe(key, fn)       — fires only when that key changes.
+   * There is no all-keys subscription form — fan-out belongs in the caller
+   * when it's really needed. Subscribing per key keeps re-render blast
+   * radius predictable and avoids "every write wakes every listener" fan-in.
    *
-   * Returns an unsubscribe function.
-   *
-   * @param {string|Function} keyOrFn
-   * @param {Function} [maybeFn]
+   * @param {string} key
+   * @param {Function} fn
    * @returns {Function} unsubscribe
    */
-  subscribe(keyOrFn, maybeFn) {
-    if (typeof keyOrFn === 'function') {
-      const fn = keyOrFn
-      this._listeners.add(fn)
-      return () => this._listeners.delete(fn)
-    }
-
-    const key = keyOrFn
-    const fn = maybeFn
+  subscribe(key, fn) {
     let bucket = this._keyListeners.get(key)
     if (!bucket) {
       bucket = new Set()
@@ -108,22 +96,8 @@ export default class ObservableState {
     }
   }
 
-  /**
-   * Iteration / dump — useful for persistence helpers that want to serialize
-   * every live slot. Returns a snapshot; mutating the result does not affect
-   * the store.
-   *
-   * @returns {Object} { key: value, ... }
-   */
-  snapshot() {
-    const out = {}
-    for (const [k, v] of this._values) out[k] = v
-    return out
-  }
-
   _notify(key) {
     const bucket = this._keyListeners.get(key)
     if (bucket) for (const fn of bucket) fn()
-    for (const fn of this._listeners) fn()
   }
 }

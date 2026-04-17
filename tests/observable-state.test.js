@@ -29,60 +29,13 @@ describe('ObservableState', () => {
     })
   })
 
-  describe('subscribe(fn) — all-keys listener', () => {
-    it('fires on any key change', () => {
-      const s = new ObservableState()
-      const fn = jest.fn()
-      s.subscribe(fn)
-
-      s.set('a', 1)
-      s.set('b', 2)
-
-      expect(fn).toHaveBeenCalledTimes(2)
-    })
-
-    it('unsubscribe stops notifications', () => {
-      const s = new ObservableState()
-      const fn = jest.fn()
-      const off = s.subscribe(fn)
-
-      off()
-      s.set('a', 1)
-
-      expect(fn).not.toHaveBeenCalled()
-    })
-
-    it('does not fire when the value is unchanged (===)', () => {
-      const s = new ObservableState()
-      const fn = jest.fn()
-      s.set('a', 1)
-      s.subscribe(fn)
-
-      s.set('a', 1)
-      expect(fn).not.toHaveBeenCalled()
-    })
-
-    it('delete fires listeners only when a key existed', () => {
-      const s = new ObservableState()
-      const fn = jest.fn()
-      s.subscribe(fn)
-
-      s.delete('unset')
-      expect(fn).not.toHaveBeenCalled()
-
-      s.set('a', 1)
-      s.delete('a')
-      expect(fn).toHaveBeenCalledTimes(2) // one for set, one for delete
-    })
-  })
-
-  describe('subscribe(key, fn) — keyed listener', () => {
+  describe('subscribe(key, fn)', () => {
     it('fires only when that key changes', () => {
       const s = new ObservableState()
       const fn = jest.fn()
       s.subscribe('slug', fn)
 
-      s.set('other', 1) // different key
+      s.set('other', 1)
       expect(fn).not.toHaveBeenCalled()
 
       s.set('slug', 'X')
@@ -99,34 +52,39 @@ describe('ObservableState', () => {
       expect(fn).not.toHaveBeenCalled()
     })
 
-    it('keyed and all-keys listeners coexist', () => {
+    it('does not fire when the value is unchanged (===)', () => {
       const s = new ObservableState()
-      const keyFn = jest.fn()
-      const anyFn = jest.fn()
-      s.subscribe('slug', keyFn)
-      s.subscribe(anyFn)
-
-      s.set('slug', 'X')
-      expect(keyFn).toHaveBeenCalledTimes(1)
-      expect(anyFn).toHaveBeenCalledTimes(1)
-
-      s.set('other', 1)
-      expect(keyFn).toHaveBeenCalledTimes(1)
-      expect(anyFn).toHaveBeenCalledTimes(2)
-    })
-  })
-
-  describe('snapshot', () => {
-    it('returns a shallow copy of live values', () => {
-      const s = new ObservableState()
+      const fn = jest.fn()
       s.set('a', 1)
-      s.set('b', { nested: true })
-      const snap = s.snapshot()
-      expect(snap).toEqual({ a: 1, b: { nested: true } })
+      s.subscribe('a', fn)
 
-      // Mutating the snapshot doesn't affect the store.
-      snap.a = 999
-      expect(s.get('a')).toBe(1)
+      s.set('a', 1)
+      expect(fn).not.toHaveBeenCalled()
+    })
+
+    it('delete fires listeners only when a key existed', () => {
+      const s = new ObservableState()
+      const fn = jest.fn()
+      s.subscribe('a', fn)
+
+      s.delete('unset')
+      expect(fn).not.toHaveBeenCalled()
+
+      s.set('a', 1)
+      s.delete('a')
+      expect(fn).toHaveBeenCalledTimes(2) // one for set, one for delete
+    })
+
+    it('supports multiple listeners on the same key', () => {
+      const s = new ObservableState()
+      const a = jest.fn()
+      const b = jest.fn()
+      s.subscribe('k', a)
+      s.subscribe('k', b)
+
+      s.set('k', 1)
+      expect(a).toHaveBeenCalledTimes(1)
+      expect(b).toHaveBeenCalledTimes(1)
     })
   })
 })

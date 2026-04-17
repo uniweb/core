@@ -196,8 +196,6 @@ export default class FetcherDispatcher {
   }
 
   async _runFetcher(fetcher, request, ctx, key, inflight) {
-    if (this._dev) this._validateExpectedFields(fetcher, request)
-
     try {
       const result = await fetcher.resolve(request, ctx)
 
@@ -248,25 +246,6 @@ export default class FetcherDispatcher {
         `[FetcherDispatcher] Fetcher return has unexpected keys: ${unexpected.join(', ')}. ` +
           'Expected { data, error?, meta? }.',
         { request, result },
-      )
-    }
-  }
-
-  /**
-   * Dev-mode: warn when a request carries fields a fetcher declares it won't
-   * use. Catches author-side frontmatter typos (e.g. `wher:` instead of
-   * `where:`). Fetchers opt in by declaring `expectedFields`.
-   */
-  _validateExpectedFields(fetcher, request) {
-    if (!Array.isArray(fetcher.expectedFields)) return
-    if (!request || typeof request !== 'object') return
-    const allowed = new Set(fetcher.expectedFields)
-    const extras = Object.keys(request).filter((k) => !allowed.has(k))
-    if (extras.length > 0) {
-      console.warn(
-        `[FetcherDispatcher] Request carries fields the fetcher won't consume: ${extras.join(', ')}. ` +
-          `Declared expectedFields: ${fetcher.expectedFields.join(', ')}.`,
-        { request },
       )
     }
   }

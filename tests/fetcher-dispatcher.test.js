@@ -336,33 +336,15 @@ describe('FetcherDispatcher', () => {
       warn.mockRestore()
     })
 
-    it('warns when the request carries fields not in expectedFields', async () => {
-      const dataStore = new DataStore()
-      const defaultFetcher = {
-        resolve: jest.fn().mockResolvedValue({ data: [] }),
-        expectedFields: ['schema', 'url'],
-      }
-      const d = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher, dev: true })
-      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
-
-      await d.dispatch({ url: 'https://x', schema: 's', wher: 'typo' }, {})
-      expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining('wher'),
-        expect.anything(),
-      )
-      warn.mockRestore()
-    })
-
     it('does not warn in production (dev: false)', async () => {
       const dataStore = new DataStore()
       const defaultFetcher = {
         resolve: jest.fn().mockResolvedValue({ data: [], extra: 'oops' }),
-        expectedFields: ['schema'],
       }
       const d = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher })
       const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
 
-      await d.dispatch({ url: 'https://x', schema: 's', wher: 'typo' }, {})
+      await d.dispatch({ url: 'https://x', schema: 's' }, {})
       expect(warn).not.toHaveBeenCalled()
       warn.mockRestore()
     })
