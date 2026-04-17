@@ -26,7 +26,7 @@
  * @param {Object} request - Normalized request (or fetch config)
  * @returns {string} A stable JSON string usable as a cache-Map key
  */
-export function defaultCacheKey(request) {
+export function deriveCacheKey(request) {
   const { path, url, schema, transform } = request || {}
   return JSON.stringify({ path, url, schema, transform })
 }

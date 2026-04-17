@@ -1,9 +1,9 @@
 import { describe, it, expect, jest } from '@jest/globals'
-import DataStore, { defaultCacheKey } from '../src/datastore.js'
+import DataStore, { deriveCacheKey } from '../src/datastore.js'
 
 describe('DataStore', () => {
   const config = { path: '/data/articles.json', schema: 'articles' }
-  const key = defaultCacheKey(config)
+  const key = deriveCacheKey(config)
 
   describe('get / set / has', () => {
     it('returns null on cache miss', () => {
@@ -80,15 +80,15 @@ describe('DataStore', () => {
     })
   })
 
-  describe('defaultCacheKey', () => {
+  describe('deriveCacheKey', () => {
     it('derives stable keys from path/url/schema/transform', () => {
-      expect(defaultCacheKey({ path: '/a', schema: 'x' }))
-        .toEqual(defaultCacheKey({ schema: 'x', path: '/a' }))
+      expect(deriveCacheKey({ path: '/a', schema: 'x' }))
+        .toEqual(deriveCacheKey({ schema: 'x', path: '/a' }))
     })
 
     it('ignores post-processing fields', () => {
-      const a = defaultCacheKey({ path: '/a', schema: 'x', limit: 3 })
-      const b = defaultCacheKey({ path: '/a', schema: 'x', limit: 99 })
+      const a = deriveCacheKey({ path: '/a', schema: 'x', limit: 3 })
+      const b = deriveCacheKey({ path: '/a', schema: 'x', limit: 99 })
       expect(a).toEqual(b)
     })
   })

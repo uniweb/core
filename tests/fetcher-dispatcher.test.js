@@ -1,6 +1,6 @@
 import { describe, it, expect, jest } from '@jest/globals'
 import FetcherDispatcher from '../src/fetcher-dispatcher.js'
-import DataStore, { defaultCacheKey } from '../src/datastore.js'
+import DataStore, { deriveCacheKey } from '../src/datastore.js'
 
 function buildFoundation(fetcherSpec, extras = {}) {
   return { default: { ...extras, fetcher: fetcherSpec } }
@@ -110,7 +110,7 @@ describe('FetcherDispatcher', () => {
       const d = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher })
 
       const request = { path: '/a.json', schema: 'a' }
-      dataStore.set(defaultCacheKey(request), { data: [1, 2, 3], meta: { t: 5 } })
+      dataStore.set(deriveCacheKey(request), { data: [1, 2, 3], meta: { t: 5 } })
 
       const result = await d.dispatch(request, {})
       expect(result).toEqual({ data: [1, 2, 3], meta: { t: 5 } })
@@ -125,7 +125,7 @@ describe('FetcherDispatcher', () => {
       const request = { path: '/a.json', schema: 'a' }
       await d.dispatch(request, {})
 
-      const key = defaultCacheKey(request)
+      const key = deriveCacheKey(request)
       expect(dataStore.get(key)).toEqual({ data: ['x'], meta: { t: 1 } })
     })
 
@@ -138,7 +138,7 @@ describe('FetcherDispatcher', () => {
       const result = await d.dispatch(request, {})
 
       expect(result.error).toBe('HTTP 500')
-      expect(dataStore.has(defaultCacheKey(request))).toBe(false)
+      expect(dataStore.has(deriveCacheKey(request))).toBe(false)
     })
 
     it('does not cache when the fetcher throws', async () => {
@@ -151,7 +151,7 @@ describe('FetcherDispatcher', () => {
 
       expect(result.data).toEqual([])
       expect(result.error).toBe('boom')
-      expect(dataStore.has(defaultCacheKey(request))).toBe(false)
+      expect(dataStore.has(deriveCacheKey(request))).toBe(false)
       expect(dataStore.inflight.size).toBe(0)
     })
 

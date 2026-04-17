@@ -11,7 +11,7 @@
  * only layer that touches DataStore directly; EntityStore calls the
  * dispatcher's `peek` / `dispatch` methods and never goes around it.
  */
-import { defaultCacheKey } from './datastore.js'
+import { deriveCacheKey } from './datastore.js'
 
 function normalizeFetcherSpec(raw) {
   if (!raw || typeof raw !== 'object') return { routes: [], fallback: null }
@@ -97,7 +97,7 @@ export default class FetcherDispatcher {
         console.warn('[FetcherDispatcher] fetcher.cacheKey threw:', err)
       }
     }
-    return defaultCacheKey(request)
+    return deriveCacheKey(request)
   }
 
   /**

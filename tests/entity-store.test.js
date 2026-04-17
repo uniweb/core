@@ -1,6 +1,6 @@
 import { describe, it, expect, jest } from '@jest/globals'
 import EntityStore from '../src/entity-store.js'
-import DataStore, { defaultCacheKey } from '../src/datastore.js'
+import DataStore, { deriveCacheKey } from '../src/datastore.js'
 import FetcherDispatcher from '../src/fetcher-dispatcher.js'
 
 /**
@@ -58,7 +58,7 @@ describe('EntityStore.resolve', () => {
     const { entityStore, dataStore, website } = makeHarness()
     const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
     const articles = [{ slug: 'a', title: 'A' }]
-    dataStore.set(defaultCacheKey(fetchConfig), { data: articles })
+    dataStore.set(deriveCacheKey(fetchConfig), { data: articles })
 
     const page = makePage({ fetch: fetchConfig })
     const block = makeBlock({ page }, website)
@@ -71,7 +71,7 @@ describe('EntityStore.resolve', () => {
   it('returns none when inheritData: false', () => {
     const { entityStore, dataStore, website } = makeHarness()
     const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
-    dataStore.set(defaultCacheKey(fetchConfig), { data: [{ slug: 'a' }] })
+    dataStore.set(deriveCacheKey(fetchConfig), { data: [{ slug: 'a' }] })
 
     const page = makePage({ fetch: fetchConfig })
     const block = makeBlock({ page }, website)
@@ -278,7 +278,7 @@ describe('EntityStore.fetch', () => {
       schema: 'articles',
       detail: 'rest',
     }
-    dataStore.set(defaultCacheKey(fetchConfig), { data: articles })
+    dataStore.set(deriveCacheKey(fetchConfig), { data: articles })
 
     const dynamicContext = { paramName: 'slug', paramValue: 'my-post', schema: 'articles' }
     const parent = makePage({ fetch: fetchConfig })
@@ -381,7 +381,7 @@ describe('EntityStore.fetch', () => {
 
     const articles = [{ slug: 'a', title: 'Bonjour' }]
     dataStore.set(
-      defaultCacheKey({ path: '/fr/data/articles.json', schema: 'articles' }),
+      deriveCacheKey({ path: '/fr/data/articles.json', schema: 'articles' }),
       { data: articles },
     )
 
