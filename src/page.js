@@ -93,11 +93,24 @@ export default class Page {
     // Guard against concurrent loadContent() calls
     this._loadingContent = null
 
-    // Observable state — foundations write scoped UI/query state here; kit's
-    // usePageState bridges it into React; fetchers read it via ctx.page.state.
-    this.state = new ObservableState()
+    // Observable state — allocated on first access via the `state` getter.
+    // Pages that never use state pay nothing; the prop is read-only (no
+    // `page.state = X` reassignment) so components can only mutate slots
+    // via the intended `page.state.set(key, value)` API.
+    this._state = null
 
     Object.seal(this)
+  }
+
+  /**
+   * Observable state scoped to this page. Foundations write scoped UI / query
+   * state here; kit's usePageState bridges it into React; fetchers read it
+   * via ctx.page.state. Lazily allocated on first read — pages that never
+   * touch state never build one.
+   */
+  get state() {
+    if (!this._state) this._state = new ObservableState()
+    return this._state
   }
 
   /**

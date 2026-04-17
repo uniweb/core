@@ -51,8 +51,10 @@ export default class Website {
     })
     this.entityStore = new EntityStore({ website: this })
 
-    // Observable site-wide state — survives content rebuilds.
-    this.state = new ObservableState()
+    // Observable site-wide state — allocated on first access via the `state`
+    // getter, survives content rebuilds. Read-only prop (no `website.state = X`
+    // reassignment) so callers can only mutate slots via website.state.set(...).
+    this._state = null
 
     // ─── Fields populated by _applyContent (declared up front so Object.seal works) ───
     this.name = ''
@@ -188,6 +190,18 @@ export default class Website {
 
     if (content !== undefined) this._applyContent(content)
     return this
+  }
+
+  /**
+   * Observable site-wide state. Foundations write cross-page values here
+   * (authenticated user, appearance preference, a filter set on /search
+   * that other pages honor); fetchers read it via ctx.website.state when
+   * handling site-level fetch configs. Lazily allocated on first read —
+   * sites that never touch state never build one.
+   */
+  get state() {
+    if (!this._state) this._state = new ObservableState()
+    return this._state
   }
 
   /**
