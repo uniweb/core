@@ -68,21 +68,25 @@ export default class EntityStore {
   /**
    * Determine which schemas a component requests.
    *
+   * Delivery is default-on: if meta doesn't explicitly opt out, the
+   * component gets everything available at its ancestor levels.
+   * `meta.inheritData === false` is the only way to refuse delivery.
+   *
+   * Legacy `inheritData` arrays are still accepted but ignored as a
+   * filter — they collapse to "collect all" under default-on.
+   *
    * @param {Object} meta - Component runtime metadata
-   * @returns {string[]|null} Array of schema names, or null if none requested
+   * @returns {string[]|null} Array of schema names ([] = all), or null to deliver nothing
    */
   _getRequestedSchemas(meta) {
-    if (!meta) return null
+    // No meta? Still default-on — e.g. components without meta.js at all.
+    if (!meta) return []
 
-    const inheritData = meta.inheritData
-    if (!inheritData) return null
+    // Explicit opt-out.
+    if (meta.inheritData === false) return null
 
-    // inheritData: true → inherit all (resolved from fetch configs)
-    // inheritData: ['articles'] → specific schemas
-    if (Array.isArray(inheritData)) return inheritData.length > 0 ? inheritData : null
-    if (inheritData === true) return [] // empty = "all available"
-
-    return null
+    // Default (undefined, true, or legacy array) → collect all available.
+    return []
   }
 
   /**

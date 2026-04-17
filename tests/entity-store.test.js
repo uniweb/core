@@ -29,7 +29,9 @@ function makePage(overrides = {}) {
 
 describe('EntityStore', () => {
   describe('resolve()', () => {
-    it('returns none when component has no inheritData', () => {
+    // Delivery is default-on: a component without `meta.inheritData === false`
+    // receives whatever is available in the ancestor chain.
+    it('returns none when no fetch configs exist in the hierarchy', () => {
       const dataStore = new DataStore()
       const store = new EntityStore({ dataStore })
       const block = makeBlock()
@@ -39,13 +41,44 @@ describe('EntityStore', () => {
       expect(result.data).toBeNull()
     })
 
-    it('returns none when meta is null', () => {
+    it('returns none when meta is null and no fetch configs exist', () => {
       const dataStore = new DataStore()
       const store = new EntityStore({ dataStore })
       const block = makeBlock()
 
       const result = store.resolve(block, null)
       expect(result.status).toBe('none')
+    })
+
+    it('delivers data by default when fetch config exists (no inheritData needed)', () => {
+      const dataStore = new DataStore()
+      const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
+      const articles = [{ slug: 'a', title: 'A' }]
+      dataStore.set(fetchConfig, articles)
+
+      const store = new EntityStore({ dataStore })
+      const page = makePage({ fetch: fetchConfig })
+      const block = makeBlock({ page })
+
+      // Empty meta — no opt-in declared. Under default-on, delivery still happens.
+      const result = store.resolve(block, {})
+      expect(result.status).toBe('ready')
+      expect(result.data.articles).toEqual(articles)
+    })
+
+    it('returns none when component opts out with inheritData: false', () => {
+      const dataStore = new DataStore()
+      const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
+      dataStore.set(fetchConfig, [{ slug: 'a' }])
+
+      const store = new EntityStore({ dataStore })
+      const page = makePage({ fetch: fetchConfig })
+      const block = makeBlock({ page })
+      const meta = { inheritData: false }
+
+      const result = store.resolve(block, meta)
+      expect(result.status).toBe('none')
+      expect(result.data).toBeNull()
     })
 
     it('returns ready when DataStore is pre-populated', () => {

@@ -14,6 +14,9 @@ export { default as Page } from './page.js'
 export { default as Block } from './block.js'
 export { default as Theme } from './theme.js'
 
+// Utilities
+export { default as singularize } from './singularize.js'
+
 /**
  * The singleton Uniweb instance.
  * Created by the runtime during initialization.
