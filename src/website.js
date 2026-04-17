@@ -24,23 +24,16 @@ import singularize from './singularize.js'
  * swaps reassemble the dispatcher but preserve the DataStore and state so the
  * editor's live-edit path doesn't wipe either between keystrokes.
  *
- * Supports two call shapes:
- *   new Website({ content, foundation?, extensions?, defaultFetcher? })  // preferred
- *   new Website(content)                                                  // legacy
- *
- * The legacy shape exists for tests and the SSR preload path that doesn't
- * have a foundation to pass; both delegate to the preferred shape.
+ *   new Website({ content, foundation?, extensions?, defaultFetcher?, dev? })
  */
 export default class Website {
-  constructor(arg = {}) {
-    const isBundle = arg && typeof arg === 'object' && 'content' in arg && !('pages' in arg)
-    const {
-      content = {},
-      foundation = null,
-      extensions = [],
-      defaultFetcher = null,
-      dev = false,
-    } = isBundle ? arg : { content: arg }
+  constructor({
+    content = {},
+    foundation = null,
+    extensions = [],
+    defaultFetcher = null,
+    dev = false,
+  } = {}) {
 
     // ─── Foundation / dispatcher state (not re-derived on rebuild) ───
     this._foundation = foundation

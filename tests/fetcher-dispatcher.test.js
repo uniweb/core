@@ -263,6 +263,29 @@ describe('FetcherDispatcher', () => {
       expect(seenSignal.aborted).toBe(true)
     })
 
+    it('aborts the master immediately when the first attached signal is already aborted', async () => {
+      const dataStore = new DataStore()
+      let seenSignal
+      let resolveFetch
+      const defaultFetcher = {
+        resolve: jest.fn((req, ctx) => {
+          seenSignal = ctx.signal
+          return new Promise((r) => { resolveFetch = r })
+        }),
+      }
+      const d = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher })
+
+      const controller = new AbortController()
+      controller.abort() // abort BEFORE dispatch
+
+      const p = d.dispatch({ path: '/a.json', schema: 'a' }, { signal: controller.signal })
+      // Fetcher sees an already-aborted master signal.
+      expect(seenSignal.aborted).toBe(true)
+
+      resolveFetch({ data: ['ok'] })
+      await p
+    })
+
     it('does not abort the master when no caller supplied a signal', async () => {
       const dataStore = new DataStore()
       let seenSignal

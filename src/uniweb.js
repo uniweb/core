@@ -99,17 +99,6 @@ export default class Uniweb {
   }
 
   /**
-   * Register a secondary foundation at runtime. Preserved for cases where
-   * extensions are loaded out-of-band (SSR module resolution) after the
-   * Uniweb singleton already exists; note that doing so does NOT update the
-   * Website's FetcherDispatcher — pass extensions into the constructor when
-   * their fetchers matter.
-   */
-  registerExtension(foundation) {
-    this._wireExtension(foundation)
-  }
-
-  /**
    * Get per-component runtime metadata — primary first, then extensions in
    * declared order.
    */

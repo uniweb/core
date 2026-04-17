@@ -22,12 +22,6 @@ describe('Uniweb', () => {
       const uniweb = build({ extensions: [ext] })
       expect(uniweb.extensions).toHaveLength(1)
     })
-
-    it('registerExtension() appends at runtime (dispatcher not reassembled)', () => {
-      const uniweb = build()
-      uniweb.registerExtension(mockFoundation({ Foo: () => 'foo' }))
-      expect(uniweb.extensions).toHaveLength(1)
-    })
   })
 
   describe('getComponent', () => {

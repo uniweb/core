@@ -25,12 +25,6 @@ describe('Website constructor', () => {
     expect(w.entityStore).toBeDefined()
   })
 
-  it('accepts content-only legacy shape for tests / SSR preload paths', () => {
-    const w = new Website(simpleContent())
-    expect(w.pages).toHaveLength(2)
-    expect(w.config.name).toBe('Test')
-  })
-
   it('exposes page.state as ObservableState', () => {
     const w = new Website({ content: simpleContent() })
     const page = w.pages[0]
