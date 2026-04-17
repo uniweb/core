@@ -13,6 +13,10 @@ export { default as Website } from './website.js'
 export { default as Page } from './page.js'
 export { default as Block } from './block.js'
 export { default as Theme } from './theme.js'
+export { default as DataStore, defaultCacheKey } from './datastore.js'
+export { default as EntityStore } from './entity-store.js'
+export { default as FetcherDispatcher } from './fetcher-dispatcher.js'
+export { default as ObservableState } from './observable-state.js'
 
 // Utilities
 export { default as singularize } from './singularize.js'
@@ -28,13 +32,16 @@ export function getUniweb() {
 
 /**
  * Create and register the Uniweb singleton.
- * Called by @uniweb/runtime during site initialization.
  *
- * @param {Object} configData - Website configuration (pages, theme, config)
- * @returns {Uniweb} The created instance
+ * @param {Object} content - Site content payload (pages, theme, config, layouts, ...).
+ * @param {Object} [foundation] - Loaded primary foundation module.
+ * @param {Array<Object>} [extensions] - Loaded extension modules.
+ * @param {Object} [options]
+ * @param {{ resolve: Function }} [options.defaultFetcher] - Framework default fetcher.
+ * @returns {Uniweb} The created instance (also assigned to globalThis.uniweb).
  */
-export function createUniweb(configData) {
-  const instance = new Uniweb(configData)
+export function createUniweb(content, foundation = null, extensions = [], { defaultFetcher = null } = {}) {
+  const instance = new Uniweb({ content, foundation, extensions, defaultFetcher })
   globalThis.uniweb = instance
   return instance
 }

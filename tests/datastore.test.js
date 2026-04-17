@@ -1,112 +1,95 @@
 import { describe, it, expect, jest } from '@jest/globals'
-import DataStore from '../src/datastore.js'
+import DataStore, { defaultCacheKey } from '../src/datastore.js'
 
 describe('DataStore', () => {
   const config = { path: '/data/articles.json', schema: 'articles' }
+  const key = defaultCacheKey(config)
 
   describe('get / set / has', () => {
     it('returns null on cache miss', () => {
       const store = new DataStore()
-      expect(store.has(config)).toBe(false)
-      expect(store.get(config)).toBeNull()
+      expect(store.has(key)).toBe(false)
+      expect(store.get(key)).toBeNull()
     })
 
-    it('stores and retrieves data', () => {
+    it('stores and retrieves entries', () => {
       const store = new DataStore()
-      const data = [{ id: 1, title: 'Hello' }]
-      store.set(config, data)
+      const entry = { data: [{ id: 1, title: 'Hello' }] }
+      store.set(key, entry)
 
-      expect(store.has(config)).toBe(true)
-      expect(store.get(config)).toEqual(data)
+      expect(store.has(key)).toBe(true)
+      expect(store.get(key)).toEqual(entry)
     })
 
-    it('uses normalized key (field order does not matter)', () => {
+    it('preserves meta on the entry', () => {
       const store = new DataStore()
-      const data = [1, 2, 3]
+      const entry = { data: [{ id: 1 }], meta: { fetchedAt: 123 } }
+      store.set(key, entry)
 
-      // set with one field ordering
-      store.set({ schema: 'articles', path: '/data/articles.json' }, data)
-
-      // get with the canonical ordering
-      expect(store.get(config)).toEqual(data)
+      expect(store.get(key)).toEqual(entry)
     })
   })
 
-  describe('fetch — cache hit', () => {
-    it('returns cached data without calling fetcher', async () => {
+  describe('subscribe', () => {
+    it('fires listeners on set', () => {
       const store = new DataStore()
-      const fetcher = jest.fn()
-      store.registerFetcher(fetcher)
+      const fn = jest.fn()
+      store.subscribe(fn)
 
-      const data = [{ id: 1 }]
-      store.set(config, data)
+      store.set(key, { data: [] })
+      expect(fn).toHaveBeenCalledTimes(1)
 
-      const result = await store.fetch(config)
-      expect(result).toEqual({ data })
-      expect(fetcher).not.toHaveBeenCalled()
+      store.set(key, { data: [{ id: 2 }] })
+      expect(fn).toHaveBeenCalledTimes(2)
+    })
+
+    it('returns an unsubscribe function', () => {
+      const store = new DataStore()
+      const fn = jest.fn()
+      const unsubscribe = store.subscribe(fn)
+
+      unsubscribe()
+      store.set(key, { data: [] })
+      expect(fn).not.toHaveBeenCalled()
     })
   })
 
-  describe('fetch — in-flight dedup', () => {
-    it('calls fetcher only once for concurrent requests', async () => {
+  describe('inflight', () => {
+    it('exposes a Map that the dispatcher can manage', () => {
       const store = new DataStore()
-      const data = [{ id: 1 }]
-      const fetcher = jest.fn().mockResolvedValue({ data })
-      store.registerFetcher(fetcher)
+      expect(store.inflight).toBeInstanceOf(Map)
 
-      // Two concurrent fetches for the same config
-      const [r1, r2] = await Promise.all([
-        store.fetch(config),
-        store.fetch(config),
-      ])
-
-      expect(fetcher).toHaveBeenCalledTimes(1)
-      expect(r1.data).toEqual(data)
-      expect(r2.data).toEqual(data)
-
-      // Data should now be cached
-      expect(store.has(config)).toBe(true)
-    })
-  })
-
-  describe('fetch — miss', () => {
-    it('calls fetcher and caches the result', async () => {
-      const store = new DataStore()
-      const data = [{ id: 2 }]
-      const fetcher = jest.fn().mockResolvedValue({ data })
-      store.registerFetcher(fetcher)
-
-      const result = await store.fetch(config)
-      expect(result.data).toEqual(data)
-      expect(store.get(config)).toEqual(data)
-    })
-
-    it('does not cache null data', async () => {
-      const store = new DataStore()
-      const fetcher = jest.fn().mockResolvedValue({ data: null, error: 'Not found' })
-      store.registerFetcher(fetcher)
-
-      const result = await store.fetch(config)
-      expect(result.error).toBe('Not found')
-      expect(store.has(config)).toBe(false)
+      const entry = { promise: Promise.resolve(), signals: new Set() }
+      store.inflight.set(key, entry)
+      expect(store.inflight.get(key)).toBe(entry)
     })
   })
 
   describe('clear', () => {
-    it('flushes cache and in-flight map', async () => {
+    it('flushes cache and in-flight map', () => {
       const store = new DataStore()
-      store.set(config, [1])
-      expect(store.has(config)).toBe(true)
+      store.set(key, { data: [1] })
+      store.inflight.set(key, { promise: Promise.resolve(), signals: new Set() })
+      expect(store.has(key)).toBe(true)
+      expect(store.inflight.has(key)).toBe(true)
 
       store.clear()
-      expect(store.has(config)).toBe(false)
+
+      expect(store.has(key)).toBe(false)
+      expect(store.inflight.has(key)).toBe(false)
     })
   })
 
-  describe('error — no fetcher', () => {
-    it('throws when fetch is called without registerFetcher', async () => {
-      const store = new DataStore()
-      await expect(store.fetch(config)).rejects.toThrow('no fetcher registered')
+  describe('defaultCacheKey', () => {
+    it('derives stable keys from path/url/schema/transform', () => {
+      expect(defaultCacheKey({ path: '/a', schema: 'x' }))
+        .toEqual(defaultCacheKey({ schema: 'x', path: '/a' }))
+    })
+
+    it('ignores post-processing fields', () => {
+      const a = defaultCacheKey({ path: '/a', schema: 'x', limit: 3 })
+      const b = defaultCacheKey({ path: '/a', schema: 'x', limit: 99 })
+      expect(a).toEqual(b)
     })
   })
 })

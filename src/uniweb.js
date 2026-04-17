@@ -1,43 +1,87 @@
 /**
  * Uniweb Core Runtime
  *
- * The main runtime instance that manages the website, foundation components,
- * and provides utilities to components.
+ * Singleton that holds the Website, routing components, icon resolver, and
+ * foundation declaration references. Kit hooks, the icon resolver, and the
+ * prepare-props pipeline read from here via `globalThis.uniweb`.
+ *
+ * The foundation and extensions are passed at construction time — the Website
+ * constructs its FetcherDispatcher from them, and the Uniweb singleton caches
+ * the same references so the kit can still do `globalThis.uniweb.getComponent(name)`
+ * and similar lookups without touching the Website.
  */
 
 import Website from './website.js'
 import Analytics from './analytics.js'
 
 export default class Uniweb {
-  constructor(configData) {
-    this.activeWebsite = new Website(configData)
-    this.childBlockRenderer = null // Function to render child blocks
-    this.routingComponents = {} // Link, SafeHtml, useNavigate, etc.
-    this.foundation = null // The loaded foundation module
-    this.foundationConfig = {} // Configuration from foundation (capabilities)
-    this.meta = {} // Per-component runtime metadata (from meta.js)
-    this.extensions = [] // Array of { foundation, meta } objects
+  /**
+   * @param {Object} options
+   * @param {Object} options.content - Site content payload (pages, theme, config, layouts, ...).
+   * @param {Object|null} [options.foundation] - Loaded primary foundation module.
+   * @param {Array<Object>} [options.extensions] - Loaded extension modules.
+   * @param {{ resolve: Function }} [options.defaultFetcher] - Framework default fetcher
+   *   used by the dispatcher's fallback when no foundation route matches.
+   */
+  constructor({ content = {}, foundation = null, extensions = [], defaultFetcher = null } = {}) {
+    this.activeWebsite = new Website({ content, foundation, extensions, defaultFetcher })
+
+    this.foundation = foundation
+    this.foundationConfig = {}
+    this.meta = foundation?.default?.meta || {}
+    this.extensions = []
+
+    if (foundation?.default?.capabilities) {
+      this.foundationConfig = { ...foundation.default.capabilities }
+    }
+    if (foundation?.default?.layoutMeta) {
+      this.foundationConfig.layoutMeta = foundation.default.layoutMeta
+    }
+    if (foundation?.default?.handlers) {
+      this.foundationConfig.handlers = foundation.default.handlers
+    }
+    if (foundation?.default?.viewTransitions !== undefined) {
+      this.foundationConfig.viewTransitions = foundation.default.viewTransitions
+    }
+
+    for (const ext of extensions) {
+      this._wireExtension(ext)
+    }
+
+    this.childBlockRenderer = null
+    this.routingComponents = {}
     this.language = 'en'
 
     // Icon resolver: (library, name) => Promise<string|null>
-    // Set by runtime based on site config
+    // Set by the runtime from site config.
     this.iconResolver = null
 
     // Pre-populated icon cache for SSR: Map<"family:name", svgString>
-    // Populated by prerender before rendering, read synchronously by Icon component
+    // Populated by prerender before rendering, read synchronously by Icon.
     this.iconCache = new Map()
 
-    // Initialize analytics (disabled by default, configure via site config)
-    this.analytics = new Analytics(configData.analytics || {})
+    this.analytics = new Analytics(content?.analytics || content?.config?.analytics || {})
 
     Object.seal(this)
   }
 
   /**
-   * Resolve an icon by library and name
-   * @param {string} library - Icon family (lucide, heroicons, etc.)
-   * @param {string} name - Icon name (check, arrow-right, etc.)
-   * @returns {Promise<string|null>} SVG string or null
+   * Wire an extension into the singleton. Kit's getComponent falls through
+   * from the primary foundation to each extension in declared order; meta
+   * lookups do the same.
+   *
+   * @private
+   */
+  _wireExtension(foundation) {
+    const meta = foundation?.default?.meta || {}
+    this.extensions.push({ foundation, meta })
+  }
+
+  /**
+   * Resolve an icon by library and name.
+   * @param {string} library
+   * @param {string} name
+   * @returns {Promise<string|null>}
    */
   async resolveIcon(library, name) {
     if (!this.iconResolver) {
@@ -48,114 +92,67 @@ export default class Uniweb {
   }
 
   /**
-   * Get a cached icon synchronously (for SSR/prerender)
-   * @param {string} library - Icon family code
-   * @param {string} name - Icon name
-   * @returns {string|null} SVG string or null if not cached
+   * Synchronous icon lookup for SSR.
    */
   getIconSync(library, name) {
     return this.iconCache.get(`${library}:${name}`) || null
   }
 
   /**
-   * Set the foundation module after loading
-   * @param {Object} foundation - The loaded ESM foundation module
-   */
-  setFoundation(foundation) {
-    this.foundation = foundation
-
-    // Store per-component metadata if present (lives under default export)
-    if (foundation.default?.meta) {
-      this.meta = foundation.default.meta
-    }
-  }
-
-  /**
-   * Register an extension (secondary foundation)
-   * @param {Object} foundation - The loaded ESM extension module
+   * Register a secondary foundation at runtime. Preserved for cases where
+   * extensions are loaded out-of-band (SSR module resolution) after the
+   * Uniweb singleton already exists; note that doing so does NOT update the
+   * Website's FetcherDispatcher — pass extensions into the constructor when
+   * their fetchers matter.
    */
   registerExtension(foundation) {
-    const meta = foundation.default?.meta || {}
-    this.extensions.push({ foundation, meta })
+    this._wireExtension(foundation)
   }
 
   /**
-   * Get runtime metadata for a component
-   * @param {string} componentName
-   * @returns {Object|null} Meta with defaults, context, initialState, background, data
+   * Get per-component runtime metadata — primary first, then extensions in
+   * declared order.
    */
   getComponentMeta(componentName) {
     const primary = this.meta[componentName]
     if (primary) return primary
-
     for (const ext of this.extensions) {
       const meta = ext.meta[componentName]
       if (meta) return meta
     }
-
     return null
   }
 
-  /**
-   * Get default param values for a component
-   * @param {string} componentName
-   * @returns {Object} Default values (empty object if none)
-   */
   getComponentDefaults(componentName) {
     return this.getComponentMeta(componentName)?.defaults || {}
   }
 
-  /**
-   * Get a component from the foundation by name
-   * @param {string} name - Component name
-   * @returns {React.ComponentType|undefined}
-   */
   getComponent(name) {
     if (!this.foundation) {
       console.warn('[Runtime] No foundation loaded')
       return undefined
     }
-
-    // Primary foundation first (components are named exports)
     const primary = this.foundation[name]
     if (primary) return primary
-
-    // Fall through to extensions (declared order)
     for (const ext of this.extensions) {
       const component = ext.foundation[name]
       if (component) return component
     }
-
     return undefined
   }
 
-  /**
-   * List available components from the foundation
-   * @returns {string[]}
-   */
   listComponents() {
     const names = new Set()
-
     if (this.foundation) {
       for (const name of Object.keys(this.foundation)) {
         if (name !== 'default') names.add(name)
       }
     }
-
     for (const ext of this.extensions) {
       for (const name of Object.keys(ext.foundation)) {
         if (name !== 'default') names.add(name)
       }
     }
-
     return [...names]
-  }
-
-  /**
-   * Set foundation configuration
-   * @param {Object} config
-   */
-  setFoundationConfig(config) {
-    this.foundationConfig = config
   }
 }

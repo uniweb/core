@@ -6,6 +6,7 @@
  */
 
 import Block from './block.js'
+import ObservableState from './observable-state.js'
 
 export default class Page {
   constructor(pageData, id, website) {
@@ -91,6 +92,10 @@ export default class Page {
 
     // Guard against concurrent loadContent() calls
     this._loadingContent = null
+
+    // Observable state — foundations write scoped UI/query state here; kit's
+    // usePageState bridges it into React; fetchers read it via ctx.page.state.
+    this.state = new ObservableState()
 
     Object.seal(this)
   }

@@ -1,23 +1,43 @@
 import { describe, it, expect, jest } from '@jest/globals'
 import EntityStore from '../src/entity-store.js'
-import DataStore from '../src/datastore.js'
+import DataStore, { defaultCacheKey } from '../src/datastore.js'
+import FetcherDispatcher from '../src/fetcher-dispatcher.js'
 
 /**
- * Helper to create a minimal block stub
+ * Build a minimal Website-shaped stub with a real FetcherDispatcher and
+ * DataStore backed by a mock default fetcher. Returns the fetcher spy so tests
+ * can assert call counts / arguments.
  */
-function makeBlock(overrides = {}) {
+function makeHarness({ fetcherImpl } = {}) {
+  const dataStore = new DataStore()
+  const defaultFetcher = {
+    resolve: jest.fn((req) =>
+      fetcherImpl ? fetcherImpl(req) : Promise.resolve({ data: null })
+    ),
+  }
+  const fetcher = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher })
+  const website = {
+    dataStore,
+    fetcher,
+    config: {},
+    getActiveLocale: () => 'en',
+    getDefaultLocale: () => 'en',
+  }
+  const entityStore = new EntityStore({ website })
+  website.entityStore = entityStore
+  return { website, entityStore, dataStore, fetcher, fetcherSpy: defaultFetcher.resolve }
+}
+
+function makeBlock(overrides = {}, website = null) {
   return {
     fetch: null,
     dynamicContext: null,
     page: makePage(),
-    website: null,
+    website,
     ...overrides,
   }
 }
 
-/**
- * Helper to create a minimal page stub
- */
 function makePage(overrides = {}) {
   return {
     fetch: null,
@@ -27,620 +47,387 @@ function makePage(overrides = {}) {
   }
 }
 
-describe('EntityStore', () => {
-  describe('resolve()', () => {
-    // Delivery is default-on: a component without `meta.inheritData === false`
-    // receives whatever is available in the ancestor chain.
-    it('returns none when no fetch configs exist in the hierarchy', () => {
-      const dataStore = new DataStore()
-      const store = new EntityStore({ dataStore })
-      const block = makeBlock()
-
-      const result = store.resolve(block, {})
-      expect(result.status).toBe('none')
-      expect(result.data).toBeNull()
-    })
-
-    it('returns none when meta is null and no fetch configs exist', () => {
-      const dataStore = new DataStore()
-      const store = new EntityStore({ dataStore })
-      const block = makeBlock()
-
-      const result = store.resolve(block, null)
-      expect(result.status).toBe('none')
-    })
-
-    it('delivers data by default when fetch config exists (no inheritData needed)', () => {
-      const dataStore = new DataStore()
-      const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
-      const articles = [{ slug: 'a', title: 'A' }]
-      dataStore.set(fetchConfig, articles)
-
-      const store = new EntityStore({ dataStore })
-      const page = makePage({ fetch: fetchConfig })
-      const block = makeBlock({ page })
-
-      // Empty meta — no opt-in declared. Under default-on, delivery still happens.
-      const result = store.resolve(block, {})
-      expect(result.status).toBe('ready')
-      expect(result.data.articles).toEqual(articles)
-    })
-
-    it('returns none when component opts out with inheritData: false', () => {
-      const dataStore = new DataStore()
-      const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
-      dataStore.set(fetchConfig, [{ slug: 'a' }])
-
-      const store = new EntityStore({ dataStore })
-      const page = makePage({ fetch: fetchConfig })
-      const block = makeBlock({ page })
-      const meta = { inheritData: false }
-
-      const result = store.resolve(block, meta)
-      expect(result.status).toBe('none')
-      expect(result.data).toBeNull()
-    })
-
-    it('returns ready when DataStore is pre-populated', () => {
-      const dataStore = new DataStore()
-      const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
-      const articles = [{ slug: 'a', title: 'A' }]
-      dataStore.set(fetchConfig, articles)
-
-      const store = new EntityStore({ dataStore })
-      const page = makePage({ fetch: fetchConfig })
-      const block = makeBlock({ page })
-      const meta = { inheritData: true }
-
-      const result = store.resolve(block, meta)
-      expect(result.status).toBe('ready')
-      expect(result.data.articles).toEqual(articles)
-    })
-
-    it('returns ready from DataStore cache', () => {
-      const dataStore = new DataStore()
-      const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
-      const articles = [{ slug: 'a' }]
-      dataStore.set(fetchConfig, articles)
-
-      const store = new EntityStore({ dataStore })
-      const page = makePage({ fetch: fetchConfig })
-      const block = makeBlock({ page })
-      const meta = { inheritData: true }
-
-      const result = store.resolve(block, meta)
-      expect(result.status).toBe('ready')
-      expect(result.data.articles).toEqual(articles)
-    })
-
-    it('returns pending on cache miss', () => {
-      const dataStore = new DataStore()
-      const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
-
-      const store = new EntityStore({ dataStore })
-      const page = makePage({ fetch: fetchConfig })
-      const block = makeBlock({ page })
-      const meta = { inheritData: true }
-
-      const result = store.resolve(block, meta)
-      expect(result.status).toBe('pending')
-      expect(result.data).toBeNull()
-    })
-
-    it('returns none when no fetch configs found', () => {
-      const dataStore = new DataStore()
-      const store = new EntityStore({ dataStore })
-      const page = makePage()
-      const block = makeBlock({ page })
-      const meta = { inheritData: true }
-
-      const result = store.resolve(block, meta)
-      expect(result.status).toBe('none')
-    })
+describe('EntityStore.resolve', () => {
+  it('returns none when no fetch configs exist in the hierarchy', () => {
+    const { entityStore, website } = makeHarness()
+    const block = makeBlock({}, website)
+    expect(entityStore.resolve(block, {})).toEqual({ status: 'none', data: null })
   })
 
-  describe('fetch()', () => {
-    it('walks hierarchy: block → page → parent → site', async () => {
-      const dataStore = new DataStore()
-      const articles = [{ slug: 'a' }]
-      const fetcher = jest.fn().mockResolvedValue({ data: articles })
-      dataStore.registerFetcher(fetcher)
+  it('delivers data by default when a cascade match is cached', () => {
+    const { entityStore, dataStore, website } = makeHarness()
+    const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
+    const articles = [{ slug: 'a', title: 'A' }]
+    dataStore.set(defaultCacheKey(fetchConfig), { data: articles })
 
-      const store = new EntityStore({ dataStore })
+    const page = makePage({ fetch: fetchConfig })
+    const block = makeBlock({ page }, website)
 
-      const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
-      const parent = makePage({ fetch: fetchConfig })
-      const page = makePage({ parent })
-      const block = makeBlock({ page })
-      const meta = { inheritData: ['articles'] }
+    const result = entityStore.resolve(block, {})
+    expect(result.status).toBe('ready')
+    expect(result.data.articles).toEqual(articles)
+  })
 
-      const result = await store.fetch(block, meta)
-      expect(result.data.articles).toEqual(articles)
-      expect(fetcher).toHaveBeenCalledWith(fetchConfig)
+  it('returns none when inheritData: false', () => {
+    const { entityStore, dataStore, website } = makeHarness()
+    const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
+    dataStore.set(defaultCacheKey(fetchConfig), { data: [{ slug: 'a' }] })
+
+    const page = makePage({ fetch: fetchConfig })
+    const block = makeBlock({ page }, website)
+
+    expect(entityStore.resolve(block, { inheritData: false })).toEqual({ status: 'none', data: null })
+  })
+
+  it('returns pending on cache miss', () => {
+    const { entityStore, website } = makeHarness()
+    const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
+    const page = makePage({ fetch: fetchConfig })
+    const block = makeBlock({ page }, website)
+
+    expect(entityStore.resolve(block, {})).toEqual({ status: 'pending', data: null })
+  })
+})
+
+describe('EntityStore.fetch', () => {
+  it('walks hierarchy: block → page → parent → site', async () => {
+    const articles = [{ slug: 'a' }]
+    const { entityStore, fetcherSpy, website } = makeHarness({
+      fetcherImpl: () => Promise.resolve({ data: articles }),
     })
 
-    it('does not walk beyond parent page', async () => {
-      const dataStore = new DataStore()
-      const fetcher = jest.fn().mockResolvedValue({ data: [] })
-      dataStore.registerFetcher(fetcher)
+    const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
+    const parent = makePage({ fetch: fetchConfig })
+    const page = makePage({ parent })
+    const block = makeBlock({ page }, website)
 
-      const store = new EntityStore({ dataStore })
+    const result = await entityStore.fetch(block, { inheritData: ['articles'] })
+    expect(result.data.articles).toEqual(articles)
+    expect(fetcherSpy).toHaveBeenCalledWith(fetchConfig, expect.anything())
+  })
 
-      const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
-      const grandparent = makePage({ fetch: fetchConfig })
-      const parent = makePage({ parent: grandparent })
-      const page = makePage({ parent })
-      const block = makeBlock({ page })
-      const meta = { inheritData: ['articles'] }
+  it('does not walk beyond parent page', async () => {
+    const { entityStore, fetcherSpy, website } = makeHarness({
+      fetcherImpl: () => Promise.resolve({ data: [] }),
+    })
+    const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
+    const grandparent = makePage({ fetch: fetchConfig })
+    const parent = makePage({ parent: grandparent })
+    const page = makePage({ parent })
+    const block = makeBlock({ page }, website)
 
-      const result = await store.fetch(block, meta)
-      // Should NOT find grandparent's fetch config — only walks one parent level
-      expect(result.data).toBeNull()
-      expect(fetcher).not.toHaveBeenCalled()
+    const result = await entityStore.fetch(block, { inheritData: ['articles'] })
+    expect(result.data).toBeNull()
+    expect(fetcherSpy).not.toHaveBeenCalled()
+  })
+
+  it('finds fetch config from site-level config', async () => {
+    const teams = [{ name: 'Team A' }]
+    const { entityStore, website } = makeHarness({
+      fetcherImpl: () => Promise.resolve({ data: teams }),
+    })
+    const fetchConfig = { path: '/data/teams.json', schema: 'teams' }
+    website.config = { fetch: fetchConfig }
+
+    const block = makeBlock({ page: makePage() }, website)
+    const result = await entityStore.fetch(block, {})
+    expect(result.data.teams).toEqual(teams)
+  })
+
+  it('first match per schema wins (block overrides page)', async () => {
+    const blockArticles = [{ from: 'block' }]
+    const pageArticles = [{ from: 'page' }]
+    const blockConfig = { path: '/data/block-articles.json', schema: 'articles' }
+    const pageConfig = { path: '/data/page-articles.json', schema: 'articles' }
+
+    const { entityStore, fetcherSpy, website } = makeHarness({
+      fetcherImpl: (req) =>
+        req.path === blockConfig.path
+          ? Promise.resolve({ data: blockArticles })
+          : Promise.resolve({ data: pageArticles }),
     })
 
-    it('finds fetch config from site-level config', async () => {
-      const dataStore = new DataStore()
-      const teams = [{ name: 'Team A' }]
-      const fetcher = jest.fn().mockResolvedValue({ data: teams })
-      dataStore.registerFetcher(fetcher)
+    const page = makePage({ fetch: pageConfig })
+    const block = makeBlock({ page, fetch: blockConfig }, website)
 
-      const store = new EntityStore({ dataStore })
+    const result = await entityStore.fetch(block, {})
+    expect(result.data.articles).toEqual(blockArticles)
+    expect(fetcherSpy).toHaveBeenCalledTimes(1)
+    expect(fetcherSpy).toHaveBeenCalledWith(blockConfig, expect.anything())
+  })
 
-      const fetchConfig = { path: '/data/teams.json', schema: 'teams' }
-      const page = makePage()
-      const block = makeBlock({
-        page,
-        website: {
-          config: { fetch: fetchConfig },
-          dataStore,
-          getActiveLocale: () => 'en',
-          getDefaultLocale: () => 'en',
-        },
-      })
-      const meta = { inheritData: true }
-
-      const result = await store.fetch(block, meta)
-      expect(result.data.teams).toEqual(teams)
+  it('resolves singular item for dynamic routes', async () => {
+    const articles = [
+      { slug: 'hello', title: 'Hello' },
+      { slug: 'world', title: 'World' },
+    ]
+    const { entityStore, website } = makeHarness({
+      fetcherImpl: () => Promise.resolve({ data: articles }),
     })
+    const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
+    const dynamicContext = { paramName: 'slug', paramValue: 'world', schema: 'articles' }
+    const page = makePage({ fetch: fetchConfig })
+    const block = makeBlock({ page, dynamicContext }, website)
 
-    it('first match per schema wins (block overrides page)', async () => {
-      const dataStore = new DataStore()
-      const blockArticles = [{ from: 'block' }]
-      const pageArticles = [{ from: 'page' }]
+    const result = await entityStore.fetch(block, {})
+    expect(result.data.articles).toEqual(articles)
+    expect(result.data.article).toEqual({ slug: 'world', title: 'World' })
+  })
 
-      const blockConfig = { path: '/data/block-articles.json', schema: 'articles' }
-      const pageConfig = { path: '/data/page-articles.json', schema: 'articles' }
-
-      const fetcher = jest.fn((config) => {
-        if (config.path === blockConfig.path) return Promise.resolve({ data: blockArticles })
-        return Promise.resolve({ data: pageArticles })
-      })
-      dataStore.registerFetcher(fetcher)
-
-      const store = new EntityStore({ dataStore })
-      const page = makePage({ fetch: pageConfig })
-      const block = makeBlock({ page, fetch: blockConfig })
-      const meta = { inheritData: true }
-
-      const result = await store.fetch(block, meta)
-      expect(result.data.articles).toEqual(blockArticles)
-      // Should only fetch the block-level config (first match wins)
-      expect(fetcher).toHaveBeenCalledTimes(1)
-      expect(fetcher).toHaveBeenCalledWith(blockConfig)
-    })
-
-    it('resolves singular item for dynamic routes', async () => {
-      const dataStore = new DataStore()
-      const articles = [
-        { slug: 'hello', title: 'Hello' },
-        { slug: 'world', title: 'World' },
-      ]
-      const fetcher = jest.fn().mockResolvedValue({ data: articles })
-      dataStore.registerFetcher(fetcher)
-
-      const store = new EntityStore({ dataStore })
-
-      const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
-      const dynamicContext = {
-        paramName: 'slug',
-        paramValue: 'world',
-        schema: 'articles',
-      }
-      const page = makePage({ fetch: fetchConfig })
-      const block = makeBlock({ page, dynamicContext })
-      const meta = { inheritData: true }
-
-      const result = await store.fetch(block, meta)
-      expect(result.data.articles).toEqual(articles)
-      expect(result.data.article).toEqual({ slug: 'world', title: 'World' })
-    })
-
-    it('returns null data when no inheritData', async () => {
-      const dataStore = new DataStore()
-      const store = new EntityStore({ dataStore })
-      const block = makeBlock()
-
-      const result = await store.fetch(block, {})
-      expect(result.data).toBeNull()
-    })
-
-    it('returns null data when no fetch configs found', async () => {
-      const dataStore = new DataStore()
-      const store = new EntityStore({ dataStore })
-      const page = makePage()
-      const block = makeBlock({ page })
-      const meta = { inheritData: true }
-
-      const result = await store.fetch(block, meta)
-      expect(result.data).toBeNull()
-    })
-
-    it('uses detail: rest to fetch single item on template page', async () => {
-      const dataStore = new DataStore()
-      const article = { slug: 'my-post', title: 'My Post' }
-      const detailArticle = { ...article, body: 'Full content' }
-      // Collection-first: fetcher is called for collection then detail
-      const fetcher = jest.fn().mockImplementation((config) => {
-        if (config.schema === 'articles') {
-          return Promise.resolve({ data: [article] })
-        }
+  it('detail: rest fetches single item on template page', async () => {
+    const collectionItem = { slug: 'my-post', title: 'My Post' }
+    const detailArticle = { ...collectionItem, body: 'Full' }
+    const { entityStore, fetcherSpy, website } = makeHarness({
+      fetcherImpl: (req) => {
+        if (req.schema === 'articles') return Promise.resolve({ data: [collectionItem] })
         return Promise.resolve({ data: detailArticle })
-      })
-      dataStore.registerFetcher(fetcher)
-
-      const store = new EntityStore({ dataStore })
-
-      const fetchConfig = {
-        url: 'https://api.example.com/articles',
-        schema: 'articles',
-        detail: 'rest',
-      }
-      const dynamicContext = {
-        paramName: 'slug',
-        paramValue: 'my-post',
-        schema: 'articles',
-      }
-      const parent = makePage({ fetch: fetchConfig })
-      const page = makePage({ parent, dynamicContext })
-      const block = makeBlock({ page })
-      const meta = { inheritData: ['articles'] }
-
-      const result = await store.fetch(block, meta)
-      expect(result.data.article).toEqual(detailArticle)
-      // Collection-first: only singular key is returned
-      expect(result.data.articles).toBeUndefined()
-      // Should have fetched the detail URL
-      expect(fetcher).toHaveBeenCalledWith(
-        expect.objectContaining({
-          url: 'https://api.example.com/articles/my-post',
-          schema: 'article',
-        })
-      )
+      },
     })
 
-    it('uses detail: query to build query param URL', async () => {
-      const dataStore = new DataStore()
-      const article = { slug: 'my-post', title: 'My Post' }
-      const detailArticle = { ...article, body: 'Full content' }
-      const fetcher = jest.fn().mockImplementation((config) => {
-        if (config.schema === 'articles') {
-          return Promise.resolve({ data: [article] })
-        }
-        return Promise.resolve({ data: detailArticle })
-      })
-      dataStore.registerFetcher(fetcher)
+    const fetchConfig = {
+      url: 'https://api.example.com/articles',
+      schema: 'articles',
+      detail: 'rest',
+    }
+    const dynamicContext = { paramName: 'slug', paramValue: 'my-post', schema: 'articles' }
+    const parent = makePage({ fetch: fetchConfig })
+    const page = makePage({ parent, dynamicContext })
+    const block = makeBlock({ page }, website)
 
-      const store = new EntityStore({ dataStore })
+    const result = await entityStore.fetch(block, { inheritData: ['articles'] })
+    expect(result.data.article).toEqual(detailArticle)
+    expect(result.data.articles).toBeUndefined()
+    expect(fetcherSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: 'https://api.example.com/articles/my-post',
+        schema: 'article',
+      }),
+      expect.anything(),
+    )
+  })
 
-      const fetchConfig = {
-        url: 'https://api.example.com/articles',
-        schema: 'articles',
-        detail: 'query',
-      }
-      const dynamicContext = {
-        paramName: 'slug',
-        paramValue: 'my-post',
-        schema: 'articles',
-      }
-      const parent = makePage({ fetch: fetchConfig })
-      const page = makePage({ parent, dynamicContext })
-      const block = makeBlock({ page })
-      const meta = { inheritData: ['articles'] }
-
-      const result = await store.fetch(block, meta)
-      expect(result.data.article).toEqual(detailArticle)
-      expect(fetcher).toHaveBeenCalledWith(
-        expect.objectContaining({
-          url: 'https://api.example.com/articles?slug=my-post',
-          schema: 'article',
-        })
-      )
+  it('detail: query builds query-param URL', async () => {
+    const collectionItem = { slug: 'my-post' }
+    const detailArticle = { ...collectionItem, body: 'Full' }
+    const { entityStore, fetcherSpy, website } = makeHarness({
+      fetcherImpl: (req) =>
+        req.schema === 'articles'
+          ? Promise.resolve({ data: [collectionItem] })
+          : Promise.resolve({ data: detailArticle }),
     })
 
-    it('uses custom detail pattern with placeholder substitution', async () => {
-      const dataStore = new DataStore()
-      const article = { slug: 'my-post', title: 'My Post' }
-      const detailArticle = { ...article, body: 'Full content' }
-      const fetcher = jest.fn().mockImplementation((config) => {
-        if (config.schema === 'articles') {
-          return Promise.resolve({ data: [article] })
-        }
-        return Promise.resolve({ data: detailArticle })
-      })
-      dataStore.registerFetcher(fetcher)
+    const fetchConfig = {
+      url: 'https://api.example.com/articles',
+      schema: 'articles',
+      detail: 'query',
+    }
+    const dynamicContext = { paramName: 'slug', paramValue: 'my-post', schema: 'articles' }
+    const parent = makePage({ fetch: fetchConfig })
+    const page = makePage({ parent, dynamicContext })
+    const block = makeBlock({ page }, website)
 
-      const store = new EntityStore({ dataStore })
+    await entityStore.fetch(block, {})
+    expect(fetcherSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: 'https://api.example.com/articles?slug=my-post',
+        schema: 'article',
+      }),
+      expect.anything(),
+    )
+  })
 
-      const fetchConfig = {
-        url: 'https://api.example.com/articles',
-        schema: 'articles',
-        detail: 'https://api.example.com/article/{slug}',
-      }
-      const dynamicContext = {
-        paramName: 'slug',
-        paramValue: 'my-post',
-        schema: 'articles',
-      }
-      const parent = makePage({ fetch: fetchConfig })
-      const page = makePage({ parent, dynamicContext })
-      const block = makeBlock({ page })
-      const meta = { inheritData: ['articles'] }
-
-      const result = await store.fetch(block, meta)
-      expect(result.data.article).toEqual(detailArticle)
-      expect(fetcher).toHaveBeenCalledWith(
-        expect.objectContaining({
-          url: 'https://api.example.com/article/my-post',
-          schema: 'article',
-        })
-      )
+  it('custom detail pattern substitutes placeholders', async () => {
+    const collectionItem = { slug: 'my-post' }
+    const detailArticle = { ...collectionItem, body: 'Full' }
+    const { entityStore, fetcherSpy, website } = makeHarness({
+      fetcherImpl: (req) =>
+        req.schema === 'articles'
+          ? Promise.resolve({ data: [collectionItem] })
+          : Promise.resolve({ data: detailArticle }),
     })
 
-    it('uses cached collection as gate then fetches detail', async () => {
-      const dataStore = new DataStore()
-      const articles = [
-        { slug: 'my-post', title: 'My Post' },
-        { slug: 'other', title: 'Other' },
-      ]
-      const detailArticle = { slug: 'my-post', title: 'My Post', body: 'Full' }
-      const fetchConfig = {
-        url: 'https://api.example.com/articles',
-        schema: 'articles',
-        detail: 'rest',
-      }
-      // Pre-populate cache with the collection
-      dataStore.set(fetchConfig, articles)
+    const fetchConfig = {
+      url: 'https://api.example.com/articles',
+      schema: 'articles',
+      detail: 'https://api.example.com/article/{slug}',
+    }
+    const dynamicContext = { paramName: 'slug', paramValue: 'my-post', schema: 'articles' }
+    const parent = makePage({ fetch: fetchConfig })
+    const page = makePage({ parent, dynamicContext })
+    const block = makeBlock({ page }, website)
 
-      // Collection-first: still fetches detail URL for richer data
-      const fetcher = jest.fn().mockResolvedValue({ data: detailArticle })
-      dataStore.registerFetcher(fetcher)
+    await entityStore.fetch(block, {})
+    expect(fetcherSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: 'https://api.example.com/article/my-post',
+        schema: 'article',
+      }),
+      expect.anything(),
+    )
+  })
 
-      const store = new EntityStore({ dataStore })
+  it('uses cached collection as gate then fetches detail', async () => {
+    const articles = [{ slug: 'my-post' }, { slug: 'other' }]
+    const detailArticle = { slug: 'my-post', body: 'Full' }
 
-      const dynamicContext = {
-        paramName: 'slug',
-        paramValue: 'my-post',
-        schema: 'articles',
-      }
-      const parent = makePage({ fetch: fetchConfig })
-      const page = makePage({ parent, dynamicContext })
-      const block = makeBlock({ page })
-      const meta = { inheritData: ['articles'] }
-
-      const result = await store.fetch(block, meta)
-      // Collection-first: only singular key with detail data
-      expect(result.data.article).toEqual(detailArticle)
-      expect(result.data.articles).toBeUndefined()
-      // Should have fetched detail URL (collection was gate, not the final data)
-      expect(fetcher).toHaveBeenCalledTimes(1)
-      expect(fetcher).toHaveBeenCalledWith(
-        expect.objectContaining({
-          url: 'https://api.example.com/articles/my-post',
-          schema: 'article',
-        })
-      )
+    const { entityStore, fetcherSpy, dataStore, website } = makeHarness({
+      fetcherImpl: () => Promise.resolve({ data: detailArticle }),
     })
+    const fetchConfig = {
+      url: 'https://api.example.com/articles',
+      schema: 'articles',
+      detail: 'rest',
+    }
+    dataStore.set(defaultCacheKey(fetchConfig), { data: articles })
 
-    it('skips detail query when no dynamicContext', async () => {
-      const dataStore = new DataStore()
-      const articles = [{ slug: 'a' }]
-      const fetcher = jest.fn().mockResolvedValue({ data: articles })
-      dataStore.registerFetcher(fetcher)
+    const dynamicContext = { paramName: 'slug', paramValue: 'my-post', schema: 'articles' }
+    const parent = makePage({ fetch: fetchConfig })
+    const page = makePage({ parent, dynamicContext })
+    const block = makeBlock({ page }, website)
 
-      const store = new EntityStore({ dataStore })
+    const result = await entityStore.fetch(block, {})
+    expect(result.data.article).toEqual(detailArticle)
+    expect(fetcherSpy).toHaveBeenCalledTimes(1)
+    expect(fetcherSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ url: 'https://api.example.com/articles/my-post' }),
+      expect.anything(),
+    )
+  })
 
-      const fetchConfig = {
-        url: 'https://api.example.com/articles',
-        schema: 'articles',
-        detail: 'rest',
-      }
-      const page = makePage({ fetch: fetchConfig })
-      const block = makeBlock({ page })
-      const meta = { inheritData: ['articles'] }
-
-      const result = await store.fetch(block, meta)
-      // No dynamicContext — should fetch the full collection, not detail
-      expect(result.data.articles).toEqual(articles)
-      expect(fetcher).toHaveBeenCalledWith(fetchConfig)
+  it('skips detail when no dynamicContext', async () => {
+    const articles = [{ slug: 'a' }]
+    const { entityStore, fetcherSpy, website } = makeHarness({
+      fetcherImpl: () => Promise.resolve({ data: articles }),
     })
+    const fetchConfig = {
+      url: 'https://api.example.com/articles',
+      schema: 'articles',
+      detail: 'rest',
+    }
+    const page = makePage({ fetch: fetchConfig })
+    const block = makeBlock({ page }, website)
 
-    it('falls back to collection fetch when detail is not defined', async () => {
-      const dataStore = new DataStore()
-      const articles = [
-        { slug: 'my-post', title: 'My Post' },
-        { slug: 'other', title: 'Other' },
-      ]
-      const fetcher = jest.fn().mockResolvedValue({ data: articles })
-      dataStore.registerFetcher(fetcher)
+    const result = await entityStore.fetch(block, {})
+    expect(result.data.articles).toEqual(articles)
+    expect(fetcherSpy).toHaveBeenCalledWith(fetchConfig, expect.anything())
+  })
 
-      const store = new EntityStore({ dataStore })
-
-      const fetchConfig = {
-        url: 'https://api.example.com/articles',
-        schema: 'articles',
-        // No detail field
-      }
-      const dynamicContext = {
-        paramName: 'slug',
-        paramValue: 'my-post',
-        schema: 'articles',
-      }
-      const parent = makePage({ fetch: fetchConfig })
-      const page = makePage({ parent, dynamicContext })
-      const block = makeBlock({ page })
-      const meta = { inheritData: ['articles'] }
-
-      const result = await store.fetch(block, meta)
-      // Should fetch full collection and extract singular
-      expect(result.data.articles).toEqual(articles)
-      expect(result.data.article).toEqual({ slug: 'my-post', title: 'My Post' })
-      expect(fetcher).toHaveBeenCalledWith(fetchConfig)
+  it('falls back to collection fetch when detail is not defined', async () => {
+    const articles = [{ slug: 'my-post' }, { slug: 'other' }]
+    const { entityStore, fetcherSpy, website } = makeHarness({
+      fetcherImpl: () => Promise.resolve({ data: articles }),
     })
+    const fetchConfig = { url: 'https://api.example.com/articles', schema: 'articles' }
+    const dynamicContext = { paramName: 'slug', paramValue: 'my-post', schema: 'articles' }
+    const parent = makePage({ fetch: fetchConfig })
+    const page = makePage({ parent, dynamicContext })
+    const block = makeBlock({ page }, website)
 
-    it('localizes /data/ paths for non-default locale', async () => {
-      const dataStore = new DataStore()
-      const articles = [{ slug: 'a', title: 'Bonjour' }]
-      const fetcher = jest.fn().mockResolvedValue({ data: articles })
-      dataStore.registerFetcher(fetcher)
+    const result = await entityStore.fetch(block, {})
+    expect(result.data.articles).toEqual(articles)
+    expect(result.data.article).toEqual({ slug: 'my-post' })
+    expect(fetcherSpy).toHaveBeenCalledWith(fetchConfig, expect.anything())
+  })
 
-      const store = new EntityStore({ dataStore })
-
-      const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
-      const website = {
-        getActiveLocale: () => 'fr',
-        getDefaultLocale: () => 'en',
-        config: {},
-        dataStore,
-      }
-      const page = makePage({ fetch: fetchConfig })
-      const block = makeBlock({ page, website })
-      const meta = { inheritData: true }
-
-      const result = await store.fetch(block, meta)
-      expect(result.data.articles).toEqual(articles)
-      expect(fetcher).toHaveBeenCalledWith(
-        expect.objectContaining({ path: '/fr/data/articles.json', schema: 'articles' })
-      )
+  it('localizes /data/ paths for non-default locale', async () => {
+    const articles = [{ slug: 'a', title: 'Bonjour' }]
+    const { entityStore, fetcherSpy, website } = makeHarness({
+      fetcherImpl: () => Promise.resolve({ data: articles }),
     })
+    website.getActiveLocale = () => 'fr'
 
-    it('does not localize /data/ paths for default locale', async () => {
-      const dataStore = new DataStore()
-      const articles = [{ slug: 'a' }]
-      const fetcher = jest.fn().mockResolvedValue({ data: articles })
-      dataStore.registerFetcher(fetcher)
+    const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
+    const page = makePage({ fetch: fetchConfig })
+    const block = makeBlock({ page }, website)
 
-      const store = new EntityStore({ dataStore })
+    await entityStore.fetch(block, {})
+    expect(fetcherSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ path: '/fr/data/articles.json', schema: 'articles' }),
+      expect.anything(),
+    )
+  })
 
-      const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
-      const website = {
-        getActiveLocale: () => 'en',
-        getDefaultLocale: () => 'en',
-        config: {},
-        dataStore,
-      }
-      const page = makePage({ fetch: fetchConfig })
-      const block = makeBlock({ page, website })
-      const meta = { inheritData: true }
-
-      const result = await store.fetch(block, meta)
-      expect(fetcher).toHaveBeenCalledWith(fetchConfig)
+  it('does not localize remote URLs', async () => {
+    const { entityStore, fetcherSpy, website } = makeHarness({
+      fetcherImpl: () => Promise.resolve({ data: [] }),
     })
+    website.getActiveLocale = () => 'fr'
 
-    it('does not localize remote URLs', async () => {
-      const dataStore = new DataStore()
-      const articles = [{ slug: 'a' }]
-      const fetcher = jest.fn().mockResolvedValue({ data: articles })
-      dataStore.registerFetcher(fetcher)
+    const fetchConfig = { url: 'https://api.example.com/articles', schema: 'articles' }
+    const page = makePage({ fetch: fetchConfig })
+    const block = makeBlock({ page }, website)
 
-      const store = new EntityStore({ dataStore })
+    await entityStore.fetch(block, {})
+    expect(fetcherSpy).toHaveBeenCalledWith(fetchConfig, expect.anything())
+  })
 
-      const fetchConfig = { url: 'https://api.example.com/articles', schema: 'articles' }
-      const website = {
-        getActiveLocale: () => 'fr',
-        getDefaultLocale: () => 'en',
-        config: {},
-        dataStore,
-      }
-      const page = makePage({ fetch: fetchConfig })
-      const block = makeBlock({ page, website })
-      const meta = { inheritData: true }
-
-      const result = await store.fetch(block, meta)
-      expect(fetcher).toHaveBeenCalledWith(fetchConfig)
+  it('does not localize non-/data/ local paths', async () => {
+    const { entityStore, fetcherSpy, website } = makeHarness({
+      fetcherImpl: () => Promise.resolve({ data: { key: 'value' } }),
     })
+    website.getActiveLocale = () => 'fr'
 
-    it('does not localize non-/data/ local paths', async () => {
-      const dataStore = new DataStore()
-      const result_data = { key: 'value' }
-      const fetcher = jest.fn().mockResolvedValue({ data: result_data })
-      dataStore.registerFetcher(fetcher)
+    const fetchConfig = { path: '/api/config.json', schema: 'config' }
+    const page = makePage({ fetch: fetchConfig })
+    const block = makeBlock({ page }, website)
 
-      const store = new EntityStore({ dataStore })
+    await entityStore.fetch(block, {})
+    expect(fetcherSpy).toHaveBeenCalledWith(fetchConfig, expect.anything())
+  })
 
-      const fetchConfig = { path: '/api/config.json', schema: 'config' }
-      const website = {
-        getActiveLocale: () => 'fr',
-        getDefaultLocale: () => 'en',
-        config: {},
-        dataStore,
-      }
-      const page = makePage({ fetch: fetchConfig })
-      const block = makeBlock({ page, website })
-      const meta = { inheritData: true }
+  it('resolve() uses localized key for cache lookup', () => {
+    const { entityStore, dataStore, website } = makeHarness()
+    website.getActiveLocale = () => 'fr'
 
-      await store.fetch(block, meta)
-      expect(fetcher).toHaveBeenCalledWith(fetchConfig)
-    })
+    const articles = [{ slug: 'a', title: 'Bonjour' }]
+    dataStore.set(
+      defaultCacheKey({ path: '/fr/data/articles.json', schema: 'articles' }),
+      { data: articles },
+    )
 
-    it('resolve() uses localized path for cache lookup', () => {
-      const dataStore = new DataStore()
-      const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
-      const articles = [{ slug: 'a', title: 'Bonjour' }]
-      // Cache with the localized key
-      dataStore.set({ path: '/fr/data/articles.json', schema: 'articles' }, articles)
+    const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
+    const page = makePage({ fetch: fetchConfig })
+    const block = makeBlock({ page }, website)
 
-      const store = new EntityStore({ dataStore })
-      const website = {
-        getActiveLocale: () => 'fr',
-        getDefaultLocale: () => 'en',
-        config: {},
-        dataStore,
-      }
-      const page = makePage({ fetch: fetchConfig })
-      const block = makeBlock({ page, website })
-      const meta = { inheritData: true }
+    const result = entityStore.resolve(block, {})
+    expect(result.status).toBe('ready')
+    expect(result.data.articles).toEqual(articles)
+  })
 
-      const result = store.resolve(block, meta)
-      expect(result.status).toBe('ready')
-      expect(result.data.articles).toEqual(articles)
-    })
-
-    it('fetches multiple schemas in parallel', async () => {
-      const dataStore = new DataStore()
-      const articles = [{ slug: 'a' }]
-      const categories = [{ name: 'Tech' }]
-
-      const fetcher = jest.fn((config) => {
-        if (config.schema === 'articles') return Promise.resolve({ data: articles })
-        if (config.schema === 'categories') return Promise.resolve({ data: categories })
+  it('fetches multiple schemas in parallel', async () => {
+    const articles = [{ slug: 'a' }]
+    const categories = [{ name: 'Tech' }]
+    const { entityStore, fetcherSpy, website } = makeHarness({
+      fetcherImpl: (req) => {
+        if (req.schema === 'articles') return Promise.resolve({ data: articles })
+        if (req.schema === 'categories') return Promise.resolve({ data: categories })
         return Promise.resolve({ data: null })
-      })
-      dataStore.registerFetcher(fetcher)
-
-      const store = new EntityStore({ dataStore })
-      const fetchConfigs = [
-        { path: '/data/articles.json', schema: 'articles' },
-        { path: '/data/categories.json', schema: 'categories' },
-      ]
-      const page = makePage({ fetch: fetchConfigs })
-      const block = makeBlock({ page })
-      const meta = { inheritData: true }
-
-      const result = await store.fetch(block, meta)
-      expect(result.data.articles).toEqual(articles)
-      expect(result.data.categories).toEqual(categories)
-      expect(fetcher).toHaveBeenCalledTimes(2)
+      },
     })
+    const fetchConfigs = [
+      { path: '/data/articles.json', schema: 'articles' },
+      { path: '/data/categories.json', schema: 'categories' },
+    ]
+    const page = makePage({ fetch: fetchConfigs })
+    const block = makeBlock({ page }, website)
+
+    const result = await entityStore.fetch(block, {})
+    expect(result.data.articles).toEqual(articles)
+    expect(result.data.categories).toEqual(categories)
+    expect(fetcherSpy).toHaveBeenCalledTimes(2)
+  })
+
+  it('forwards ctx.signal to the dispatcher', async () => {
+    const { entityStore, fetcherSpy, website } = makeHarness({
+      fetcherImpl: () => Promise.resolve({ data: [] }),
+    })
+    const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
+    const page = makePage({ fetch: fetchConfig })
+    const block = makeBlock({ page }, website)
+    const controller = new AbortController()
+
+    await entityStore.fetch(block, {}, { signal: controller.signal })
+    const ctxArg = fetcherSpy.mock.calls[0][1]
+    expect(ctxArg?.signal).toBeDefined()
   })
 })

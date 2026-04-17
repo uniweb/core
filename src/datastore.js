@@ -1,144 +1,99 @@
 /**
  * DataStore
  *
- * Runtime data cache that persists across SPA navigation.
- * Deduplicates in-flight fetches so concurrent callers share a single request.
+ * Pure keyed cache with in-flight deduplication. Persists across SPA navigation.
  *
- * Core can't import runtime, so the fetcher function is registered at startup
- * via registerFetcher().
+ * Owned by the Website; accessed only by the FetcherDispatcher (which computes
+ * cache keys and runs fetchers) and by build-time / startup preload paths
+ * (which write entries keyed by the default cache key so runtime cache probes
+ * find them).
+ *
+ * No knowledge of fetchers, transports, or cascades. Keys are opaque strings.
  */
 
 /**
- * Build a stable cache key from a fetch config.
- * Only includes fields that affect the response.
+ * Default cache-key derivation for a request or fetch config.
  *
- * @param {Object} config
- * @returns {string}
+ * The framework's default URL fetcher and the build-time preload path both
+ * use this key shape. Fetchers with state-dependent requests (e.g., a query
+ * slug read from `page.state`) must declare their own `cacheKey(request)`
+ * on the fetcher so reactive changes miss the cache and re-fetch.
+ *
+ * Only the four fields that affect the response contribute to the key.
+ * Post-processing fields like `limit`, `sort`, `filter` are applied after
+ * fetch and must not split the cache.
+ *
+ * @param {Object} request - Normalized request (or fetch config)
+ * @returns {string} A stable JSON string usable as a cache-Map key
  */
-function cacheKey(config) {
-  const { path, url, schema, transform } = config
+export function defaultCacheKey(request) {
+  const { path, url, schema, transform } = request || {}
   return JSON.stringify({ path, url, schema, transform })
 }
 
 export default class DataStore {
   constructor() {
+    // key → { data, meta? }
     this._cache = new Map()
+    // key → { promise, signals: Set<AbortSignal> }
     this._inflight = new Map()
-    this._fetcher = null
-    this._transforms = new Map()
+    // Notified on every successful `set()`.
     this._listeners = new Set()
 
     Object.seal(this)
   }
 
   /**
-   * Subscribe to data updates. Returns an unsubscribe function.
-   * Called by PageRenderer to re-render when dynamic page data arrives.
-   * @param {Function} fn - Called whenever new data is stored
+   * Subscribe to cache updates. Fires after every successful `set()`.
+   *
+   * @param {Function} fn - Listener called with no arguments
    * @returns {Function} unsubscribe
    */
-  onUpdate(fn) {
+  subscribe(fn) {
     this._listeners.add(fn)
     return () => this._listeners.delete(fn)
   }
 
   /**
-   * Register the fetcher function (called by runtime at startup).
-   * @param {Function} fn - (config) => Promise<{ data, error? }>
-   */
-  registerFetcher(fn) {
-    this._fetcher = fn
-  }
-
-  /**
-   * Register a named transform function.
-   * Named transforms are applied after the fetcher returns, before caching.
-   * @param {string} name - Transform name (e.g. 'profiles')
-   * @param {Function} fn - (data, config) => transformedData
-   */
-  registerTransform(name, fn) {
-    this._transforms.set(name, fn)
-  }
-
-  /**
-   * Check whether data for this config is cached.
-   * @param {Object} config - Fetch config
+   * Cache presence check.
+   *
+   * @param {string} key
    * @returns {boolean}
    */
-  has(config) {
-    return this._cache.has(cacheKey(config))
+  has(key) {
+    return this._cache.has(key)
   }
 
   /**
-   * Return cached data, or null on miss.
-   * @param {Object} config - Fetch config
-   * @returns {any|null}
+   * Cache lookup.
+   *
+   * @param {string} key
+   * @returns {{ data: any, meta?: Object } | null}
    */
-  get(config) {
-    const key = cacheKey(config)
+  get(key) {
     return this._cache.has(key) ? this._cache.get(key) : null
   }
 
   /**
-   * Store data in the cache.
-   * @param {Object} config - Fetch config
-   * @param {any} data
+   * Cache store. Fires listeners.
+   *
+   * @param {string} key
+   * @param {{ data: any, meta?: Object }} entry
    */
-  set(config, data) {
-    this._cache.set(cacheKey(config), data)
-    this._listeners.forEach((fn) => fn())
+  set(key, entry) {
+    this._cache.set(key, entry)
+    for (const fn of this._listeners) fn()
   }
 
   /**
-   * Fetch data with caching and in-flight deduplication.
+   * In-flight fetch registry — used by the dispatcher to dedup concurrent
+   * requests and collect abort signals so the underlying fetch is cancelled
+   * only when every attached block aborts.
    *
-   * - Cache hit: returns immediately.
-   * - In-flight: returns existing promise (no duplicate request).
-   * - Miss: calls the registered fetcher, caches the result.
-   *
-   * @param {Object} config - Fetch config
-   * @returns {Promise<{ data: any, error?: string }>}
+   * @returns {Map<string, { promise: Promise, signals: Set<AbortSignal> }>}
    */
-  async fetch(config) {
-    if (!this._fetcher) {
-      throw new Error('DataStore: no fetcher registered. Call registerFetcher() first.')
-    }
-
-    const key = cacheKey(config)
-
-    // Cache hit
-    if (this._cache.has(key)) {
-      return { data: this._cache.get(key) }
-    }
-
-    // In-flight dedup
-    if (this._inflight.has(key)) {
-      return this._inflight.get(key)
-    }
-
-    // Miss — execute fetch
-    const promise = this._fetcher(config).then((result) => {
-      this._inflight.delete(key)
-      let data = result.data
-      // Apply named transform if registered (dot-path transforms
-      // are handled by the fetcher itself via getNestedValue)
-      if (
-        data !== undefined &&
-        data !== null &&
-        config.transform &&
-        this._transforms.has(config.transform)
-      ) {
-        data = this._transforms.get(config.transform)(data, config)
-      }
-      if (data !== undefined && data !== null) {
-        this._cache.set(key, data)
-        this._listeners.forEach((fn) => fn())
-      }
-      return { ...result, data }
-    })
-
-    this._inflight.set(key, promise)
-    return promise
+  get inflight() {
+    return this._inflight
   }
 
   /**
@@ -147,6 +102,5 @@ export default class DataStore {
   clear() {
     this._cache.clear()
     this._inflight.clear()
-    this._transforms.clear()
   }
 }

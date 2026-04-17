@@ -7,18 +7,108 @@
 import Page from './page.js'
 import DataStore from './datastore.js'
 import EntityStore from './entity-store.js'
+import FetcherDispatcher from './fetcher-dispatcher.js'
+import ObservableState from './observable-state.js'
 import singularize from './singularize.js'
 
+/**
+ * Website — orchestration root for a single site instance.
+ *
+ * Accepts the site content payload plus the primary foundation and any
+ * extensions. Owns the DataStore (pure cache), EntityStore (cascade resolver),
+ * FetcherDispatcher (route walker + cache+in-flight wiring), and `state`
+ * (site-wide observable slots). Pages are constructed from the content payload;
+ * each page owns its own ObservableState.
+ *
+ * Content-only rebuilds keep the dispatcher and state in place. Foundation
+ * swaps reassemble the dispatcher but preserve the DataStore and state so the
+ * editor's live-edit path doesn't wipe either between keystrokes.
+ *
+ * Supports two call shapes:
+ *   new Website({ content, foundation?, extensions?, defaultFetcher? })  // preferred
+ *   new Website(content)                                                  // legacy
+ *
+ * The legacy shape exists for tests and the SSR preload path that doesn't
+ * have a foundation to pass; both delegate to the preferred shape.
+ */
 export default class Website {
-  constructor(websiteData) {
-    const { pages = [], theme = {}, config = {}, layouts, notFound, versionedScopes = {} } = websiteData
+  constructor(arg = {}) {
+    const isBundle = arg && typeof arg === 'object' && 'content' in arg && !('pages' in arg)
+    const {
+      content = {},
+      foundation = null,
+      extensions = [],
+      defaultFetcher = null,
+    } = isBundle ? arg : { content: arg }
 
-    // Site metadata
+    // ─── Foundation / dispatcher state (not re-derived on rebuild) ───
+    this._foundation = foundation
+    this._extensions = extensions
+    this._defaultFetcher = defaultFetcher
+
+    this.dataStore = new DataStore()
+    this.fetcher = new FetcherDispatcher({
+      foundation,
+      extensions,
+      dataStore: this.dataStore,
+      defaultFetcher,
+    })
+    this.entityStore = new EntityStore({ website: this })
+
+    // Observable site-wide state — survives content rebuilds.
+    this.state = new ObservableState()
+
+    // ─── Fields populated by _applyContent (declared up front so Object.seal works) ───
+    this.name = ''
+    this.description = ''
+    this.url = ''
+    this._layoutSets = {}
+    this.notFoundPage = null
+    this._dynamicPageData = new Map()
+    this._dynamicPageCache = new Map()
+    this.pages = []
+    this.activePage = null
+    this.pageRoutes = []
+    this.themeData = {}
+    this.config = {}
+    this.siteDefaultLocale = 'en'
+    this.defaultLocale = 'en'
+    this.activeLocale = 'en'
+    this.locales = []
+    this.activeLang = 'en'
+    this.langs = []
+    this._routeTranslations = {}
+    this.basePath = ''
+    this.versionedScopes = {}
+    this._pageIdMap = new Map()
+
+    this._applyContent(content)
+
+    Object.seal(this)
+  }
+
+  /**
+   * Populate content-derived fields from a site-content payload. Called once
+   * from the constructor and again from `rebuild({ content })`. All state that
+   * belongs on the Website but derives from the content payload lives here.
+   *
+   * @private
+   */
+  _applyContent(content) {
+    const {
+      pages = [],
+      theme = {},
+      config = {},
+      layouts,
+      notFound,
+      versionedScopes = {},
+    } = content || {}
+
     this.name = config.name || ''
     this.description = config.description || ''
     this.url = config.url || ''
 
-    // General area storage: { layoutName: { areaName: Page } }
+    // Layout areas (header/footer/left/right pages scoped per named layout).
     this._layoutSets = {}
     if (layouts && typeof layouts === 'object') {
       for (const [name, areaData] of Object.entries(layouts)) {
@@ -31,77 +121,76 @@ export default class Website {
       }
     }
 
-    // Store 404 page (for SPA routing)
-    // Convention: pages/404/ directory
+    // 404 / not-found page (content payload or /404 route).
     const notFoundData = notFound || pages.find((p) => p.route === '/404') || null
     this.notFoundPage = notFoundData ? new Page(notFoundData, 'notFound', this) : null
 
-    // Filter out 404 from regular pages array
     const regularPages = pages.filter((page) => page.route !== '/404')
 
-    // Store original page data for dynamic pages (needed to create instances on-demand)
+    // Dynamic route templates — retained in original form so the Website can
+    // materialize concrete pages on demand (/blog/:slug → /blog/my-post).
     this._dynamicPageData = new Map()
     for (const pageData of regularPages) {
       if (pageData.isDynamic || pageData.route?.includes(':')) {
         this._dynamicPageData.set(pageData.route, pageData)
       }
     }
-
-    // Cache for dynamically created page instances
     this._dynamicPageCache = new Map()
 
-
-    this.pages = regularPages.map(
-      (page, index) => new Page(page, index, this)
-    )
-
-    // Build parent-child relationships based on route structure
+    this.pages = regularPages.map((page, index) => new Page(page, index, this))
     this.buildPageHierarchy()
 
-    // Find the homepage (root-level index page)
     this.activePage =
       this.pages.find((page) => page.isIndex && page.getNavRoute() === '/') ||
-      this.pages[0]
+      this.pages[0] ||
+      null
 
     this.pageRoutes = this.pages.map((page) => page.route)
     this.themeData = theme
     this.config = config
 
-    // Locale configuration
-    // siteDefaultLocale: the site's true default language (for route translations)
-    // defaultLocale: effective default for URL prefix logic — domainLocale overrides
-    //   to prevent unnecessary /{locale}/ prefixes on domain-locale pages
     this.siteDefaultLocale = config.defaultLanguage || 'en'
     this.defaultLocale = config.domainLocale || this.siteDefaultLocale
     this.activeLocale = config.activeLocale || this.defaultLocale
 
-    // Build locales list from i18n config
     this.locales = this.buildLocalesList(config)
-
-    // Legacy language support (for editor multilingual)
     this.activeLang = this.activeLocale
-    this.langs = this.locales.map(l => ({
-      label: l.label || l.code,
-      value: l.code
-    }))
+    this.langs = this.locales.map((l) => ({ label: l.label || l.code, value: l.code }))
 
-    // Route translations: locale → { forward, reverse } maps
     this._routeTranslations = this._buildRouteTranslations(config)
-
-    // Deployment base path (set by runtime via setBasePath())
-    this.basePath = ''
-
-    // Runtime data cache (fetcher registered by runtime at startup)
-    this.dataStore = new DataStore()
-
-    // Entity-aware query resolution (uses DataStore for caching)
-    this.entityStore = new EntityStore({ dataStore: this.dataStore })
-
-    // Versioned scopes: route → { versions, latestId }
-    // Scopes are routes where versioning starts (e.g., '/docs')
     this.versionedScopes = versionedScopes
+  }
 
-    Object.seal(this)
+  /**
+   * Rebuild in place. Content-only rebuilds preserve the dispatcher and all
+   * state (site and per-page). Passing `foundation` or `extensions` reassembles
+   * the dispatcher; the DataStore cache survives so warm entries aren't lost.
+   *
+   * The returned value is `this` for chaining.
+   *
+   * @param {Object} options
+   * @param {Object} [options.content] - New site-content payload.
+   * @param {Object} [options.foundation] - New primary foundation module.
+   * @param {Array}  [options.extensions] - New extensions array.
+   * @returns {Website}
+   */
+  rebuild({ content, foundation, extensions } = {}) {
+    const foundationChanged = foundation !== undefined
+    const extensionsChanged = extensions !== undefined
+    if (foundationChanged) this._foundation = foundation
+    if (extensionsChanged) this._extensions = extensions
+
+    if (foundationChanged || extensionsChanged) {
+      this.fetcher = new FetcherDispatcher({
+        foundation: this._foundation,
+        extensions: this._extensions,
+        dataStore: this.dataStore,
+        defaultFetcher: this._defaultFetcher,
+      })
+    }
+
+    if (content !== undefined) this._applyContent(content)
+    return this
   }
 
   /**
@@ -452,16 +541,19 @@ export default class Website {
     const parentPage = this.pages.find(p => p.route === parentRoute || p.getNavRoute() === parentRoute)
 
     if (parentPage && pluralSchema) {
-      // Find collection data from parent's fetch config via DataStore
+      // Find collection data from parent's fetch config via the dispatcher's
+      // peek (sync cache probe). Used to populate the page title / notFound
+      // flag on dynamic pages before the page instance is constructed.
       const parentFetch = parentPage.fetch
       let items = []
 
-      if (parentFetch) {
+      if (parentFetch && this.fetcher) {
         const fetchConfig = Array.isArray(parentFetch)
           ? parentFetch.find(f => f.schema === pluralSchema)
           : (parentFetch.schema === pluralSchema ? parentFetch : null)
         if (fetchConfig) {
-          items = this.dataStore.get(fetchConfig) || []
+          const cached = this.fetcher.peek(fetchConfig, { website: this })
+          items = Array.isArray(cached?.data) ? cached.data : []
         }
       }
 
