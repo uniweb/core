@@ -39,12 +39,14 @@ export default class Website {
       foundation = null,
       extensions = [],
       defaultFetcher = null,
+      dev = false,
     } = isBundle ? arg : { content: arg }
 
     // ─── Foundation / dispatcher state (not re-derived on rebuild) ───
     this._foundation = foundation
     this._extensions = extensions
     this._defaultFetcher = defaultFetcher
+    this._dev = dev
 
     this.dataStore = new DataStore()
     this.fetcher = new FetcherDispatcher({
@@ -52,6 +54,7 @@ export default class Website {
       extensions,
       dataStore: this.dataStore,
       defaultFetcher,
+      dev,
     })
     this.entityStore = new EntityStore({ website: this })
 
@@ -186,6 +189,7 @@ export default class Website {
         extensions: this._extensions,
         dataStore: this.dataStore,
         defaultFetcher: this._defaultFetcher,
+        dev: this._dev,
       })
     }
 

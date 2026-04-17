@@ -40,11 +40,14 @@ export default class FetcherDispatcher {
    * @param {Object} options.dataStore - The Website's DataStore.
    * @param {{ resolve: Function }} [options.defaultFetcher] - Framework default
    *   used when no route matches and the primary foundation declares no fallback.
+   * @param {boolean} [options.dev] - Enable dev-mode validation warnings
+   *   (return-shape, expectedFields). Production should keep this false.
    */
-  constructor({ foundation, extensions = [], dataStore, defaultFetcher = null }) {
+  constructor({ foundation, extensions = [], dataStore, defaultFetcher = null, dev = false }) {
     if (!dataStore) throw new Error('FetcherDispatcher: dataStore is required')
     this._dataStore = dataStore
     this._defaultFetcher = defaultFetcher
+    this._dev = !!dev
 
     const primary = normalizeFetcherSpec(getFoundationDecl(foundation)?.fetcher)
     this._primaryRoutes = primary.routes
@@ -193,6 +196,8 @@ export default class FetcherDispatcher {
   }
 
   async _runFetcher(fetcher, request, ctx, key, inflight) {
+    if (this._dev) this._validateExpectedFields(fetcher, request)
+
     try {
       const result = await fetcher.resolve(request, ctx)
 
@@ -201,10 +206,18 @@ export default class FetcherDispatcher {
       }
 
       if (!result || typeof result !== 'object') {
+        if (this._dev) {
+          console.warn(
+            '[FetcherDispatcher] Fetcher returned a non-object; expected { data, error?, meta? }.',
+            { request, result },
+          )
+        }
         return { data: [], error: 'Fetcher returned a non-object' }
       }
 
       const { data, error, meta } = result
+      if (this._dev) this._validateReturnShape(result, request)
+
       if (error) return { data: data ?? [], error, meta }
 
       if (data === undefined || data === null) {
@@ -220,6 +233,41 @@ export default class FetcherDispatcher {
         this._dataStore.inflight.delete(key)
       }
       return { data: [], error: String(err?.message || err) }
+    }
+  }
+
+  /**
+   * Dev-mode: warn when the fetcher's return object has unexpected top-level
+   * keys — catches typos like { items, error } instead of { data, error }.
+   */
+  _validateReturnShape(result, request) {
+    const allowed = new Set(['data', 'error', 'meta'])
+    const unexpected = Object.keys(result).filter((k) => !allowed.has(k))
+    if (unexpected.length > 0) {
+      console.warn(
+        `[FetcherDispatcher] Fetcher return has unexpected keys: ${unexpected.join(', ')}. ` +
+          'Expected { data, error?, meta? }.',
+        { request, result },
+      )
+    }
+  }
+
+  /**
+   * Dev-mode: warn when a request carries fields a fetcher declares it won't
+   * use. Catches author-side frontmatter typos (e.g. `wher:` instead of
+   * `where:`). Fetchers opt in by declaring `expectedFields`.
+   */
+  _validateExpectedFields(fetcher, request) {
+    if (!Array.isArray(fetcher.expectedFields)) return
+    if (!request || typeof request !== 'object') return
+    const allowed = new Set(fetcher.expectedFields)
+    const extras = Object.keys(request).filter((k) => !allowed.has(k))
+    if (extras.length > 0) {
+      console.warn(
+        `[FetcherDispatcher] Request carries fields the fetcher won't consume: ${extras.join(', ')}. ` +
+          `Declared expectedFields: ${fetcher.expectedFields.join(', ')}.`,
+        { request },
+      )
     }
   }
 }

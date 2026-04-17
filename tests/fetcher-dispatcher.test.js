@@ -283,6 +283,68 @@ describe('FetcherDispatcher', () => {
     })
   })
 
+  describe('dev-mode validation', () => {
+    it('warns when the fetcher returns a non-object', async () => {
+      const dataStore = new DataStore()
+      const defaultFetcher = { resolve: jest.fn().mockResolvedValue('oops') }
+      const d = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher, dev: true })
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+
+      const result = await d.dispatch({ path: '/a.json', schema: 'a' }, {})
+      expect(result.error).toMatch(/non-object/)
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('non-object'),
+        expect.anything(),
+      )
+      warn.mockRestore()
+    })
+
+    it('warns on unexpected return keys', async () => {
+      const dataStore = new DataStore()
+      const defaultFetcher = { resolve: jest.fn().mockResolvedValue({ data: [1], extra: 'oops' }) }
+      const d = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher, dev: true })
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+
+      await d.dispatch({ path: '/a.json', schema: 'a' }, {})
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('unexpected keys'),
+        expect.anything(),
+      )
+      warn.mockRestore()
+    })
+
+    it('warns when the request carries fields not in expectedFields', async () => {
+      const dataStore = new DataStore()
+      const defaultFetcher = {
+        resolve: jest.fn().mockResolvedValue({ data: [] }),
+        expectedFields: ['schema', 'url'],
+      }
+      const d = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher, dev: true })
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+
+      await d.dispatch({ url: 'https://x', schema: 's', wher: 'typo' }, {})
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('wher'),
+        expect.anything(),
+      )
+      warn.mockRestore()
+    })
+
+    it('does not warn in production (dev: false)', async () => {
+      const dataStore = new DataStore()
+      const defaultFetcher = {
+        resolve: jest.fn().mockResolvedValue({ data: [], extra: 'oops' }),
+        expectedFields: ['schema'],
+      }
+      const d = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher })
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+
+      await d.dispatch({ url: 'https://x', schema: 's', wher: 'typo' }, {})
+      expect(warn).not.toHaveBeenCalled()
+      warn.mockRestore()
+    })
+  })
+
   describe('listener notifications via DataStore.subscribe', () => {
     it('fires the DataStore subscriber on successful dispatch', async () => {
       const dataStore = new DataStore()

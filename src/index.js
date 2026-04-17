@@ -40,8 +40,8 @@ export function getUniweb() {
  * @param {{ resolve: Function }} [options.defaultFetcher] - Framework default fetcher.
  * @returns {Uniweb} The created instance (also assigned to globalThis.uniweb).
  */
-export function createUniweb(content, foundation = null, extensions = [], { defaultFetcher = null } = {}) {
-  const instance = new Uniweb({ content, foundation, extensions, defaultFetcher })
+export function createUniweb(content, foundation = null, extensions = [], { defaultFetcher = null, dev = false } = {}) {
+  const instance = new Uniweb({ content, foundation, extensions, defaultFetcher, dev })
   globalThis.uniweb = instance
   return instance
 }

@@ -23,8 +23,8 @@ export default class Uniweb {
    * @param {{ resolve: Function }} [options.defaultFetcher] - Framework default fetcher
    *   used by the dispatcher's fallback when no foundation route matches.
    */
-  constructor({ content = {}, foundation = null, extensions = [], defaultFetcher = null } = {}) {
-    this.activeWebsite = new Website({ content, foundation, extensions, defaultFetcher })
+  constructor({ content = {}, foundation = null, extensions = [], defaultFetcher = null, dev = false } = {}) {
+    this.activeWebsite = new Website({ content, foundation, extensions, defaultFetcher, dev })
 
     this.foundation = foundation
     this.foundationConfig = {}
