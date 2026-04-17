@@ -664,7 +664,7 @@ export default class Website {
 
     if (!page) {
       // Page not found - return original href (or could warn in dev)
-      if (typeof console !== 'undefined' && process?.env?.NODE_ENV !== 'production') {
+      if (typeof console !== 'undefined' && typeof process !== 'undefined' && process?.env?.NODE_ENV !== 'production') {
         console.warn(`[makeHref] Page not found: ${pageId}`)
       }
       return href
