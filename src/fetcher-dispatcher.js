@@ -6,10 +6,9 @@
  * derivation, checks the DataStore, dedups concurrent in-flight requests, and
  * passes an AbortSignal through to the selected fetcher.
  *
- * See kb/framework/plans/data-transport-architecture.md Part 2 for the full
- * request/context/return shapes and resolution order. The dispatcher is the
- * only layer that touches DataStore directly; EntityStore calls the
- * dispatcher's `peek` / `dispatch` methods and never goes around it.
+ * The dispatcher is the only layer that touches DataStore directly;
+ * EntityStore calls the dispatcher's `peek` / `dispatch` methods and
+ * never goes around it.
  */
 import { deriveCacheKey } from './datastore.js'
 
