@@ -2,13 +2,17 @@ import { describe, it, expect, jest } from '@jest/globals'
 import FetcherDispatcher from '../src/fetcher-dispatcher.js'
 import DataStore, { deriveCacheKey } from '../src/datastore.js'
 
-function buildFoundation(fetcherSpec, extras = {}) {
-  return { default: { ...extras, fetcher: fetcherSpec } }
+function buildFoundationTransports(transports = {}, extras = {}) {
+  return { default: { ...extras, transports } }
+}
+
+function websiteCtx(fetcherConfig) {
+  return { website: { config: { fetcher: fetcherConfig } } }
 }
 
 describe('FetcherDispatcher', () => {
-  describe('routing', () => {
-    it('uses the framework default when no foundation declares a fetcher', async () => {
+  describe('named transports', () => {
+    it('uses the framework default when no foundation declares transports', async () => {
       const dataStore = new DataStore()
       const defaultFetcher = { resolve: jest.fn().mockResolvedValue({ data: [1, 2] }) }
       const d = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher })
@@ -18,87 +22,166 @@ describe('FetcherDispatcher', () => {
       expect(defaultFetcher.resolve).toHaveBeenCalled()
     })
 
-    it('selects a primary route when match returns true', async () => {
+    it('uses the framework default when the site picks no transport', async () => {
       const dataStore = new DataStore()
-      const members = { resolve: jest.fn().mockResolvedValue({ data: ['m'] }) }
+      const members = jest.fn()
       const defaultFetcher = { resolve: jest.fn().mockResolvedValue({ data: ['default'] }) }
-      const foundation = buildFoundation({
-        routes: [{ match: (r) => r.schema === 'members', resolve: members.resolve }],
-      })
+      const foundation = buildFoundationTransports({ uniweb: { resolve: members } })
       const d = new FetcherDispatcher({ foundation, dataStore, defaultFetcher })
 
-      const r1 = await d.dispatch({ schema: 'members' }, {})
+      // No fetcher.transports on the site → default wins even though 'uniweb' is registered.
+      const result = await d.dispatch({ schema: 'members' }, websiteCtx({}))
+      expect(result.data).toEqual(['default'])
+      expect(members).not.toHaveBeenCalled()
+    })
+
+    it('selects a named transport per site.yml fetcher.transports[schema]', async () => {
+      const dataStore = new DataStore()
+      const uniweb = { resolve: jest.fn().mockResolvedValue({ data: ['m'] }) }
+      const defaultFetcher = { resolve: jest.fn().mockResolvedValue({ data: ['default'] }) }
+      const foundation = buildFoundationTransports({ uniweb: uniweb })
+      const d = new FetcherDispatcher({ foundation, dataStore, defaultFetcher })
+
+      const r1 = await d.dispatch(
+        { schema: 'members' },
+        websiteCtx({ transports: { members: 'uniweb' } }),
+      )
       expect(r1.data).toEqual(['m'])
 
-      const r2 = await d.dispatch({ schema: 'articles' }, {})
+      // Other schemas fall through to default.
+      const r2 = await d.dispatch(
+        { schema: 'articles' },
+        websiteCtx({ transports: { members: 'uniweb' } }),
+      )
       expect(r2.data).toEqual(['default'])
     })
 
-    it('falls back to primary foundation fallback when no route matches', async () => {
+    it('honors fetcher.transports.default as the site-level default', async () => {
       const dataStore = new DataStore()
-      const fallback = { resolve: jest.fn().mockResolvedValue({ data: ['fallback'] }) }
-      const defaultFetcher = { resolve: jest.fn() }
-      const foundation = buildFoundation({
-        routes: [{ match: () => false, resolve: jest.fn() }],
-        fallback: { resolve: fallback.resolve },
-      })
-      const d = new FetcherDispatcher({ foundation, dataStore, defaultFetcher })
+      const uniweb = { resolve: jest.fn().mockResolvedValue({ data: ['all'] }) }
+      const foundation = buildFoundationTransports({ uniweb: uniweb })
+      const d = new FetcherDispatcher({ foundation, dataStore })
 
-      const result = await d.dispatch({ schema: 'x' }, {})
-      expect(result.data).toEqual(['fallback'])
-      expect(defaultFetcher.resolve).not.toHaveBeenCalled()
+      const r = await d.dispatch(
+        { schema: 'anything' },
+        websiteCtx({ transports: { default: 'uniweb' } }),
+      )
+      expect(r.data).toEqual(['all'])
     })
 
-    it('walks extension routes after primary routes, in declared order', async () => {
+    it('primary wins over extension on name collision with a dev warning', async () => {
       const dataStore = new DataStore()
-      const ext1 = { resolve: jest.fn().mockResolvedValue({ data: ['ext1'] }) }
-      const ext2 = { resolve: jest.fn().mockResolvedValue({ data: ['ext2'] }) }
-      const defaultFetcher = { resolve: jest.fn() }
-
-      const foundation = buildFoundation({ routes: [] })
-      const extA = { default: { fetcher: { routes: [{ match: (r) => r.schema === 'stats', resolve: ext1.resolve }] } } }
-      const extB = { default: { fetcher: { routes: [{ match: (r) => r.schema === 'stats', resolve: ext2.resolve }] } } }
+      const primary = { resolve: jest.fn().mockResolvedValue({ data: ['primary'] }) }
+      const ext = { resolve: jest.fn() }
+      const foundation = buildFoundationTransports({ uniweb: primary })
+      const extension = { default: { transports: { uniweb: ext } } }
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
 
       const d = new FetcherDispatcher({
         foundation,
-        extensions: [extA, extB],
+        extensions: [extension],
+        dataStore,
+        dev: true,
+      })
+
+      const r = await d.dispatch(
+        { schema: 'anything' },
+        websiteCtx({ transports: { anything: 'uniweb' } }),
+      )
+      expect(r.data).toEqual(['primary'])
+      expect(ext.resolve).not.toHaveBeenCalled()
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('extension transport "uniweb" ignored'),
+      )
+      warn.mockRestore()
+    })
+
+    it('extension contributes a transport the primary foundation does not provide', async () => {
+      const dataStore = new DataStore()
+      const extResolve = jest.fn().mockResolvedValue({ data: ['e'] })
+      const extension = { default: { transports: { stats: { resolve: extResolve } } } }
+      const d = new FetcherDispatcher({
+        foundation: null,
+        extensions: [extension],
+        dataStore,
+      })
+
+      const r = await d.dispatch(
+        { schema: 'views' },
+        websiteCtx({ transports: { views: 'stats' } }),
+      )
+      expect(r.data).toEqual(['e'])
+    })
+
+    it('tolerates an extension whose transports getter throws (warns, keeps registry)', async () => {
+      const dataStore = new DataStore()
+      const good = { resolve: jest.fn().mockResolvedValue({ data: ['g'] }) }
+      const badExt = { default: Object.defineProperty({}, 'transports', {
+        get() { throw new Error('boom') },
+      }) }
+      const goodExt = { default: { transports: { stats: good } } }
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+
+      const d = new FetcherDispatcher({
+        foundation: null,
+        extensions: [badExt, goodExt],
+        dataStore,
+        dev: true,
+      })
+
+      const r = await d.dispatch(
+        { schema: 'views' },
+        websiteCtx({ transports: { views: 'stats' } }),
+      )
+      expect(r.data).toEqual(['g'])
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('extension transports getter threw'),
+        expect.anything(),
+      )
+      warn.mockRestore()
+    })
+
+    it('skips a transport entry missing resolve() with a dev warning', async () => {
+      const dataStore = new DataStore()
+      const defaultFetcher = { resolve: jest.fn().mockResolvedValue({ data: ['d'] }) }
+      const foundation = buildFoundationTransports({
+        broken: { notResolve: 'oops' },
+        ok: { resolve: jest.fn() },
+      })
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+      const d = new FetcherDispatcher({ foundation, dataStore, defaultFetcher, dev: true })
+
+      // Site picks the broken one → dispatcher drops the mapping and falls back.
+      const r = await d.dispatch(
+        { schema: 'x' },
+        websiteCtx({ transports: { x: 'broken' } }),
+      )
+      expect(r.data).toEqual(['d'])
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('primary foundation transport "broken" missing resolve()'),
+      )
+      warn.mockRestore()
+    })
+
+    it('site picks a name that no foundation registered — falls back to default with warning', async () => {
+      const dataStore = new DataStore()
+      const defaultFetcher = { resolve: jest.fn().mockResolvedValue({ data: ['d'] }) }
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+      const d = new FetcherDispatcher({
+        foundation: null,
         dataStore,
         defaultFetcher,
+        dev: true,
       })
 
-      const result = await d.dispatch({ schema: 'stats' }, {})
-      expect(result.data).toEqual(['ext1'])
-      expect(ext2.resolve).not.toHaveBeenCalled()
-    })
-
-    it('routes without a match function are treated as match-all', async () => {
-      const dataStore = new DataStore()
-      const custom = { resolve: jest.fn().mockResolvedValue({ data: ['c'] }) }
-      const foundation = buildFoundation({
-        routes: [{ resolve: custom.resolve }],
-      })
-      const d = new FetcherDispatcher({ foundation, dataStore })
-
-      const result = await d.dispatch({ schema: 'anything' }, {})
-      expect(result.data).toEqual(['c'])
-    })
-
-    it('swallows a throwing match predicate and skips that route', async () => {
-      const dataStore = new DataStore()
-      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
-      const bad = { resolve: jest.fn() }
-      const good = { resolve: jest.fn().mockResolvedValue({ data: ['g'] }) }
-      const foundation = buildFoundation({
-        routes: [
-          { match: () => { throw new Error('bad match') }, resolve: bad.resolve },
-          { match: () => true, resolve: good.resolve },
-        ],
-      })
-      const d = new FetcherDispatcher({ foundation, dataStore })
-
-      const result = await d.dispatch({ schema: 'x' }, {})
-      expect(result.data).toEqual(['g'])
-      expect(bad.resolve).not.toHaveBeenCalled()
+      const r = await d.dispatch(
+        { schema: 'articles' },
+        websiteCtx({ transports: { articles: 'ghost' } }),
+      )
+      expect(r.data).toEqual(['d'])
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('site selected transport "ghost"'),
+      )
       warn.mockRestore()
     })
   })
@@ -351,17 +434,13 @@ describe('FetcherDispatcher', () => {
   })
 
   describe('transport override', () => {
-    it('wins over foundation routes, foundation fallback, and default', async () => {
+    it('wins over foundation transports and the framework default', async () => {
       const dataStore = new DataStore()
-      const foundationRoute = { resolve: jest.fn() }
-      const foundationFallback = { resolve: jest.fn() }
+      const foundationResolve = jest.fn()
       const defaultFetcher = { resolve: jest.fn() }
       const transport = { resolve: jest.fn().mockResolvedValue({ data: ['bridge'] }) }
 
-      const foundation = buildFoundation({
-        routes: [{ match: () => true, resolve: foundationRoute.resolve }],
-        fallback: { resolve: foundationFallback.resolve },
-      })
+      const foundation = buildFoundationTransports({ uniweb: { resolve: foundationResolve } })
       const d = new FetcherDispatcher({
         foundation,
         dataStore,
@@ -369,11 +448,13 @@ describe('FetcherDispatcher', () => {
         transport,
       })
 
-      const result = await d.dispatch({ schema: 'anything', url: 'https://x' }, {})
+      const result = await d.dispatch(
+        { schema: 'anything', url: 'https://x' },
+        websiteCtx({ transports: { anything: 'uniweb' } }),
+      )
       expect(result.data).toEqual(['bridge'])
       expect(transport.resolve).toHaveBeenCalledTimes(1)
-      expect(foundationRoute.resolve).not.toHaveBeenCalled()
-      expect(foundationFallback.resolve).not.toHaveBeenCalled()
+      expect(foundationResolve).not.toHaveBeenCalled()
       expect(defaultFetcher.resolve).not.toHaveBeenCalled()
     })
 

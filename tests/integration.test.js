@@ -19,7 +19,14 @@ import Website from '../src/website.js'
  */
 function makeContent() {
   return {
-    config: { name: 'Integration Site', defaultLanguage: 'en' },
+    config: {
+      name: 'Integration Site',
+      defaultLanguage: 'en',
+      // Site picks which named transport handles which schema. Under the
+      // post-plan model, all foundation/extension-owned transport is
+      // name-registered and explicitly selected by the site.
+      fetcher: { transports: { default: 'stateful' } },
+    },
     theme: {},
     pages: [
       {
@@ -61,18 +68,15 @@ function makeStatefulFoundation() {
 
   const foundation = {
     default: {
-      fetcher: {
-        routes: [
-          {
-            // Route owns *injecting* the current state value into the
-            // request before the dispatcher derives the cache key. The
-            // route's match predicate lives at the schema level; the
-            // resolve function reads state for its own uses.
-            match: (req) => req.schema === 'articles',
-            resolve: fetcher.resolve,
-            cacheKey: fetcher.cacheKey,
-          },
-        ],
+      // Named transport the site selects via `fetcher.transports.default`.
+      // The transport reads ctx.page.state inside resolve() and declares
+      // its own cacheKey so state-dependent queries produce distinct
+      // cache entries.
+      transports: {
+        stateful: {
+          resolve: fetcher.resolve,
+          cacheKey: fetcher.cacheKey,
+        },
       },
     },
   }
@@ -154,14 +158,11 @@ describe('integration — Website + foundation + state-aware fetcher', () => {
     // in cacheKey or the reactivity path stalls.")
     const foundation = {
       default: {
-        fetcher: {
-          routes: [
-            {
-              match: (req) => req.schema === 'articles',
-              resolve: (req, ctx) => fetcher.resolve(req, ctx),
-              cacheKey: (req) => `articles:${req.__stateTag ?? ''}`,
-            },
-          ],
+        transports: {
+          stateful: {
+            resolve: (req, ctx) => fetcher.resolve(req, ctx),
+            cacheKey: (req) => `articles:${req.__stateTag ?? ''}`,
+          },
         },
       },
     }
@@ -236,7 +237,7 @@ describe('integration — Website + foundation + state-aware fetcher', () => {
       resolve: jest.fn(() => new Promise((r) => { resolveFetch = r })),
     }
     const foundation = {
-      default: { fetcher: { fallback: { resolve: fetcher.resolve } } },
+      default: { transports: { stateful: { resolve: fetcher.resolve } } },
     }
     const website = new Website({ content: makeContent(), foundation })
     const page = website.pages.find((p) => p.route === '/articles')

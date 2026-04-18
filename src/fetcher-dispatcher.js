@@ -1,10 +1,14 @@
 /**
  * FetcherDispatcher
  *
- * Assembled by the Website from the primary foundation's declaration plus any
- * extensions. Resolves which fetcher handles a given request, owns cache-key
- * derivation, checks the DataStore, dedups concurrent in-flight requests, and
- * passes an AbortSignal through to the selected fetcher.
+ * Assembled by the Website from the primary foundation's named transports
+ * plus any extensions'. Resolves which fetcher handles a given request by
+ * name lookup — the site selects per-schema in `site.yml fetcher.transports`.
+ *
+ * The dispatcher owns cache-key derivation, checks the DataStore, dedups
+ * concurrent in-flight requests, and passes an AbortSignal through to the
+ * selected fetcher. A runtime `transport` override (editor preview bridge)
+ * bypasses all of that and handles every request directly.
  *
  * The dispatcher is the only layer that touches DataStore directly;
  * EntityStore calls the dispatcher's `peek` / `dispatch` methods and
@@ -12,17 +16,9 @@
  */
 import { deriveCacheKey } from './datastore.js'
 
-function normalizeFetcherSpec(raw) {
-  if (!raw || typeof raw !== 'object') return { routes: [], fallback: null }
-  const routes = Array.isArray(raw.routes) ? raw.routes.filter(Boolean) : []
-  const fallback = raw.fallback && typeof raw.fallback.resolve === 'function' ? raw.fallback : null
-  return { routes, fallback }
-}
-
 /**
  * Extract the declaration object from a foundation — either an ESM module
- * with a default export, or an already-plain declaration (used by the
- * editor's wrap-and-replace-fetcher pattern).
+ * with a default export, or an already-plain declaration.
  */
 function getFoundationDecl(mod) {
   if (!mod) return null
@@ -31,69 +27,148 @@ function getFoundationDecl(mod) {
   return null
 }
 
+function isValidTransport(t) {
+  return !!t && typeof t.resolve === 'function'
+}
+
+/**
+ * Collect transports from a foundation declaration, returning a Map
+ * `name → transport`. Throwing or malformed entries are dropped with a
+ * dev-mode warning so a single bad transport never tears down the
+ * registry. This mirrors the `Promise.allSettled` pattern the runtime
+ * uses when loading extensions — one bad extension doesn't block the site.
+ */
+function collectTransports(decl, { source, dev }) {
+  const out = new Map()
+  if (!decl) return out
+
+  let raw
+  try {
+    raw = decl.transports
+  } catch (err) {
+    if (dev) console.warn(`[FetcherDispatcher] ${source} transports getter threw:`, err)
+    return out
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out
+
+  for (const name of Object.keys(raw)) {
+    let t
+    try {
+      t = raw[name]
+    } catch (err) {
+      if (dev) {
+        console.warn(`[FetcherDispatcher] ${source} transport "${name}" getter threw:`, err)
+      }
+      continue
+    }
+    if (!isValidTransport(t)) {
+      if (dev) {
+        console.warn(
+          `[FetcherDispatcher] ${source} transport "${name}" missing resolve(); skipped.`,
+        )
+      }
+      continue
+    }
+    out.set(name, t)
+  }
+  return out
+}
+
 export default class FetcherDispatcher {
   /**
    * @param {Object} options
    * @param {Object|null} options.foundation - Primary foundation module or declaration.
    * @param {Array<Object>} [options.extensions] - Extension modules or declarations.
    * @param {Object} options.dataStore - The Website's DataStore.
-   * @param {{ resolve: Function }} [options.defaultFetcher] - Framework default
-   *   used when no route matches and the primary foundation declares no fallback.
+   * @param {{ resolve: Function, cacheKey?: Function }} [options.defaultFetcher]
+   *   Framework default fetcher. Used when the site doesn't pick a named
+   *   transport for the request's schema.
    * @param {{ resolve: Function, cacheKey?: Function }} [options.transport] -
-   *   Runtime-level transport override. When set, the dispatcher routes every
-   *   request to this transport, bypassing foundation/extension routes and the
-   *   framework default. Used by the editor's preview iframe (parent frame holds
-   *   the authenticated session) — normal sites never pass this option.
-   * @param {boolean} [options.dev] - Enable dev-mode validation warnings
-   *   (return-shape, expectedFields). Production should keep this false.
+   *   Runtime-level transport override. When set, every Layer-1 request is
+   *   routed through this transport — no named-transport lookup, no fallback
+   *   to the framework default. Editor preview iframe only.
+   * @param {boolean} [options.dev] - Enable dev-mode validation warnings.
    */
   constructor({ foundation, extensions = [], dataStore, defaultFetcher = null, transport = null, dev = false }) {
     if (!dataStore) throw new Error('FetcherDispatcher: dataStore is required')
     this._dataStore = dataStore
     this._defaultFetcher = defaultFetcher
-    this._transportOverride = transport && typeof transport.resolve === 'function' ? transport : null
+    this._transportOverride = isValidTransport(transport) ? transport : null
     this._dev = !!dev
 
-    const primary = normalizeFetcherSpec(getFoundationDecl(foundation)?.fetcher)
-    this._primaryRoutes = primary.routes
-    this._primaryFallback = primary.fallback
+    // Named transport registry. Primary foundation wins on name collisions
+    // with extensions (dev-mode warning); bad extension transports are
+    // skipped individually rather than tearing down the whole registry.
+    const registry = new Map()
 
-    // Extensions contribute routes, not fallbacks.
-    this._extensionRoutes = []
+    const primaryTransports = collectTransports(getFoundationDecl(foundation), {
+      source: 'primary foundation',
+      dev: this._dev,
+    })
+    for (const [name, t] of primaryTransports) registry.set(name, t)
+
     for (const ext of extensions) {
-      const spec = normalizeFetcherSpec(getFoundationDecl(ext)?.fetcher)
-      for (const route of spec.routes) this._extensionRoutes.push(route)
+      let extTransports
+      try {
+        extTransports = collectTransports(getFoundationDecl(ext), {
+          source: 'extension',
+          dev: this._dev,
+        })
+      } catch (err) {
+        if (this._dev) {
+          console.warn('[FetcherDispatcher] extension transports collection threw:', err)
+        }
+        continue
+      }
+      for (const [name, t] of extTransports) {
+        if (registry.has(name)) {
+          if (this._dev) {
+            console.warn(
+              `[FetcherDispatcher] extension transport "${name}" ignored — primary foundation already provides it.`,
+            )
+          }
+          continue
+        }
+        registry.set(name, t)
+      }
     }
+
+    this._namedTransports = registry
 
     Object.freeze(this)
   }
 
   /**
-   * Select the fetcher for a request. The runtime-level `transport` override
-   * (if set) wins over everything. Otherwise walks primary routes → extension
-   * routes → primary fallback → framework default.
+   * Select the fetcher for a request.
+   *
+   *   1. Runtime `transport` override (editor preview) wins over everything.
+   *   2. Otherwise, look up the site's per-schema selection in
+   *      `ctx.website.config.fetcher.transports[schema]` → `.transports.default`.
+   *      A named match is resolved against the registry of foundation /
+   *      extension transports.
+   *   3. If the site didn't pick a name (or picked one that's not in the
+   *      registry), fall through to the framework default fetcher.
    */
   _selectFetcher(request, ctx) {
     if (this._transportOverride) return this._transportOverride
-    for (const route of this._primaryRoutes) {
-      if (this._matches(route, request, ctx)) return route
-    }
-    for (const route of this._extensionRoutes) {
-      if (this._matches(route, request, ctx)) return route
-    }
-    if (this._primaryFallback) return this._primaryFallback
-    return this._defaultFetcher
-  }
 
-  _matches(route, request, ctx) {
-    if (typeof route.resolve !== 'function') return false
-    if (typeof route.match !== 'function') return true
-    try {
-      return !!route.match(request, ctx)
-    } catch (err) {
-      console.warn('[FetcherDispatcher] route.match threw:', err)
-      return false
+    const transportsConfig = ctx?.website?.config?.fetcher?.transports
+    if (transportsConfig && typeof transportsConfig === 'object') {
+      const schema = request?.schema
+      const name = (schema && transportsConfig[schema]) || transportsConfig.default
+      if (name) {
+        const t = this._namedTransports.get(name)
+        if (t) return t
+        if (this._dev) {
+          console.warn(
+            `[FetcherDispatcher] site selected transport "${name}" for schema "${schema ?? '(none)'}" ` +
+              'but no foundation or extension registered it; falling back to the framework default.',
+          )
+        }
+      }
     }
+
+    return this._defaultFetcher
   }
 
   _cacheKey(fetcher, request) {
@@ -110,8 +185,7 @@ export default class FetcherDispatcher {
   /**
    * Synchronous cache probe. Selects the fetcher (for key derivation), checks
    * DataStore, returns the cached `{ data, meta }` entry or null. Never starts
-   * a fetch. Used by EntityStore.resolve() and anywhere else that wants a
-   * side-effect-free lookup.
+   * a fetch.
    */
   peek(request, ctx = {}) {
     const fetcher = this._selectFetcher(request, ctx)

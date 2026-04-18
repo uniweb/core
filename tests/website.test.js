@@ -39,43 +39,49 @@ describe('Website constructor', () => {
     expect(w.state.get('appearance')).toBe('dark')
   })
 
-  it('assembles the FetcherDispatcher from the foundation', async () => {
+  it('assembles the FetcherDispatcher from the foundation transports', async () => {
     const resolve = jest.fn().mockResolvedValue({ data: ['x'] })
-    const foundation = { default: { fetcher: { fallback: { resolve } } } }
+    const foundation = { default: { transports: { my: { resolve } } } }
 
-    const w = new Website({ content: simpleContent(), foundation })
-    const result = await w.fetcher.dispatch({ schema: 's' }, {})
+    const w = new Website({
+      content: simpleContent({ config: { fetcher: { transports: { default: 'my' } } } }),
+      foundation,
+    })
+    const result = await w.fetcher.dispatch(
+      { schema: 's' },
+      { website: w },
+    )
     expect(result.data).toEqual(['x'])
   })
 
   it('honors a runtime transport override', async () => {
     const foundationResolve = jest.fn()
     const bridgeResolve = jest.fn().mockResolvedValue({ data: ['bridge'] })
-    const foundation = { default: { fetcher: { fallback: { resolve: foundationResolve } } } }
+    const foundation = { default: { transports: { my: { resolve: foundationResolve } } } }
 
     const w = new Website({
-      content: simpleContent(),
+      content: simpleContent({ config: { fetcher: { transports: { default: 'my' } } } }),
       foundation,
       transport: { resolve: bridgeResolve },
     })
-    const result = await w.fetcher.dispatch({ schema: 's' }, {})
+    const result = await w.fetcher.dispatch({ schema: 's' }, { website: w })
     expect(result.data).toEqual(['bridge'])
     expect(foundationResolve).not.toHaveBeenCalled()
   })
 
   it('preserves the transport override across rebuild({ foundation })', async () => {
     const bridgeResolve = jest.fn().mockResolvedValue({ data: ['bridge'] })
-    const foundationA = { default: { fetcher: { fallback: { resolve: jest.fn() } } } }
-    const foundationB = { default: { fetcher: { fallback: { resolve: jest.fn() } } } }
+    const foundationA = { default: { transports: { my: { resolve: jest.fn() } } } }
+    const foundationB = { default: { transports: { my: { resolve: jest.fn() } } } }
 
     const w = new Website({
-      content: simpleContent(),
+      content: simpleContent({ config: { fetcher: { transports: { default: 'my' } } } }),
       foundation: foundationA,
       transport: { resolve: bridgeResolve },
     })
 
     w.rebuild({ foundation: foundationB })
-    const result = await w.fetcher.dispatch({ schema: 's' }, {})
+    const result = await w.fetcher.dispatch({ schema: 's' }, { website: w })
     expect(result.data).toEqual(['bridge'])
     expect(bridgeResolve).toHaveBeenCalled()
   })
@@ -83,7 +89,7 @@ describe('Website constructor', () => {
 
 describe('Website.rebuild', () => {
   it('content-only rebuild preserves dispatcher, dataStore, and state', () => {
-    const foundation = { default: { fetcher: { fallback: { resolve: jest.fn() } } } }
+    const foundation = { default: { transports: { my: { resolve: jest.fn() } } } }
     const w = new Website({ content: simpleContent(), foundation })
     const origFetcher = w.fetcher
     const origDataStore = w.dataStore
@@ -105,15 +111,16 @@ describe('Website.rebuild', () => {
   it('foundation swap reassembles the dispatcher; cache and state survive', async () => {
     const a = jest.fn().mockResolvedValue({ data: ['a'] })
     const b = jest.fn().mockResolvedValue({ data: ['b'] })
-    const foundationA = { default: { fetcher: { fallback: { resolve: a } } } }
-    const foundationB = { default: { fetcher: { fallback: { resolve: b } } } }
+    const foundationA = { default: { transports: { my: { resolve: a } } } }
+    const foundationB = { default: { transports: { my: { resolve: b } } } }
+    const content = simpleContent({ config: { fetcher: { transports: { default: 'my' } } } })
 
-    const w = new Website({ content: simpleContent(), foundation: foundationA })
+    const w = new Website({ content, foundation: foundationA })
     const origDataStore = w.dataStore
     const origState = w.state
     w.state.set('mode', 'A')
 
-    await w.fetcher.dispatch({ schema: 's' }, {})
+    await w.fetcher.dispatch({ schema: 's' }, { website: w })
     expect(a).toHaveBeenCalledTimes(1)
 
     w.rebuild({ foundation: foundationB })
@@ -126,7 +133,7 @@ describe('Website.rebuild', () => {
     // derived from request is the same, so the cached entry wins regardless
     // of which fetcher would run. Clear cache first to force a real dispatch.
     w.dataStore.clear()
-    await w.fetcher.dispatch({ schema: 's' }, {})
+    await w.fetcher.dispatch({ schema: 's' }, { website: w })
     expect(b).toHaveBeenCalledTimes(1)
   })
 
