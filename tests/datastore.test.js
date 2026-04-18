@@ -54,6 +54,54 @@ describe('DataStore', () => {
     })
   })
 
+  describe('subscribe(key, fn)', () => {
+    const otherConfig = { path: '/data/other.json', schema: 'other' }
+    const otherKey = deriveCacheKey(otherConfig)
+
+    it('fires only when the matching key is set', () => {
+      const store = new DataStore()
+      const fn = jest.fn()
+      store.subscribe(key, fn)
+
+      store.set(otherKey, { data: [] })
+      expect(fn).not.toHaveBeenCalled()
+
+      store.set(key, { data: [1] })
+      expect(fn).toHaveBeenCalledTimes(1)
+    })
+
+    it('returns an unsubscribe function that removes only this listener', () => {
+      const store = new DataStore()
+      const a = jest.fn()
+      const b = jest.fn()
+      const unsubA = store.subscribe(key, a)
+      store.subscribe(key, b)
+
+      unsubA()
+      store.set(key, { data: [1] })
+      expect(a).not.toHaveBeenCalled()
+      expect(b).toHaveBeenCalledTimes(1)
+    })
+
+    it('fires both global and keyed listeners on a matching set', () => {
+      const store = new DataStore()
+      const all = jest.fn()
+      const keyed = jest.fn()
+      store.subscribe(all)
+      store.subscribe(key, keyed)
+
+      store.set(key, { data: [1] })
+      expect(all).toHaveBeenCalledTimes(1)
+      expect(keyed).toHaveBeenCalledTimes(1)
+    })
+
+    it('throws on bad signatures', () => {
+      const store = new DataStore()
+      expect(() => store.subscribe(42)).toThrow(TypeError)
+      expect(() => store.subscribe('k', 'nope')).toThrow(TypeError)
+    })
+  })
+
   describe('inflight', () => {
     it('exposes a Map that the dispatcher can manage', () => {
       const store = new DataStore()

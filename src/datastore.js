@@ -51,19 +51,48 @@ export default class DataStore {
     this._inflight = new Map()
     // Notified on every successful `set()`.
     this._listeners = new Set()
+    // Key-scoped listeners: key → Set<Function>
+    this._keyedListeners = new Map()
 
     Object.seal(this)
   }
 
   /**
-   * Subscribe to cache updates. Fires after every successful `set()`.
+   * Subscribe to cache updates.
    *
-   * @param {Function} fn - Listener called with no arguments
+   * Two forms:
+   *   - `subscribe(fn)`      — fires after every successful `set()` (all keys).
+   *   - `subscribe(key, fn)` — fires only when `set(key, ...)` is called.
+   *
+   * The global form is useful for debugging / blanket observers. The keyed
+   * form is what Layer-3 kit hooks (`useFetched`, `useCacheEntry`) use so
+   * a cache write for one request doesn't wake up every subscriber.
+   *
+   * @param {string|Function} keyOrFn
+   * @param {Function} [maybeFn]
    * @returns {Function} unsubscribe
    */
-  subscribe(fn) {
-    this._listeners.add(fn)
-    return () => this._listeners.delete(fn)
+  subscribe(keyOrFn, maybeFn) {
+    if (typeof keyOrFn === 'string' && typeof maybeFn === 'function') {
+      const key = keyOrFn
+      let set = this._keyedListeners.get(key)
+      if (!set) {
+        set = new Set()
+        this._keyedListeners.set(key, set)
+      }
+      set.add(maybeFn)
+      return () => {
+        const s = this._keyedListeners.get(key)
+        if (!s) return
+        s.delete(maybeFn)
+        if (s.size === 0) this._keyedListeners.delete(key)
+      }
+    }
+    if (typeof keyOrFn === 'function') {
+      this._listeners.add(keyOrFn)
+      return () => this._listeners.delete(keyOrFn)
+    }
+    throw new TypeError('DataStore.subscribe: expected (fn) or (key, fn)')
   }
 
   /**
@@ -87,7 +116,8 @@ export default class DataStore {
   }
 
   /**
-   * Cache store. Fires listeners.
+   * Cache store. Fires listeners: first the global ones (all-writes), then
+   * any subscribers registered for this specific key.
    *
    * @param {string} key
    * @param {{ data: any, meta?: Object }} entry
@@ -95,6 +125,10 @@ export default class DataStore {
   set(key, entry) {
     this._cache.set(key, entry)
     for (const fn of this._listeners) fn()
+    const keyed = this._keyedListeners.get(key)
+    if (keyed) {
+      for (const fn of keyed) fn()
+    }
   }
 
   /**
@@ -109,7 +143,8 @@ export default class DataStore {
   }
 
   /**
-   * Flush cache and in-flight map.
+   * Flush cache and in-flight map. Listeners are preserved so subscribers
+   * that outlive the cache (kit hooks waiting on a key) aren't orphaned.
    */
   clear() {
     this._cache.clear()
