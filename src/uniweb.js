@@ -22,9 +22,14 @@ export default class Uniweb {
    * @param {Array<Object>} [options.extensions] - Loaded extension modules.
    * @param {{ resolve: Function }} [options.defaultFetcher] - Framework default fetcher
    *   used by the dispatcher's fallback when no foundation route matches.
+   * @param {{ resolve: Function, cacheKey?: Function }} [options.transport] -
+   *   Runtime-level transport override. When set, every Layer-1 request is
+   *   routed through this transport, bypassing foundation routes and the
+   *   framework default. Used only by the editor's preview iframe; normal
+   *   sites never pass this option.
    */
-  constructor({ content = {}, foundation = null, extensions = [], defaultFetcher = null, dev = false } = {}) {
-    this.activeWebsite = new Website({ content, foundation, extensions, defaultFetcher, dev })
+  constructor({ content = {}, foundation = null, extensions = [], defaultFetcher = null, transport = null, dev = false } = {}) {
+    this.activeWebsite = new Website({ content, foundation, extensions, defaultFetcher, transport, dev })
 
     this.foundation = foundation
     this.foundationConfig = {}

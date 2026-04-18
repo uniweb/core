@@ -47,6 +47,38 @@ describe('Website constructor', () => {
     const result = await w.fetcher.dispatch({ schema: 's' }, {})
     expect(result.data).toEqual(['x'])
   })
+
+  it('honors a runtime transport override', async () => {
+    const foundationResolve = jest.fn()
+    const bridgeResolve = jest.fn().mockResolvedValue({ data: ['bridge'] })
+    const foundation = { default: { fetcher: { fallback: { resolve: foundationResolve } } } }
+
+    const w = new Website({
+      content: simpleContent(),
+      foundation,
+      transport: { resolve: bridgeResolve },
+    })
+    const result = await w.fetcher.dispatch({ schema: 's' }, {})
+    expect(result.data).toEqual(['bridge'])
+    expect(foundationResolve).not.toHaveBeenCalled()
+  })
+
+  it('preserves the transport override across rebuild({ foundation })', async () => {
+    const bridgeResolve = jest.fn().mockResolvedValue({ data: ['bridge'] })
+    const foundationA = { default: { fetcher: { fallback: { resolve: jest.fn() } } } }
+    const foundationB = { default: { fetcher: { fallback: { resolve: jest.fn() } } } }
+
+    const w = new Website({
+      content: simpleContent(),
+      foundation: foundationA,
+      transport: { resolve: bridgeResolve },
+    })
+
+    w.rebuild({ foundation: foundationB })
+    const result = await w.fetcher.dispatch({ schema: 's' }, {})
+    expect(result.data).toEqual(['bridge'])
+    expect(bridgeResolve).toHaveBeenCalled()
+  })
 })
 
 describe('Website.rebuild', () => {

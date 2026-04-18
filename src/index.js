@@ -39,10 +39,13 @@ export function getUniweb() {
  * @param {Array<Object>} [extensions] - Loaded extension modules.
  * @param {Object} [options]
  * @param {{ resolve: Function }} [options.defaultFetcher] - Framework default fetcher.
+ * @param {{ resolve: Function, cacheKey?: Function }} [options.transport] -
+ *   Runtime-level transport override — routes every Layer-1 request through
+ *   this transport. Used only by the editor's preview iframe.
  * @returns {Uniweb} The created instance (also assigned to globalThis.uniweb).
  */
-export function createUniweb(content, foundation = null, extensions = [], { defaultFetcher = null, dev = false } = {}) {
-  const instance = new Uniweb({ content, foundation, extensions, defaultFetcher, dev })
+export function createUniweb(content, foundation = null, extensions = [], { defaultFetcher = null, transport = null, dev = false } = {}) {
+  const instance = new Uniweb({ content, foundation, extensions, defaultFetcher, transport, dev })
   globalThis.uniweb = instance
   return instance
 }

@@ -350,6 +350,70 @@ describe('FetcherDispatcher', () => {
     })
   })
 
+  describe('transport override', () => {
+    it('wins over foundation routes, foundation fallback, and default', async () => {
+      const dataStore = new DataStore()
+      const foundationRoute = { resolve: jest.fn() }
+      const foundationFallback = { resolve: jest.fn() }
+      const defaultFetcher = { resolve: jest.fn() }
+      const transport = { resolve: jest.fn().mockResolvedValue({ data: ['bridge'] }) }
+
+      const foundation = buildFoundation({
+        routes: [{ match: () => true, resolve: foundationRoute.resolve }],
+        fallback: { resolve: foundationFallback.resolve },
+      })
+      const d = new FetcherDispatcher({
+        foundation,
+        dataStore,
+        defaultFetcher,
+        transport,
+      })
+
+      const result = await d.dispatch({ schema: 'anything', url: 'https://x' }, {})
+      expect(result.data).toEqual(['bridge'])
+      expect(transport.resolve).toHaveBeenCalledTimes(1)
+      expect(foundationRoute.resolve).not.toHaveBeenCalled()
+      expect(foundationFallback.resolve).not.toHaveBeenCalled()
+      expect(defaultFetcher.resolve).not.toHaveBeenCalled()
+    })
+
+    it('handles every request through the override (bridge delegates internally)', async () => {
+      const dataStore = new DataStore()
+      const seen = []
+      const transport = {
+        resolve: (req) => {
+          seen.push(req.url ?? req.path)
+          return Promise.resolve({ data: [req.url ?? req.path] })
+        },
+      }
+      const d = new FetcherDispatcher({
+        foundation: null,
+        dataStore,
+        defaultFetcher: { resolve: jest.fn() },
+        transport,
+      })
+
+      await d.dispatch({ url: 'https://api.example.com/a', schema: 'a' }, {})
+      await d.dispatch({ path: '/data/b.json', schema: 'b' }, {})
+      expect(seen).toEqual(['https://api.example.com/a', '/data/b.json'])
+    })
+
+    it('ignores a transport missing resolve() and falls through to defaults', async () => {
+      const dataStore = new DataStore()
+      const defaultFetcher = { resolve: jest.fn().mockResolvedValue({ data: ['d'] }) }
+      const d = new FetcherDispatcher({
+        foundation: null,
+        dataStore,
+        defaultFetcher,
+        transport: { notResolve: () => {} },
+      })
+
+      const result = await d.dispatch({ path: '/a.json', schema: 'a' }, {})
+      expect(result.data).toEqual(['d'])
+      expect(defaultFetcher.resolve).toHaveBeenCalled()
+    })
+  })
+
   describe('listener notifications via DataStore.subscribe', () => {
     it('fires the DataStore subscriber on successful dispatch', async () => {
       const dataStore = new DataStore()

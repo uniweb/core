@@ -32,6 +32,7 @@ export default class Website {
     foundation = null,
     extensions = [],
     defaultFetcher = null,
+    transport = null,
     dev = false,
   } = {}) {
 
@@ -39,6 +40,9 @@ export default class Website {
     this._foundation = foundation
     this._extensions = extensions
     this._defaultFetcher = defaultFetcher
+    // Runtime-level transport override (editor preview bridge). Stored so
+    // rebuild() reassembles the dispatcher with the same override in place.
+    this._transport = transport
     this._dev = dev
 
     this.dataStore = new DataStore()
@@ -47,6 +51,7 @@ export default class Website {
       extensions,
       dataStore: this.dataStore,
       defaultFetcher,
+      transport,
       dev,
     })
     this.entityStore = new EntityStore({ website: this })
@@ -184,6 +189,7 @@ export default class Website {
         extensions: this._extensions,
         dataStore: this.dataStore,
         defaultFetcher: this._defaultFetcher,
+        transport: this._transport,
         dev: this._dev,
       })
     }

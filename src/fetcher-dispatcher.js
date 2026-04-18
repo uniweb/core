@@ -39,13 +39,19 @@ export default class FetcherDispatcher {
    * @param {Object} options.dataStore - The Website's DataStore.
    * @param {{ resolve: Function }} [options.defaultFetcher] - Framework default
    *   used when no route matches and the primary foundation declares no fallback.
+   * @param {{ resolve: Function, cacheKey?: Function }} [options.transport] -
+   *   Runtime-level transport override. When set, the dispatcher routes every
+   *   request to this transport, bypassing foundation/extension routes and the
+   *   framework default. Used by the editor's preview iframe (parent frame holds
+   *   the authenticated session) — normal sites never pass this option.
    * @param {boolean} [options.dev] - Enable dev-mode validation warnings
    *   (return-shape, expectedFields). Production should keep this false.
    */
-  constructor({ foundation, extensions = [], dataStore, defaultFetcher = null, dev = false }) {
+  constructor({ foundation, extensions = [], dataStore, defaultFetcher = null, transport = null, dev = false }) {
     if (!dataStore) throw new Error('FetcherDispatcher: dataStore is required')
     this._dataStore = dataStore
     this._defaultFetcher = defaultFetcher
+    this._transportOverride = transport && typeof transport.resolve === 'function' ? transport : null
     this._dev = !!dev
 
     const primary = normalizeFetcherSpec(getFoundationDecl(foundation)?.fetcher)
@@ -63,10 +69,12 @@ export default class FetcherDispatcher {
   }
 
   /**
-   * Select the fetcher for a request. Walks primary routes → extension routes
-   * → primary fallback → framework default.
+   * Select the fetcher for a request. The runtime-level `transport` override
+   * (if set) wins over everything. Otherwise walks primary routes → extension
+   * routes → primary fallback → framework default.
    */
   _selectFetcher(request, ctx) {
+    if (this._transportOverride) return this._transportOverride
     for (const route of this._primaryRoutes) {
       if (this._matches(route, request, ctx)) return route
     }
