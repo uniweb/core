@@ -19,7 +19,15 @@
  * slug read from `page.state`) must declare their own `cacheKey(request)`
  * on the fetcher so reactive changes miss the cache and re-fetch.
  *
- * Only the four fields that affect the response contribute to the key.
+ * Fields that contribute to the key:
+ *   - path, url       — what resource is being fetched
+ *   - schema          — which entity type the response will be stored under
+ *   - transform       — any per-fetch response unwrap; different transforms
+ *                       of the same endpoint produce different cached data
+ *   - method (POST)   — POST requests may share a URL with GET; don't collide
+ *   - body (POST)     — two POSTs to the same URL with different bodies are
+ *                       different queries; must cache distinctly
+ *
  * Post-processing fields like `limit`, `sort`, `filter` are applied after
  * fetch and must not split the cache.
  *
@@ -28,7 +36,11 @@
  */
 export function deriveCacheKey(request) {
   const { path, url, schema, transform } = request || {}
-  return JSON.stringify({ path, url, schema, transform })
+  const method = request?.method && request.method.toUpperCase() !== 'GET'
+    ? request.method.toUpperCase()
+    : undefined
+  const body = method === 'POST' ? request?.body : undefined
+  return JSON.stringify({ path, url, schema, transform, method, body })
 }
 
 export default class DataStore {

@@ -20,6 +20,7 @@ export { default as ObservableState } from './observable-state.js'
 
 // Utilities
 export { default as singularize } from './singularize.js'
+export { substitutePlaceholders } from './substitute-placeholders.js'
 
 /**
  * The singleton Uniweb instance.

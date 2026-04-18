@@ -15,6 +15,7 @@
  */
 
 import singularize from './singularize.js'
+import { substitutePlaceholders } from './substitute-placeholders.js'
 
 export default class EntityStore {
   /**
@@ -119,7 +120,15 @@ export default class EntityStore {
 
   /**
    * Build a detail-URL fetch config from a collection config + dynamic context.
-   * `detail: rest` / `detail: query` / custom pattern — unchanged.
+   *
+   * Three forms of `detail:`:
+   *   - `'rest'`                — append paramValue as a path segment.
+   *   - `'query'`               — append `?paramName=paramValue`.
+   *   - `'/articles/{slug}'`    — custom URL pattern with {paramName} placeholders.
+   *   - `{ body, envelope }`    — object form. Reuses the collection's url /
+   *                               method / headers / auth; adds per-detail
+   *                               body (with placeholder substitution) and
+   *                               per-detail envelope.
    */
   _buildDetailConfig(collectionConfig, dynamicContext) {
     const { detail } = collectionConfig
@@ -129,7 +138,28 @@ export default class EntityStore {
 
     const baseUrl = collectionConfig.url || collectionConfig.path
     if (!baseUrl) return null
+    const isLocalPath = !!collectionConfig.path && !collectionConfig.url
 
+    // Object form: `detail: { body, envelope }`. Reuses collection's URL +
+    // method + headers + auth. The body is placeholder-substituted against
+    // the dynamic context so `body: { variables: { slug: "{slug}" } }` works.
+    if (detail && typeof detail === 'object') {
+      const out = {
+        ...(isLocalPath ? { path: baseUrl } : { url: baseUrl }),
+        schema: singularize(collectionConfig.schema) || collectionConfig.schema,
+        transform: collectionConfig.transform,
+      }
+      if (collectionConfig.method) out.method = collectionConfig.method
+      if (detail.body !== undefined) {
+        out.body = substitutePlaceholders(detail.body, { [paramName]: paramValue }, { encode: false })
+      } else if (collectionConfig.body !== undefined) {
+        out.body = substitutePlaceholders(collectionConfig.body, { [paramName]: paramValue }, { encode: false })
+      }
+      if (detail.envelope) out.envelope = detail.envelope
+      return out
+    }
+
+    // String-form: URL-based conventions.
     let detailUrl
     if (detail === 'rest') {
       const [basePath, queryString] = baseUrl.split('?')
@@ -141,13 +171,12 @@ export default class EntityStore {
       const sep = baseUrl.includes('?') ? '&' : '?'
       detailUrl = `${baseUrl}${sep}${paramName}=${encodeURIComponent(paramValue)}`
     } else {
-      detailUrl = detail.replace(/\{(\w+)\}/g, (_, key) => {
-        if (key === paramName) return encodeURIComponent(paramValue)
-        return `{${key}}`
-      })
+      // Custom pattern like '/articles/{slug}' — substitute placeholders
+      // from the dynamic-route context. Only placeholders matching the
+      // active paramName resolve; others pass through as literal `{name}`.
+      detailUrl = substitutePlaceholders(detail, { [paramName]: paramValue })
     }
 
-    const isLocalPath = !!collectionConfig.path && !collectionConfig.url
     return {
       ...(isLocalPath ? { path: detailUrl } : { url: detailUrl }),
       schema: singularize(collectionConfig.schema) || collectionConfig.schema,
