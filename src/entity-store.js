@@ -17,6 +17,29 @@
 import singularize from './singularize.js'
 import { substitutePlaceholders } from './substitute-placeholders.js'
 
+/**
+ * Is `block.fetch` a per-instance refinement of the ancestor's fetch config
+ * rather than a new source? The canonical spelling is `refine: true`; the
+ * legacy spelling `inherit: true` is still honored for one release with a
+ * dev-mode warning.
+ */
+function isRefinement(bf) {
+  return bf?.refine === true || bf?.inherit === true
+}
+
+let inheritDeprecationWarned = false
+function warnInheritDeprecation(block) {
+  if (inheritDeprecationWarned) return
+  inheritDeprecationWarned = true
+  // Dev-only; production builds typically strip console.warn. We gate on
+  // the presence of the deprecated key and fire once per process.
+  console.warn(
+    "[uniweb] 'fetch: { inherit: true }' is deprecated; rename to 'fetch: { refine: true }'. " +
+    'Accepted for one release; will be removed in the next minor. ' +
+    `First seen on block ${block?.id ?? '(unknown)'} of page ${block?.page?.route ?? '(unknown)'}.`
+  )
+}
+
 export default class EntityStore {
   /**
    * @param {Object} options
@@ -29,20 +52,20 @@ export default class EntityStore {
 
   _shouldInheritDetail(meta, block) {
     const bf = block?.fetch
-    if (bf?.inherit === true && bf?.detail !== undefined) return bf.detail !== false
+    if (isRefinement(bf) && bf?.detail !== undefined) return bf.detail !== false
     if (!meta) return true
     return meta.inheritDetail !== false
   }
 
   _inheritLimit(meta, block) {
     const bf = block?.fetch
-    if (bf?.inherit === true && bf?.limit > 0) return bf.limit
+    if (isRefinement(bf) && bf?.limit > 0) return bf.limit
     return (meta?.inheritLimit > 0) ? meta.inheritLimit : null
   }
 
   _inheritOrder(block) {
     const bf = block?.fetch
-    if (bf?.inherit === true && bf?.order?.orderBy) return bf.order
+    if (isRefinement(bf) && bf?.order?.orderBy) return bf.order
     return null
   }
 
@@ -96,7 +119,10 @@ export default class EntityStore {
     const collectAll = requested.length === 0
     const sources = []
 
-    if (block.fetch && !block.fetch.inherit) sources.push(block.fetch)
+    if (block.fetch?.inherit === true && block.fetch?.refine !== true) {
+      warnInheritDeprecation(block)
+    }
+    if (block.fetch && !isRefinement(block.fetch)) sources.push(block.fetch)
     const page = block.page
     if (page?.fetch) sources.push(page.fetch)
     if (page?.parent?.fetch) sources.push(page.parent.fetch)

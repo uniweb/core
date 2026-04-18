@@ -430,4 +430,69 @@ describe('EntityStore.fetch', () => {
     const ctxArg = fetcherSpy.mock.calls[0][1]
     expect(ctxArg?.signal).toBeDefined()
   })
+
+  describe('refine (formerly inherit)', () => {
+    it('refine: true on a block skips it as a new source and fetches parent config', async () => {
+      const articles = [{ slug: 'a' }, { slug: 'b' }]
+      const { entityStore, fetcherSpy, website } = makeHarness({
+        fetcherImpl: () => Promise.resolve({ data: articles }),
+      })
+      const parentConfig = { path: '/data/articles.json', schema: 'articles' }
+      const blockConfig = { path: '/data/override.json', schema: 'articles' }
+      const parent = makePage({ fetch: parentConfig })
+      const page = makePage({ parent })
+      const block = makeBlock({ page, fetch: { ...blockConfig, refine: true } }, website)
+
+      const result = await entityStore.fetch(block, {})
+      expect(result.data.articles).toEqual(articles)
+      // Parent's URL is fetched — block's own URL is NOT used as a new source.
+      expect(fetcherSpy).toHaveBeenCalledWith(parentConfig, expect.anything())
+      expect(fetcherSpy).not.toHaveBeenCalledWith(blockConfig, expect.anything())
+    })
+
+    it('inherit: true is still accepted as a deprecated alias', async () => {
+      const articles = [{ slug: 'a' }, { slug: 'b' }]
+      const { entityStore, fetcherSpy, website } = makeHarness({
+        fetcherImpl: () => Promise.resolve({ data: articles }),
+      })
+      const parentConfig = { path: '/data/articles.json', schema: 'articles' }
+      const blockConfig = { path: '/data/override.json', schema: 'articles' }
+      const parent = makePage({ fetch: parentConfig })
+      const page = makePage({ parent })
+      const block = makeBlock({ page, fetch: { ...blockConfig, inherit: true } }, website)
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+
+      const result = await entityStore.fetch(block, {})
+      expect(result.data.articles).toEqual(articles)
+      expect(fetcherSpy).toHaveBeenCalledWith(parentConfig, expect.anything())
+      expect(fetcherSpy).not.toHaveBeenCalledWith(blockConfig, expect.anything())
+      warn.mockRestore()
+    })
+
+    it('refine: true with detail: false returns collection minus active item', async () => {
+      const articles = [
+        { slug: 'a', title: 'A' },
+        { slug: 'b', title: 'B' },
+        { slug: 'c', title: 'C' },
+      ]
+      const { entityStore, website } = makeHarness({
+        fetcherImpl: () => Promise.resolve({ data: articles }),
+      })
+      const parentConfig = {
+        url: 'https://api.example.com/articles',
+        schema: 'articles',
+        detail: 'rest',
+      }
+      const dynamicContext = { paramName: 'slug', paramValue: 'b', schema: 'articles' }
+      const parent = makePage({ fetch: parentConfig })
+      const page = makePage({ parent, dynamicContext })
+      const block = makeBlock(
+        { page, fetch: { refine: true, detail: false, limit: 2 } },
+        website,
+      )
+
+      const result = await entityStore.fetch(block, {})
+      expect(result.data.articles.map((a) => a.slug)).toEqual(['a', 'c'])
+    })
+  })
 })
