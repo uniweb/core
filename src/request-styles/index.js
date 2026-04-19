@@ -16,9 +16,13 @@
  */
 
 import { jsonBody } from './json-body.js'
+import { flatQuery } from './flat-query.js'
+import { strapi } from './strapi.js'
 
 const STYLES = new Map([
   [jsonBody.name, jsonBody],
+  [flatQuery.name, flatQuery],
+  [strapi.name, strapi],
 ])
 
 /**
@@ -54,4 +58,4 @@ export function listStyleNames() {
   return [...STYLES.keys()]
 }
 
-export { jsonBody }
+export { jsonBody, flatQuery, strapi }
