@@ -137,11 +137,43 @@ export default class EntityStore {
         if (!cfg.schema) continue
         if (configs.has(cfg.schema)) continue
         if (collectAll || requested.includes(cfg.schema)) {
-          configs.set(cfg.schema, this._localizeConfig(cfg, website))
+          const localized = this._localizeConfig(cfg, website)
+          const withDetail = this._applyDeferredDetail(localized, website)
+          configs.set(cfg.schema, withDetail)
         }
       }
     }
     return configs
+  }
+
+  /**
+   * Auto-inject `detail:` on collection refs whose collection has
+   * `deferred:` declared. The build emits per-record files at
+   * `/data/<name>/<slug>.json` for those collections; this populates
+   * the detail-fetch URL so the existing dynamic-route singular flow
+   * uses the per-record file (with deferred fields) instead of the
+   * matched-item-from-cascade-collection (without).
+   *
+   * Conventions:
+   *   - Per-record files are keyed by `item.slug`. The injected pattern
+   *     uses the `{slug}` placeholder; substitution works when the
+   *     dynamic route's paramName is 'slug' (the documented convention).
+   *     Routes using other param names need an explicit author-written
+   *     `detail:` value.
+   *   - Author-supplied `cfg.detail` always wins. This helper only fills
+   *     in the default for collections that have declared deferred fields.
+   *   - Per-record files are not currently localized; sites needing
+   *     localized deferred collections write their own `detail:` URL.
+   */
+  _applyDeferredDetail(cfg, website) {
+    if (cfg.detail !== undefined) return cfg
+    const schema = cfg.schema
+    if (!schema) return cfg
+    const collConfig = website?.config?.collections?.[schema]
+    if (!collConfig || typeof collConfig !== 'object') return cfg
+    const deferred = Array.isArray(collConfig.deferred) ? collConfig.deferred : null
+    if (!deferred || deferred.length === 0) return cfg
+    return { ...cfg, detail: `/data/${schema}/{slug}.json` }
   }
 
   /**
