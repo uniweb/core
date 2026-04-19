@@ -22,6 +22,7 @@ export { default as ObservableState } from './observable-state.js'
 export { default as singularize } from './singularize.js'
 export { substitutePlaceholders } from './substitute-placeholders.js'
 export { evaluate as evaluateWhere, match as matchWhere } from './where.js'
+export { resolveStyle as resolveRequestStyle, listStyleNames as listRequestStyleNames } from './request-styles/index.js'
 
 /**
  * The singleton Uniweb instance.
