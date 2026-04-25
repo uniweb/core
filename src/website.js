@@ -83,6 +83,7 @@ export default class Website {
     this._routeTranslations = {}
     this.basePath = ''
     this.versionedScopes = {}
+    this.assets = {}
     this._pageIdMap = new Map()
 
     this._applyContent(content)
@@ -105,6 +106,7 @@ export default class Website {
       layouts,
       notFound,
       versionedScopes = {},
+      assets = {},
     } = content || {}
 
     this.name = config.name || ''
@@ -162,6 +164,7 @@ export default class Website {
 
     this._routeTranslations = this._buildRouteTranslations(config)
     this.versionedScopes = versionedScopes
+    this.assets = assets
   }
 
   /**
