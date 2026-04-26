@@ -74,6 +74,7 @@ export default class Website {
     this.pageRoutes = []
     this.themeData = {}
     this.config = {}
+    this.xref = null
     this.siteDefaultLocale = 'en'
     this.defaultLocale = 'en'
     this.activeLocale = 'en'
@@ -107,6 +108,7 @@ export default class Website {
       notFound,
       versionedScopes = {},
       assets = {},
+      xref = null,
     } = content || {}
 
     this.name = config.name || ''
@@ -165,6 +167,10 @@ export default class Website {
     this._routeTranslations = this._buildRouteTranslations(config)
     this.versionedScopes = versionedScopes
     this.assets = assets
+    // Cross-reference registry — populated by content-loader from {#id}
+    // attributes on labeled block elements. Read by kit's <Ref>
+    // component to resolve `[#id]` cross-reference insets.
+    this.xref = xref || null
   }
 
   /**

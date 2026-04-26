@@ -57,6 +57,13 @@ export default class Uniweb {
     this.routingComponents = {}
     this.language = 'en'
 
+    // Framework-level inset components — every foundation gets these
+    // for free. Currently `<Ref>` for cross-references; future
+    // additions land here too. The runtime's setup wires the actual
+    // component instance after createUniweb returns; the slot is
+    // declared here so Object.seal lets us assign to it.
+    this.defaultInsets = null
+
     // Icon resolver: (library, name) => Promise<string|null>
     // Set by the runtime from site config.
     this.iconResolver = null
@@ -131,6 +138,12 @@ export default class Uniweb {
     for (const ext of this.extensions) {
       const component = ext.foundation[name]
       if (component) return component
+    }
+    // Final fallback: framework-level default insets (e.g. <Ref> for
+    // cross-references). Foundations don't need to register these
+    // explicitly; the framework provides them.
+    if (this.defaultInsets && this.defaultInsets[name]) {
+      return this.defaultInsets[name]
     }
     return undefined
   }
