@@ -481,6 +481,34 @@ export default class Page {
   }
 
   /**
+   * Resolve which Page should actually be rendered when this one is
+   * requested. If the page has its own content, it renders itself. If
+   * it's a content-less folder with a designated index child, that
+   * child renders in its place. Otherwise, returns `this` so the caller
+   * can decide what to do with an empty page (typically an empty
+   * <main>, not a 404 — the route exists, it just has no body).
+   *
+   * Distinct from `getNavigableRoute()`, which recursively walks
+   * descendants to find a navigation target. `getRenderableSelf()` only
+   * looks one level down (to the immediate index child) — the contract
+   * is "give me the page to render *here*," not "give me the next URL
+   * with content."
+   *
+   * Used by SSR paths (Cloudflare Worker isolate today; framework SSG
+   * pre-handles this differently via expandDynamicPages) to avoid
+   * rendering nothing when an author requests `/docs` and the page is
+   * a folder whose actual landing content lives in `/docs/intro` flagged
+   * as `isIndex: true`.
+   *
+   * @returns {Page} The page to render — `this` or its index child.
+   */
+  getRenderableSelf() {
+    if (this.hasContent()) return this
+    const indexChild = this.children?.find((c) => c.isIndex)
+    return indexChild || this
+  }
+
+  /**
    * Get route without leading/trailing slashes.
    * Delegates to Website.normalizeRoute() for consistent normalization.
    *
