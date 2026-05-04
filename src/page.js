@@ -426,11 +426,34 @@ export default class Page {
     this._loadingContent = (async () => {
       try {
         const base = this.website.basePath || ''
-        // Locale-aware URL: non-default locale pages live under /{locale}/_pages/
-        const localePrefix = this.website.activeLocale !== this.website.defaultLocale
-          ? `/${this.website.activeLocale}` : ''
-        const routePath = this.route === '/' ? '/index' : this.route
-        const res = await fetch(`${base}${localePrefix}/_pages${routePath}.json`)
+        const lang = this.website.activeLocale
+        const defaultLang = this.website.defaultLocale
+
+        // Phase 5 of the CDN migration: prefer the content-addressed URL from
+        // __DATA__.config.pageHashes (the publish handler emits it). Falls
+        // back to the legacy /{lang}/_pages/{route}.json shape when the map
+        // isn't present (older sites that haven't republished yet).
+        const hashes = this.website.config?.pageHashes
+        const hashedUrl = hashes?.[lang]?.[this.route]
+
+        let url
+        if (hashedUrl) {
+          url = `${base}${hashedUrl}`
+        } else {
+          const localePrefix = lang !== defaultLang ? `/${lang}` : ''
+          const routePath = this.route === '/' ? '/index' : this.route
+          url = `${base}${localePrefix}/_pages${routePath}.json`
+        }
+
+        const res = await fetch(url)
+        if (res.status === 404 && _shouldReloadOnHashed404(hashedUrl)) {
+          // Stale tab: this tab's __DATA__ map references a publish that
+          // no longer exists in R2. One reload usually picks up the fresh
+          // HTML (and a fresh map). Capped at 2 attempts to defend against
+          // a malformed publish where new HTML and new R2 also disagree.
+          window.location.reload()
+          return
+        }
         if (!res.ok) {
           console.warn(`[Page] Failed to load content for ${this.route}: ${res.status}`)
           this._bodySections = []  // Mark as loaded (empty) to prevent retries
@@ -439,6 +462,11 @@ export default class Page {
         const data = await res.json()
         this._bodySections = data.sections || []
         this._bodyBlocks = null  // Reset lazy cache so getter rebuilds
+        // Reset the reload counter on a successful fetch so future stale
+        // tabs (across many publishes in one session) get fresh attempts.
+        if (typeof sessionStorage !== 'undefined') {
+          sessionStorage.removeItem('uniwebReloadCount')
+        }
       } finally {
         this._loadingContent = null
       }
@@ -607,5 +635,35 @@ export default class Page {
   getVersionUrl(targetVersion) {
     if (!this.isVersioned()) return null
     return this.website.getVersionUrl(targetVersion, this.route)
+  }
+}
+
+/**
+ * Helper for the stale-tab 404→reload guard in Page.loadContent.
+ *
+ * Phase 5 of the CDN migration writes content-addressed `_pages/...-{hash}.json`
+ * files. Each publish wipes the prior hashes from R2 and writes fresh ones.
+ * A browser tab loaded against a previous publish carries a stale __DATA__
+ * map; on SPA navigation it'll request a hash that no longer exists.
+ * Reloading the tab pulls fresh HTML (and a fresh map). The session-scoped
+ * counter caps reloads at 2 so a malformed publish (where new HTML and new
+ * R2 disagree) doesn't trigger an infinite loop — after 2 failed reloads
+ * we render the synthetic 404 path instead.
+ *
+ * Only fires when the request was a hashed URL: legacy non-hashed 404s
+ * keep the prior "mark empty, log warning" behavior (they're not symptomatic
+ * of a stale-tab race; just a missing route).
+ */
+function _shouldReloadOnHashed404(hashedUrl) {
+  if (!hashedUrl) return false
+  if (typeof sessionStorage === 'undefined') return false
+  if (typeof window === 'undefined' || !window.location) return false
+  try {
+    const count = parseInt(sessionStorage.getItem('uniwebReloadCount') || '0', 10) || 0
+    if (count >= 2) return false
+    sessionStorage.setItem('uniwebReloadCount', String(count + 1))
+    return true
+  } catch {
+    return false
   }
 }
