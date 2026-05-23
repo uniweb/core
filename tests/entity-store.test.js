@@ -156,7 +156,7 @@ describe('EntityStore.fetch', () => {
     expect(fetcherSpy).toHaveBeenCalledWith(blockConfig, expect.anything())
   })
 
-  it('resolves singular item for dynamic routes', async () => {
+  it('delivers the focused record as a single-element array on dynamic routes', async () => {
     const articles = [
       { slug: 'hello', title: 'Hello' },
       { slug: 'world', title: 'World' },
@@ -170,8 +170,10 @@ describe('EntityStore.fetch', () => {
     const block = makeBlock({ page, dynamicContext }, website)
 
     const result = await entityStore.fetch(block, {})
-    expect(result.data.articles).toEqual(articles)
-    expect(result.data.article).toEqual({ slug: 'world', title: 'World' })
+    // Detail route: the focused record lands under the collection key as a
+    // single-element array; there is no singular `article` key.
+    expect(result.data.articles).toEqual([{ slug: 'world', title: 'World' }])
+    expect(result.data.article).toBeUndefined()
   })
 
   it('detail: rest fetches single item on template page', async () => {
@@ -179,7 +181,9 @@ describe('EntityStore.fetch', () => {
     const detailArticle = { ...collectionItem, body: 'Full' }
     const { entityStore, fetcherSpy, website } = makeHarness({
       fetcherImpl: (req) => {
-        if (req.schema === 'articles') return Promise.resolve({ data: [collectionItem] })
+        // The collection and the per-record detail fetch share a schema now;
+        // distinguish them by URL (the collection vs the /{slug} record).
+        if (req.url === 'https://api.example.com/articles') return Promise.resolve({ data: [collectionItem] })
         return Promise.resolve({ data: detailArticle })
       },
     })
@@ -195,12 +199,12 @@ describe('EntityStore.fetch', () => {
     const block = makeBlock({ page }, website)
 
     const result = await entityStore.fetch(block, { inheritData: ['articles'] })
-    expect(result.data.article).toEqual(detailArticle)
-    expect(result.data.articles).toBeUndefined()
+    expect(result.data.articles).toEqual([detailArticle])
+    expect(result.data.article).toBeUndefined()
     expect(fetcherSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         url: 'https://api.example.com/articles/my-post',
-        schema: 'article',
+        schema: 'articles',
       }),
       expect.anything(),
     )
@@ -230,7 +234,7 @@ describe('EntityStore.fetch', () => {
     expect(fetcherSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         url: 'https://api.example.com/articles?slug=my-post',
-        schema: 'article',
+        schema: 'articles',
       }),
       expect.anything(),
     )
@@ -260,7 +264,7 @@ describe('EntityStore.fetch', () => {
     expect(fetcherSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         url: 'https://api.example.com/article/my-post',
-        schema: 'article',
+        schema: 'articles',
       }),
       expect.anything(),
     )
@@ -286,7 +290,7 @@ describe('EntityStore.fetch', () => {
     const block = makeBlock({ page }, website)
 
     const result = await entityStore.fetch(block, {})
-    expect(result.data.article).toEqual(detailArticle)
+    expect(result.data.articles).toEqual([detailArticle])
     expect(fetcherSpy).toHaveBeenCalledTimes(1)
     expect(fetcherSpy).toHaveBeenCalledWith(
       expect.objectContaining({ url: 'https://api.example.com/articles/my-post' }),
@@ -324,8 +328,8 @@ describe('EntityStore.fetch', () => {
     const block = makeBlock({ page }, website)
 
     const result = await entityStore.fetch(block, {})
-    expect(result.data.articles).toEqual(articles)
-    expect(result.data.article).toEqual({ slug: 'my-post' })
+    expect(result.data.articles).toEqual([{ slug: 'my-post' }])
+    expect(result.data.article).toBeUndefined()
     expect(fetcherSpy).toHaveBeenCalledWith(fetchConfig, expect.anything())
   })
 
