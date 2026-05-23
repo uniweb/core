@@ -9,7 +9,6 @@ import DataStore from './datastore.js'
 import EntityStore from './entity-store.js'
 import FetcherDispatcher from './fetcher-dispatcher.js'
 import ObservableState from './observable-state.js'
-import singularize from './singularize.js'
 
 /**
  * Website — orchestration root for a single site instance.
@@ -536,7 +535,6 @@ export default class Website {
     const paramName = Object.keys(params)[0]
     const paramValue = Object.values(params)[0]
     const pluralSchema = originalData.parentSchema // e.g., 'articles'
-    const singularSchema = this._singularize(pluralSchema) // e.g., 'article'
 
     // Store dynamic context for components to access
     pageData.dynamicContext = {
@@ -545,7 +543,6 @@ export default class Website {
       paramName,
       paramValue,
       schema: pluralSchema,
-      singularSchema,
     }
 
     // Set dynamic context on sections so Block instances receive it
@@ -605,14 +602,6 @@ export default class Website {
     dynamicPage.parent = templatePage.parent
 
     return { page: dynamicPage, collectionLoaded: pageData._collectionLoaded ?? true }
-  }
-
-  /**
-   * Singularize a plural schema name
-   * @private
-   */
-  _singularize(name) {
-    return singularize(name)
   }
 
   /**

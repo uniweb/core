@@ -19,7 +19,6 @@ export { default as FetcherDispatcher } from './fetcher-dispatcher.js'
 export { default as ObservableState } from './observable-state.js'
 
 // Utilities
-export { default as singularize } from './singularize.js'
 export { substitutePlaceholders } from './substitute-placeholders.js'
 export { evaluate as evaluateWhere, match as matchWhere } from './where.js'
 export { isRichSchema } from './schemas.js'
