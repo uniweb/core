@@ -14,7 +14,6 @@
  * and in-flight dedup.
  */
 
-import singularize from './singularize.js'
 import { substitutePlaceholders } from './substitute-placeholders.js'
 
 /**
@@ -220,7 +219,7 @@ export default class EntityStore {
     if (detail && typeof detail === 'object') {
       const out = {
         ...(isLocalPath ? { path: baseUrl } : { url: baseUrl }),
-        schema: singularize(collectionConfig.schema) || collectionConfig.schema,
+        schema: collectionConfig.schema,
         transform: collectionConfig.transform,
       }
       if (collectionConfig.method) out.method = collectionConfig.method
@@ -253,30 +252,9 @@ export default class EntityStore {
 
     return {
       ...(isLocalPath ? { path: detailUrl } : { url: detailUrl }),
-      schema: singularize(collectionConfig.schema) || collectionConfig.schema,
+      schema: collectionConfig.schema,
       transform: collectionConfig.transform,
     }
-  }
-
-  /**
-   * For dynamic routes: extract the matching item from a collection and
-   * expose it under the singular schema key (articles → article).
-   */
-  _resolveSingularItem(data, dynamicContext) {
-    if (!dynamicContext) return data
-    const { paramName, paramValue, schema: pluralSchema } = dynamicContext
-    if (!pluralSchema || !paramName || paramValue === undefined) return data
-    const items = data[pluralSchema]
-    if (!Array.isArray(items)) return data
-
-    const singularSchema = singularize(pluralSchema)
-    const currentItem = items.find(
-      (item) => String(item[paramName]) === String(paramValue)
-    )
-    if (currentItem && singularSchema) {
-      return { ...data, [singularSchema]: currentItem }
-    }
-    return data
   }
 
   /**
@@ -326,9 +304,12 @@ export default class EntityStore {
     const data = {}
     let allCached = true
 
+    const routeSchema = dynamicContext?.schema
+
     for (const [schema, cfg] of configs) {
-      if (dynamicContext && cfg.detail && !inheritDetail) {
-        // detail: false — return collection minus the active item.
+      const isRouteCollection = dynamicContext && schema === routeSchema
+      if (isRouteCollection && !inheritDetail) {
+        // refine detail:false — the collection minus the active item (related items).
         const cached = dispatcher?.peek(cfg, ctx)
         if (cached) {
           const { paramName, paramValue } = dynamicContext
@@ -341,29 +322,31 @@ export default class EntityStore {
         } else {
           allCached = false
         }
-      } else if (dynamicContext && cfg.detail) {
-        // Collection-first detail: the collection is the content gate.
-        const cachedCollection = dispatcher?.peek(cfg, ctx)
-        if (cachedCollection) {
-          const collectionItems = cachedCollection.data
+      } else if (isRouteCollection) {
+        // Detail page: deliver the focused record as a length-1 array under the
+        // collection key. Deferred/API collections fetch the full per-record;
+        // others use the matched item from the collection. Not found → [].
+        const cached = dispatcher?.peek(cfg, ctx)
+        if (cached) {
           const { paramName, paramValue } = dynamicContext
-          const singularKey = singularize(schema) || schema
-          const match = Array.isArray(collectionItems)
-            ? collectionItems.find((item) => String(item[paramName]) === String(paramValue))
+          const items = cached.data
+          const match = Array.isArray(items)
+            ? items.find((item) => String(item[paramName]) === String(paramValue))
             : null
-
           if (!match) {
-            data[singularKey] = null
-          } else {
+            data[schema] = []
+          } else if (cfg.detail) {
             const detailCfg = this._buildDetailConfig(cfg, dynamicContext)
             const detailCached = detailCfg ? dispatcher?.peek(detailCfg, ctx) : null
             if (detailCfg && detailCached) {
-              data[singularKey] = detailCached.data
+              data[schema] = [detailCached.data]
             } else if (detailCfg) {
               allCached = false
             } else {
-              data[singularKey] = match
+              data[schema] = [match]
             }
+          } else {
+            data[schema] = [match]
           }
         } else {
           allCached = false
@@ -380,8 +363,7 @@ export default class EntityStore {
     }
 
     if (allCached) {
-      const resolved = this._resolveSingularItem(data, dynamicContext)
-      return { status: 'ready', data: resolved }
+      return { status: 'ready', data }
     }
     return { status: 'pending', data: null }
   }
@@ -418,9 +400,12 @@ export default class EntityStore {
     const data = {}
     const parallelFetches = []
 
+    const routeSchema = dynamicContext?.schema
+
     for (const [schema, cfg] of configs) {
-      if (dynamicContext && cfg.detail && !inheritDetail) {
-        // detail: false — collection-only, minus the active item.
+      const isRouteCollection = dynamicContext && schema === routeSchema
+      if (isRouteCollection && !inheritDetail) {
+        // refine detail:false — the collection minus the active item.
         let collectionItems = peekArray(dispatcher, cfg, ctx)
         if (collectionItems === null) {
           const result = await dispatcher.dispatch(cfg, ctx)
@@ -432,10 +417,9 @@ export default class EntityStore {
           : (collectionItems ?? [])
         if (order) filtered = this._sortItems(filtered, order)
         data[schema] = limit && Array.isArray(filtered) ? filtered.slice(0, limit) : filtered
-      } else if (dynamicContext && cfg.detail) {
-        // Collection-first detail resolution.
+      } else if (isRouteCollection) {
+        // Detail page: focused record as a length-1 array under the collection key.
         const { paramName, paramValue } = dynamicContext
-        const singularKey = singularize(schema) || schema
 
         let collectionItems = peekArray(dispatcher, cfg, ctx)
         if (collectionItems === null) {
@@ -448,21 +432,26 @@ export default class EntityStore {
         ) ?? null
 
         if (!match) {
-          data[singularKey] = null
+          data[schema] = []
           continue
         }
 
-        const detailCfg = this._buildDetailConfig(cfg, dynamicContext)
-        if (detailCfg) {
-          parallelFetches.push(
-            dispatcher.dispatch(detailCfg, ctx).then((result) => {
-              data[singularKey] = (result?.data !== undefined && result?.data !== null)
-                ? result.data
-                : match
-            })
-          )
+        if (cfg.detail) {
+          const detailCfg = this._buildDetailConfig(cfg, dynamicContext)
+          if (detailCfg) {
+            parallelFetches.push(
+              dispatcher.dispatch(detailCfg, ctx).then((result) => {
+                const record = (result?.data !== undefined && result?.data !== null)
+                  ? result.data
+                  : match
+                data[schema] = [record]
+              })
+            )
+          } else {
+            data[schema] = [match]
+          }
         } else {
-          data[singularKey] = match
+          data[schema] = [match]
         }
       } else {
         parallelFetches.push(
@@ -476,8 +465,7 @@ export default class EntityStore {
     }
 
     if (parallelFetches.length > 0) await Promise.all(parallelFetches)
-    const resolved = this._resolveSingularItem(data, dynamicContext)
-    return { data: resolved }
+    return { data }
   }
 }
 
