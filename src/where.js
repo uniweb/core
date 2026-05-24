@@ -7,8 +7,6 @@
  * (which translate to their native query language) or to this evaluator
  * (which walks the object against a record).
  *
- * Architecture: see kb/framework/architecture/data-fetching.md.
- *
  * Shape:
  *
  *   {
