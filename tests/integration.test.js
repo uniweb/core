@@ -72,10 +72,12 @@ function makeStatefulFoundation() {
       // The transport reads ctx.page.state inside resolve() and declares
       // its own cacheKey so state-dependent queries produce distinct
       // cache entries.
-      transports: {
-        stateful: {
-          resolve: fetcher.resolve,
-          cacheKey: fetcher.cacheKey,
+      capabilities: {
+        transports: {
+          stateful: {
+            resolve: fetcher.resolve,
+            cacheKey: fetcher.cacheKey,
+          },
         },
       },
     },
@@ -158,10 +160,12 @@ describe('integration — Website + foundation + state-aware fetcher', () => {
     // in cacheKey or the reactivity path stalls.")
     const foundation = {
       default: {
-        transports: {
-          stateful: {
-            resolve: (req, ctx) => fetcher.resolve(req, ctx),
-            cacheKey: (req) => `articles:${req.__stateTag ?? ''}`,
+        capabilities: {
+          transports: {
+            stateful: {
+              resolve: (req, ctx) => fetcher.resolve(req, ctx),
+              cacheKey: (req) => `articles:${req.__stateTag ?? ''}`,
+            },
           },
         },
       },
@@ -237,7 +241,7 @@ describe('integration — Website + foundation + state-aware fetcher', () => {
       resolve: jest.fn(() => new Promise((r) => { resolveFetch = r })),
     }
     const foundation = {
-      default: { transports: { stateful: { resolve: fetcher.resolve } } },
+      default: { capabilities: { transports: { stateful: { resolve: fetcher.resolve } } } },
     }
     const website = new Website({ content: makeContent(), foundation })
     const page = website.pages.find((p) => p.route === '/articles')

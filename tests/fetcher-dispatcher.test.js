@@ -2,8 +2,11 @@ import { describe, it, expect, jest } from '@jest/globals'
 import FetcherDispatcher from '../src/fetcher-dispatcher.js'
 import DataStore, { deriveCacheKey } from '../src/datastore.js'
 
+// Mirrors the BUILT foundation shape: generate-entry spreads the source
+// main.js default into `default.capabilities`, so declared transports live at
+// `default.capabilities.transports` (not `default.transports`).
 function buildFoundationTransports(transports = {}, extras = {}) {
-  return { default: { ...extras, transports } }
+  return { default: { ...extras, capabilities: { transports } } }
 }
 
 function websiteCtx(fetcherConfig) {
@@ -12,6 +15,34 @@ function websiteCtx(fetcherConfig) {
 
 describe('FetcherDispatcher', () => {
   describe('named transports', () => {
+    // Contract: a built foundation carries its transports at
+    // default.capabilities.transports (generate-entry spreads the source
+    // main.js default into `capabilities`). The dispatcher reads exactly that
+    // location — these two tests pin it so the read path can't silently regress.
+    it('collects transports from the built shape (default.capabilities.transports)', async () => {
+      const dataStore = new DataStore()
+      const resolve = jest.fn().mockResolvedValue({ data: ['built'] })
+      const foundation = { default: { meta: {}, capabilities: { transports: { api: { resolve } } }, layoutMeta: {} } }
+      const d = new FetcherDispatcher({ foundation, dataStore })
+      const r = await d.dispatch({ schema: 's' }, websiteCtx({ transports: { default: 'api' } }))
+      expect(r.data).toEqual(['built'])
+      expect(resolve).toHaveBeenCalled()
+    })
+
+    it('ignores transports at the legacy default.transports location (not the built shape)', async () => {
+      const dataStore = new DataStore()
+      const resolve = jest.fn().mockResolvedValue({ data: ['legacy'] })
+      const defaultFetcher = { resolve: jest.fn().mockResolvedValue({ data: ['default'] }) }
+      // Transports on `default` (not under `capabilities`) is not a built
+      // foundation and must not be honored — guards against reintroducing a
+      // fallback read that would mask the build/runtime shape contract.
+      const foundation = { default: { transports: { api: { resolve } } } }
+      const d = new FetcherDispatcher({ foundation, dataStore, defaultFetcher })
+      const r = await d.dispatch({ schema: 's' }, websiteCtx({ transports: { default: 'api' } }))
+      expect(r.data).toEqual(['default'])
+      expect(resolve).not.toHaveBeenCalled()
+    })
+
     it('uses the framework default when no foundation declares transports', async () => {
       const dataStore = new DataStore()
       const defaultFetcher = { resolve: jest.fn().mockResolvedValue({ data: [1, 2] }) }
@@ -74,7 +105,7 @@ describe('FetcherDispatcher', () => {
       const primary = { resolve: jest.fn().mockResolvedValue({ data: ['primary'] }) }
       const ext = { resolve: jest.fn() }
       const foundation = buildFoundationTransports({ uniweb: primary })
-      const extension = { default: { transports: { uniweb: ext } } }
+      const extension = { default: { capabilities: { transports: { uniweb: ext } } } }
       const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
 
       const d = new FetcherDispatcher({
@@ -99,7 +130,7 @@ describe('FetcherDispatcher', () => {
     it('extension contributes a transport the primary foundation does not provide', async () => {
       const dataStore = new DataStore()
       const extResolve = jest.fn().mockResolvedValue({ data: ['e'] })
-      const extension = { default: { transports: { stats: { resolve: extResolve } } } }
+      const extension = { default: { capabilities: { transports: { stats: { resolve: extResolve } } } } }
       const d = new FetcherDispatcher({
         foundation: null,
         extensions: [extension],
@@ -116,10 +147,10 @@ describe('FetcherDispatcher', () => {
     it('tolerates an extension whose transports getter throws (warns, keeps registry)', async () => {
       const dataStore = new DataStore()
       const good = { resolve: jest.fn().mockResolvedValue({ data: ['g'] }) }
-      const badExt = { default: Object.defineProperty({}, 'transports', {
+      const badExt = { default: { capabilities: Object.defineProperty({}, 'transports', {
         get() { throw new Error('boom') },
-      }) }
-      const goodExt = { default: { transports: { stats: good } } }
+      }) } }
+      const goodExt = { default: { capabilities: { transports: { stats: good } } } }
       const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
 
       const d = new FetcherDispatcher({
