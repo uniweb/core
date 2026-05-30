@@ -10,7 +10,7 @@
  * contract) should surface here.
  */
 
-import { describe, it, expect, jest } from '@jest/globals'
+import { describe, it, expect, vi } from 'vitest'
 import Website from '../src/website.js'
 
 /**
@@ -238,7 +238,7 @@ describe('integration — Website + foundation + state-aware fetcher', () => {
     // dispatcher should produce exactly one fetcher call.
     let resolveFetch
     const fetcher = {
-      resolve: jest.fn(() => new Promise((r) => { resolveFetch = r })),
+      resolve: vi.fn(() => new Promise((r) => { resolveFetch = r })),
     }
     const foundation = {
       default: { capabilities: { transports: { stateful: { resolve: fetcher.resolve } } } },

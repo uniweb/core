@@ -1,4 +1,4 @@
-import { describe, it, expect, jest } from '@jest/globals'
+import { describe, it, expect, vi } from 'vitest'
 import ObservableState from '../src/observable-state.js'
 
 describe('ObservableState', () => {
@@ -32,7 +32,7 @@ describe('ObservableState', () => {
   describe('subscribe(key, fn)', () => {
     it('fires only when that key changes', () => {
       const s = new ObservableState()
-      const fn = jest.fn()
+      const fn = vi.fn()
       s.subscribe('slug', fn)
 
       s.set('other', 1)
@@ -44,7 +44,7 @@ describe('ObservableState', () => {
 
     it('unsubscribe stops notifications for that key', () => {
       const s = new ObservableState()
-      const fn = jest.fn()
+      const fn = vi.fn()
       const off = s.subscribe('slug', fn)
 
       off()
@@ -54,7 +54,7 @@ describe('ObservableState', () => {
 
     it('does not fire when the value is unchanged (===)', () => {
       const s = new ObservableState()
-      const fn = jest.fn()
+      const fn = vi.fn()
       s.set('a', 1)
       s.subscribe('a', fn)
 
@@ -64,7 +64,7 @@ describe('ObservableState', () => {
 
     it('delete fires listeners only when a key existed', () => {
       const s = new ObservableState()
-      const fn = jest.fn()
+      const fn = vi.fn()
       s.subscribe('a', fn)
 
       s.delete('unset')
@@ -77,8 +77,8 @@ describe('ObservableState', () => {
 
     it('supports multiple listeners on the same key', () => {
       const s = new ObservableState()
-      const a = jest.fn()
-      const b = jest.fn()
+      const a = vi.fn()
+      const b = vi.fn()
       s.subscribe('k', a)
       s.subscribe('k', b)
 

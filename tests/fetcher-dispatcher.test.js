@@ -1,4 +1,4 @@
-import { describe, it, expect, jest } from '@jest/globals'
+import { describe, it, expect, vi } from 'vitest'
 import FetcherDispatcher from '../src/fetcher-dispatcher.js'
 import DataStore, { deriveCacheKey } from '../src/datastore.js'
 
@@ -21,7 +21,7 @@ describe('FetcherDispatcher', () => {
     // location — these two tests pin it so the read path can't silently regress.
     it('collects transports from the built shape (default.capabilities.transports)', async () => {
       const dataStore = new DataStore()
-      const resolve = jest.fn().mockResolvedValue({ data: ['built'] })
+      const resolve = vi.fn().mockResolvedValue({ data: ['built'] })
       const foundation = { default: { meta: {}, capabilities: { transports: { api: { resolve } } }, layoutMeta: {} } }
       const d = new FetcherDispatcher({ foundation, dataStore })
       const r = await d.dispatch({ schema: 's' }, websiteCtx({ transports: { default: 'api' } }))
@@ -31,8 +31,8 @@ describe('FetcherDispatcher', () => {
 
     it('ignores transports at the legacy default.transports location (not the built shape)', async () => {
       const dataStore = new DataStore()
-      const resolve = jest.fn().mockResolvedValue({ data: ['legacy'] })
-      const defaultFetcher = { resolve: jest.fn().mockResolvedValue({ data: ['default'] }) }
+      const resolve = vi.fn().mockResolvedValue({ data: ['legacy'] })
+      const defaultFetcher = { resolve: vi.fn().mockResolvedValue({ data: ['default'] }) }
       // Transports on `default` (not under `capabilities`) is not a built
       // foundation and must not be honored — guards against reintroducing a
       // fallback read that would mask the build/runtime shape contract.
@@ -45,7 +45,7 @@ describe('FetcherDispatcher', () => {
 
     it('uses the framework default when no foundation declares transports', async () => {
       const dataStore = new DataStore()
-      const defaultFetcher = { resolve: jest.fn().mockResolvedValue({ data: [1, 2] }) }
+      const defaultFetcher = { resolve: vi.fn().mockResolvedValue({ data: [1, 2] }) }
       const d = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher })
 
       const result = await d.dispatch({ path: '/a.json', schema: 'a' }, {})
@@ -55,8 +55,8 @@ describe('FetcherDispatcher', () => {
 
     it('uses the framework default when the site picks no transport', async () => {
       const dataStore = new DataStore()
-      const members = jest.fn()
-      const defaultFetcher = { resolve: jest.fn().mockResolvedValue({ data: ['default'] }) }
+      const members = vi.fn()
+      const defaultFetcher = { resolve: vi.fn().mockResolvedValue({ data: ['default'] }) }
       const foundation = buildFoundationTransports({ uniweb: { resolve: members } })
       const d = new FetcherDispatcher({ foundation, dataStore, defaultFetcher })
 
@@ -68,8 +68,8 @@ describe('FetcherDispatcher', () => {
 
     it('selects a named transport per site.yml fetcher.transports[schema]', async () => {
       const dataStore = new DataStore()
-      const uniweb = { resolve: jest.fn().mockResolvedValue({ data: ['m'] }) }
-      const defaultFetcher = { resolve: jest.fn().mockResolvedValue({ data: ['default'] }) }
+      const uniweb = { resolve: vi.fn().mockResolvedValue({ data: ['m'] }) }
+      const defaultFetcher = { resolve: vi.fn().mockResolvedValue({ data: ['default'] }) }
       const foundation = buildFoundationTransports({ uniweb: uniweb })
       const d = new FetcherDispatcher({ foundation, dataStore, defaultFetcher })
 
@@ -89,7 +89,7 @@ describe('FetcherDispatcher', () => {
 
     it('honors fetcher.transports.default as the site-level default', async () => {
       const dataStore = new DataStore()
-      const uniweb = { resolve: jest.fn().mockResolvedValue({ data: ['all'] }) }
+      const uniweb = { resolve: vi.fn().mockResolvedValue({ data: ['all'] }) }
       const foundation = buildFoundationTransports({ uniweb: uniweb })
       const d = new FetcherDispatcher({ foundation, dataStore })
 
@@ -102,11 +102,11 @@ describe('FetcherDispatcher', () => {
 
     it('primary wins over extension on name collision with a dev warning', async () => {
       const dataStore = new DataStore()
-      const primary = { resolve: jest.fn().mockResolvedValue({ data: ['primary'] }) }
-      const ext = { resolve: jest.fn() }
+      const primary = { resolve: vi.fn().mockResolvedValue({ data: ['primary'] }) }
+      const ext = { resolve: vi.fn() }
       const foundation = buildFoundationTransports({ uniweb: primary })
       const extension = { default: { capabilities: { transports: { uniweb: ext } } } }
-      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
       const d = new FetcherDispatcher({
         foundation,
@@ -129,7 +129,7 @@ describe('FetcherDispatcher', () => {
 
     it('extension contributes a transport the primary foundation does not provide', async () => {
       const dataStore = new DataStore()
-      const extResolve = jest.fn().mockResolvedValue({ data: ['e'] })
+      const extResolve = vi.fn().mockResolvedValue({ data: ['e'] })
       const extension = { default: { capabilities: { transports: { stats: { resolve: extResolve } } } } }
       const d = new FetcherDispatcher({
         foundation: null,
@@ -146,12 +146,12 @@ describe('FetcherDispatcher', () => {
 
     it('tolerates an extension whose transports getter throws (warns, keeps registry)', async () => {
       const dataStore = new DataStore()
-      const good = { resolve: jest.fn().mockResolvedValue({ data: ['g'] }) }
+      const good = { resolve: vi.fn().mockResolvedValue({ data: ['g'] }) }
       const badExt = { default: { capabilities: Object.defineProperty({}, 'transports', {
         get() { throw new Error('boom') },
       }) } }
       const goodExt = { default: { capabilities: { transports: { stats: good } } } }
-      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
       const d = new FetcherDispatcher({
         foundation: null,
@@ -174,12 +174,12 @@ describe('FetcherDispatcher', () => {
 
     it('skips a transport entry missing resolve() with a dev warning', async () => {
       const dataStore = new DataStore()
-      const defaultFetcher = { resolve: jest.fn().mockResolvedValue({ data: ['d'] }) }
+      const defaultFetcher = { resolve: vi.fn().mockResolvedValue({ data: ['d'] }) }
       const foundation = buildFoundationTransports({
         broken: { notResolve: 'oops' },
-        ok: { resolve: jest.fn() },
+        ok: { resolve: vi.fn() },
       })
-      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
       const d = new FetcherDispatcher({ foundation, dataStore, defaultFetcher, dev: true })
 
       // Site picks the broken one → dispatcher drops the mapping and falls back.
@@ -196,8 +196,8 @@ describe('FetcherDispatcher', () => {
 
     it('site picks a name that no foundation registered — falls back to default with warning', async () => {
       const dataStore = new DataStore()
-      const defaultFetcher = { resolve: jest.fn().mockResolvedValue({ data: ['d'] }) }
-      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+      const defaultFetcher = { resolve: vi.fn().mockResolvedValue({ data: ['d'] }) }
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
       const d = new FetcherDispatcher({
         foundation: null,
         dataStore,
@@ -220,7 +220,7 @@ describe('FetcherDispatcher', () => {
   describe('caching', () => {
     it('returns cached entry without calling the fetcher', async () => {
       const dataStore = new DataStore()
-      const defaultFetcher = { resolve: jest.fn() }
+      const defaultFetcher = { resolve: vi.fn() }
       const d = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher })
 
       const request = { path: '/a.json', schema: 'a' }
@@ -233,7 +233,7 @@ describe('FetcherDispatcher', () => {
 
     it('writes { data, meta } on success', async () => {
       const dataStore = new DataStore()
-      const defaultFetcher = { resolve: jest.fn().mockResolvedValue({ data: ['x'], meta: { t: 1 } }) }
+      const defaultFetcher = { resolve: vi.fn().mockResolvedValue({ data: ['x'], meta: { t: 1 } }) }
       const d = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher })
 
       const request = { path: '/a.json', schema: 'a' }
@@ -245,7 +245,7 @@ describe('FetcherDispatcher', () => {
 
     it('does not cache error results', async () => {
       const dataStore = new DataStore()
-      const defaultFetcher = { resolve: jest.fn().mockResolvedValue({ data: [], error: 'HTTP 500' }) }
+      const defaultFetcher = { resolve: vi.fn().mockResolvedValue({ data: [], error: 'HTTP 500' }) }
       const d = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher })
 
       const request = { path: '/a.json', schema: 'a' }
@@ -257,7 +257,7 @@ describe('FetcherDispatcher', () => {
 
     it('does not cache when the fetcher throws', async () => {
       const dataStore = new DataStore()
-      const defaultFetcher = { resolve: jest.fn().mockRejectedValue(new Error('boom')) }
+      const defaultFetcher = { resolve: vi.fn().mockRejectedValue(new Error('boom')) }
       const d = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher })
 
       const request = { path: '/a.json', schema: 'a' }
@@ -271,7 +271,7 @@ describe('FetcherDispatcher', () => {
 
     it('uses fetcher.cacheKey(request) when provided', async () => {
       const dataStore = new DataStore()
-      const resolve = jest.fn().mockResolvedValue({ data: ['x'] })
+      const resolve = vi.fn().mockResolvedValue({ data: ['x'] })
       const defaultFetcher = { resolve, cacheKey: (r) => `ck:${r.schema}:${r.slug ?? ''}` }
       const d = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher })
 
@@ -288,7 +288,7 @@ describe('FetcherDispatcher', () => {
   describe('peek', () => {
     it('returns null on cache miss and does not start a fetch', () => {
       const dataStore = new DataStore()
-      const defaultFetcher = { resolve: jest.fn() }
+      const defaultFetcher = { resolve: vi.fn() }
       const d = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher })
 
       expect(d.peek({ path: '/a.json', schema: 'a' }, {})).toBeNull()
@@ -297,7 +297,7 @@ describe('FetcherDispatcher', () => {
 
     it('returns the cached entry using the fetcher-specific cacheKey', () => {
       const dataStore = new DataStore()
-      const defaultFetcher = { resolve: jest.fn(), cacheKey: (r) => `ck:${r.schema}` }
+      const defaultFetcher = { resolve: vi.fn(), cacheKey: (r) => `ck:${r.schema}` }
       const d = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher })
 
       dataStore.set('ck:members', { data: ['m'], meta: { t: 1 } })
@@ -310,7 +310,7 @@ describe('FetcherDispatcher', () => {
       const dataStore = new DataStore()
       let resolveFetch
       const pending = new Promise((r) => { resolveFetch = r })
-      const defaultFetcher = { resolve: jest.fn().mockReturnValue(pending) }
+      const defaultFetcher = { resolve: vi.fn().mockReturnValue(pending) }
       const d = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher })
 
       const req = { path: '/a.json', schema: 'a' }
@@ -330,7 +330,7 @@ describe('FetcherDispatcher', () => {
       let seenSignal
       let resolveFetch
       const defaultFetcher = {
-        resolve: jest.fn((req, ctx) => {
+        resolve: vi.fn((req, ctx) => {
           seenSignal = ctx.signal
           return new Promise((r) => { resolveFetch = r })
         }),
@@ -357,7 +357,7 @@ describe('FetcherDispatcher', () => {
       const dataStore = new DataStore()
       let seenSignal
       const defaultFetcher = {
-        resolve: jest.fn((req, ctx) => {
+        resolve: vi.fn((req, ctx) => {
           seenSignal = ctx.signal
           return new Promise(() => {}) // never resolves
         }),
@@ -382,7 +382,7 @@ describe('FetcherDispatcher', () => {
       let seenSignal
       let resolveFetch
       const defaultFetcher = {
-        resolve: jest.fn((req, ctx) => {
+        resolve: vi.fn((req, ctx) => {
           seenSignal = ctx.signal
           return new Promise((r) => { resolveFetch = r })
         }),
@@ -405,7 +405,7 @@ describe('FetcherDispatcher', () => {
       let seenSignal
       let resolveFetch
       const defaultFetcher = {
-        resolve: jest.fn((req, ctx) => {
+        resolve: vi.fn((req, ctx) => {
           seenSignal = ctx.signal
           return new Promise((r) => { resolveFetch = r })
         }),
@@ -423,9 +423,9 @@ describe('FetcherDispatcher', () => {
   describe('dev-mode validation', () => {
     it('warns when the fetcher returns a non-object', async () => {
       const dataStore = new DataStore()
-      const defaultFetcher = { resolve: jest.fn().mockResolvedValue('oops') }
+      const defaultFetcher = { resolve: vi.fn().mockResolvedValue('oops') }
       const d = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher, dev: true })
-      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
       const result = await d.dispatch({ path: '/a.json', schema: 'a' }, {})
       expect(result.error).toMatch(/non-object/)
@@ -438,9 +438,9 @@ describe('FetcherDispatcher', () => {
 
     it('warns on unexpected return keys', async () => {
       const dataStore = new DataStore()
-      const defaultFetcher = { resolve: jest.fn().mockResolvedValue({ data: [1], extra: 'oops' }) }
+      const defaultFetcher = { resolve: vi.fn().mockResolvedValue({ data: [1], extra: 'oops' }) }
       const d = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher, dev: true })
-      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
       await d.dispatch({ path: '/a.json', schema: 'a' }, {})
       expect(warn).toHaveBeenCalledWith(
@@ -453,10 +453,10 @@ describe('FetcherDispatcher', () => {
     it('does not warn in production (dev: false)', async () => {
       const dataStore = new DataStore()
       const defaultFetcher = {
-        resolve: jest.fn().mockResolvedValue({ data: [], extra: 'oops' }),
+        resolve: vi.fn().mockResolvedValue({ data: [], extra: 'oops' }),
       }
       const d = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher })
-      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
       await d.dispatch({ url: 'https://x', schema: 's' }, {})
       expect(warn).not.toHaveBeenCalled()
@@ -467,9 +467,9 @@ describe('FetcherDispatcher', () => {
   describe('transport override', () => {
     it('wins over foundation transports and the framework default', async () => {
       const dataStore = new DataStore()
-      const foundationResolve = jest.fn()
-      const defaultFetcher = { resolve: jest.fn() }
-      const transport = { resolve: jest.fn().mockResolvedValue({ data: ['bridge'] }) }
+      const foundationResolve = vi.fn()
+      const defaultFetcher = { resolve: vi.fn() }
+      const transport = { resolve: vi.fn().mockResolvedValue({ data: ['bridge'] }) }
 
       const foundation = buildFoundationTransports({ uniweb: { resolve: foundationResolve } })
       const d = new FetcherDispatcher({
@@ -501,7 +501,7 @@ describe('FetcherDispatcher', () => {
       const d = new FetcherDispatcher({
         foundation: null,
         dataStore,
-        defaultFetcher: { resolve: jest.fn() },
+        defaultFetcher: { resolve: vi.fn() },
         transport,
       })
 
@@ -512,7 +512,7 @@ describe('FetcherDispatcher', () => {
 
     it('ignores a transport missing resolve() and falls through to defaults', async () => {
       const dataStore = new DataStore()
-      const defaultFetcher = { resolve: jest.fn().mockResolvedValue({ data: ['d'] }) }
+      const defaultFetcher = { resolve: vi.fn().mockResolvedValue({ data: ['d'] }) }
       const d = new FetcherDispatcher({
         foundation: null,
         dataStore,
@@ -529,10 +529,10 @@ describe('FetcherDispatcher', () => {
   describe('listener notifications via DataStore.subscribe', () => {
     it('fires the DataStore subscriber on successful dispatch', async () => {
       const dataStore = new DataStore()
-      const listener = jest.fn()
+      const listener = vi.fn()
       dataStore.subscribe(listener)
 
-      const defaultFetcher = { resolve: jest.fn().mockResolvedValue({ data: ['x'] }) }
+      const defaultFetcher = { resolve: vi.fn().mockResolvedValue({ data: ['x'] }) }
       const d = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher })
 
       await d.dispatch({ path: '/a.json', schema: 'a' }, {})

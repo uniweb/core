@@ -1,4 +1,4 @@
-import { describe, it, expect, jest } from '@jest/globals'
+import { describe, it, expect, vi } from 'vitest'
 import DataStore, { deriveCacheKey } from '../src/datastore.js'
 
 describe('DataStore', () => {
@@ -33,7 +33,7 @@ describe('DataStore', () => {
   describe('subscribe', () => {
     it('fires listeners on set', () => {
       const store = new DataStore()
-      const fn = jest.fn()
+      const fn = vi.fn()
       store.subscribe(fn)
 
       store.set(key, { data: [] })
@@ -45,7 +45,7 @@ describe('DataStore', () => {
 
     it('returns an unsubscribe function', () => {
       const store = new DataStore()
-      const fn = jest.fn()
+      const fn = vi.fn()
       const unsubscribe = store.subscribe(fn)
 
       unsubscribe()
@@ -60,7 +60,7 @@ describe('DataStore', () => {
 
     it('fires only when the matching key is set', () => {
       const store = new DataStore()
-      const fn = jest.fn()
+      const fn = vi.fn()
       store.subscribe(key, fn)
 
       store.set(otherKey, { data: [] })
@@ -72,8 +72,8 @@ describe('DataStore', () => {
 
     it('returns an unsubscribe function that removes only this listener', () => {
       const store = new DataStore()
-      const a = jest.fn()
-      const b = jest.fn()
+      const a = vi.fn()
+      const b = vi.fn()
       const unsubA = store.subscribe(key, a)
       store.subscribe(key, b)
 
@@ -85,8 +85,8 @@ describe('DataStore', () => {
 
     it('fires both global and keyed listeners on a matching set', () => {
       const store = new DataStore()
-      const all = jest.fn()
-      const keyed = jest.fn()
+      const all = vi.fn()
+      const keyed = vi.fn()
       store.subscribe(all)
       store.subscribe(key, keyed)
 

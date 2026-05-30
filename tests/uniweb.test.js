@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals'
+import { describe, it, expect } from 'vitest'
 import Uniweb from '../src/uniweb.js'
 
 // Minimal foundation mock — components as direct properties, meta under default.

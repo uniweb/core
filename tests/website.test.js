@@ -1,4 +1,4 @@
-import { describe, it, expect, jest } from '@jest/globals'
+import { describe, it, expect, vi } from 'vitest'
 import Website from '../src/website.js'
 
 function simpleContent(overrides = {}) {
@@ -40,7 +40,7 @@ describe('Website constructor', () => {
   })
 
   it('assembles the FetcherDispatcher from the foundation transports', async () => {
-    const resolve = jest.fn().mockResolvedValue({ data: ['x'] })
+    const resolve = vi.fn().mockResolvedValue({ data: ['x'] })
     const foundation = { default: { capabilities: { transports: { my: { resolve } } } } }
 
     const w = new Website({
@@ -55,8 +55,8 @@ describe('Website constructor', () => {
   })
 
   it('honors a runtime transport override', async () => {
-    const foundationResolve = jest.fn()
-    const bridgeResolve = jest.fn().mockResolvedValue({ data: ['bridge'] })
+    const foundationResolve = vi.fn()
+    const bridgeResolve = vi.fn().mockResolvedValue({ data: ['bridge'] })
     const foundation = { default: { capabilities: { transports: { my: { resolve: foundationResolve } } } } }
 
     const w = new Website({
@@ -70,9 +70,9 @@ describe('Website constructor', () => {
   })
 
   it('preserves the transport override across rebuild({ foundation })', async () => {
-    const bridgeResolve = jest.fn().mockResolvedValue({ data: ['bridge'] })
-    const foundationA = { default: { capabilities: { transports: { my: { resolve: jest.fn() } } } } }
-    const foundationB = { default: { capabilities: { transports: { my: { resolve: jest.fn() } } } } }
+    const bridgeResolve = vi.fn().mockResolvedValue({ data: ['bridge'] })
+    const foundationA = { default: { capabilities: { transports: { my: { resolve: vi.fn() } } } } }
+    const foundationB = { default: { capabilities: { transports: { my: { resolve: vi.fn() } } } } }
 
     const w = new Website({
       content: simpleContent({ config: { fetcher: { transports: { default: 'my' } } } }),
@@ -89,7 +89,7 @@ describe('Website constructor', () => {
 
 describe('Website.rebuild', () => {
   it('content-only rebuild preserves dispatcher, dataStore, and state', () => {
-    const foundation = { default: { capabilities: { transports: { my: { resolve: jest.fn() } } } } }
+    const foundation = { default: { capabilities: { transports: { my: { resolve: vi.fn() } } } } }
     const w = new Website({ content: simpleContent(), foundation })
     const origFetcher = w.fetcher
     const origDataStore = w.dataStore
@@ -109,8 +109,8 @@ describe('Website.rebuild', () => {
   })
 
   it('foundation swap reassembles the dispatcher; cache and state survive', async () => {
-    const a = jest.fn().mockResolvedValue({ data: ['a'] })
-    const b = jest.fn().mockResolvedValue({ data: ['b'] })
+    const a = vi.fn().mockResolvedValue({ data: ['a'] })
+    const b = vi.fn().mockResolvedValue({ data: ['b'] })
     const foundationA = { default: { capabilities: { transports: { my: { resolve: a } } } } }
     const foundationB = { default: { capabilities: { transports: { my: { resolve: b } } } } }
     const content = simpleContent({ config: { fetcher: { transports: { default: 'my' } } } })

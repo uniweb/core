@@ -1,4 +1,4 @@
-import { describe, it, expect, jest } from '@jest/globals'
+import { describe, it, expect, vi } from 'vitest'
 import { resolveRequestStyle, listRequestStyleNames } from '../src/index.js'
 import { jsonBody, flatQuery, strapi } from '../src/request-styles/index.js'
 
@@ -22,7 +22,7 @@ describe('request-style registry', () => {
   })
 
   it('warns in dev and falls back on unknown name', () => {
-    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const style = resolveRequestStyle('nonexistent-style', { dev: true })
     expect(style).toBe(jsonBody)
     expect(warn).toHaveBeenCalledWith(
@@ -32,7 +32,7 @@ describe('request-style registry', () => {
   })
 
   it('does not warn in production on unknown name', () => {
-    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     resolveRequestStyle('another-bogus-style') // dev default false
     expect(warn).not.toHaveBeenCalled()
     warn.mockRestore()

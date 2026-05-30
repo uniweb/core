@@ -1,4 +1,4 @@
-import { describe, it, expect, jest } from '@jest/globals'
+import { describe, it, expect, vi } from 'vitest'
 import EntityStore from '../src/entity-store.js'
 import DataStore, { deriveCacheKey } from '../src/datastore.js'
 import FetcherDispatcher from '../src/fetcher-dispatcher.js'
@@ -11,7 +11,7 @@ import FetcherDispatcher from '../src/fetcher-dispatcher.js'
 function makeHarness({ fetcherImpl } = {}) {
   const dataStore = new DataStore()
   const defaultFetcher = {
-    resolve: jest.fn((req) =>
+    resolve: vi.fn((req) =>
       fetcherImpl ? fetcherImpl(req) : Promise.resolve({ data: null })
     ),
   }
@@ -464,7 +464,7 @@ describe('EntityStore.fetch', () => {
       const parent = makePage({ fetch: parentConfig })
       const page = makePage({ parent })
       const block = makeBlock({ page, fetch: { ...blockConfig, inherit: true } }, website)
-      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
       const result = await entityStore.fetch(block, {})
       expect(result.data.articles).toEqual(articles)
