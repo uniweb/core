@@ -30,7 +30,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "vitest": "^2.0.0"
+    "vitest": "^4.1.7"
   },
   "dependencies": {
     "@uniweb/semantic-parser": "workspace:*",
