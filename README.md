@@ -129,8 +129,8 @@ page.website                  // Back-reference to parent Website
 
 // Navigation visibility
 page.hidden                   // Hidden from all navigation
-page.hideInHeader             // Hidden from header nav only
-page.hideInFooter             // Hidden from footer nav only
+page.hideIn                   // Nav areas this page is hidden from (e.g. ['header'])
+page.showInNav(area)          // Should appear in a given named nav area?
 page.isHidden()               // Check if hidden from navigation
 page.showInHeader()           // Should appear in header nav?
 page.showInFooter()           // Should appear in footer nav?
@@ -165,8 +165,7 @@ order: 2
 
 # Navigation visibility
 hidden: true                  # Hide from all navigation
-hideInHeader: true            # Hide from header nav only
-hideInFooter: true            # Hide from footer nav only
+hideIn: [header]              # Hide from named nav areas only (header, footer, sidebar, …)
 
 # Layout overrides (default: all true)
 layout:
