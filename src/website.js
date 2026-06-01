@@ -1067,8 +1067,9 @@ export default class Website {
       // Check visibility based on navigation type
       if (!includeHidden) {
         if (page.hidden) return false
-        if (navType === 'header' && page.hideInHeader) return false
-        if (navType === 'footer' && page.hideInFooter) return false
+        // navType is the requested nav area ('header'/'footer'/any foundation area);
+        // hideIn lists the areas this page is suppressed from.
+        if (navType && page.hideIn?.includes(navType)) return false
       }
 
       // Skip content-less containers that have no visible or navigable children.

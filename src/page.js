@@ -8,6 +8,26 @@
 import Block from './block.js'
 import ObservableState from './observable-state.js'
 
+// Normalize a page's nav-visibility into a deduped hideIn array (the layout-area
+// names the page is suppressed from). Reads the canonical hideIn (array, or a single
+// string) and folds in the legacy hideInHeader/hideInFooter booleans for back-compat.
+function normalizeHideIn(pageData) {
+  const out = []
+  const seen = new Set()
+  const add = (a) => {
+    if (typeof a === 'string' && a && !seen.has(a)) {
+      seen.add(a)
+      out.push(a)
+    }
+  }
+  const raw = pageData.hideIn
+  if (Array.isArray(raw)) raw.forEach(add)
+  else add(raw)
+  if (pageData.hideInHeader) add('header')
+  if (pageData.hideInFooter) add('footer')
+  return out
+}
+
 export default class Page {
   constructor(pageData, id, website) {
     this.id = id
@@ -27,10 +47,14 @@ export default class Page {
     // Rewrite target (if set, this route is served by an external site)
     this.rewrite = pageData.rewrite || null
 
-    // Navigation visibility options
+    // Navigation visibility. `hidden` excludes the page from all nav; `hideIn` is a
+    // per-area denylist (layout-area names, e.g. ['header','footer']). The legacy
+    // hideInHeader/hideInFooter booleans are folded into hideIn and kept as derived
+    // accessors for back-compat.
     this.hidden = pageData.hidden || false
-    this.hideInHeader = pageData.hideInHeader || false
-    this.hideInFooter = pageData.hideInFooter || false
+    this.hideIn = normalizeHideIn(pageData)
+    this.hideInHeader = this.hideIn.includes('header')
+    this.hideInFooter = this.hideIn.includes('footer')
 
     // Layout options (named layout + per-page overrides)
     this.layout = {
@@ -369,11 +393,21 @@ export default class Page {
   }
 
   /**
+   * Check if page should appear in a named nav area ('header', 'footer', or any
+   * foundation-declared area). The general form behind showInHeader/showInFooter.
+   * @param {string} area
+   * @returns {boolean}
+   */
+  showInNav(area) {
+    return !this.hidden && !this.hideIn.includes(area)
+  }
+
+  /**
    * Check if page should appear in header navigation
    * @returns {boolean}
    */
   showInHeader() {
-    return !this.hidden && !this.hideInHeader
+    return this.showInNav('header')
   }
 
   /**
@@ -381,7 +415,7 @@ export default class Page {
    * @returns {boolean}
    */
   showInFooter() {
-    return !this.hidden && !this.hideInFooter
+    return this.showInNav('footer')
   }
 
   /**
