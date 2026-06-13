@@ -142,3 +142,94 @@ describe('Website.rebuild', () => {
     expect(w.rebuild({ content: simpleContent() })).toBe(w)
   })
 })
+
+describe('Website route translation (localized slugs)', () => {
+  // config.i18n.routeTranslations: { <locale>: { <canonicalRoute>: <displayRoute> } }
+  // Produced by the build from page.yml `slug:` maps (and by the editor/backend
+  // from a per-locale slug field). The default locale is omitted — its routes
+  // are the canonical keys.
+  const RT = {
+    fr: { '/About-Us': '/a-propos', '/blog': '/blogue' },
+    es: { '/About-Us': '/acerca-de' },
+  }
+
+  function localizedSite(configOverrides = {}) {
+    return new Website({
+      content: {
+        config: {
+          name: 'T',
+          defaultLanguage: 'en',
+          i18n: { routeTranslations: RT },
+          ...configOverrides,
+        },
+        theme: {},
+        pages: [
+          { route: '/', isIndex: true, title: 'Home', sections: [] },
+          { route: '/About-Us', title: 'About', sections: [] },
+          { route: '/blog', title: 'Blog', sections: [] },
+        ],
+      },
+    })
+  }
+
+  describe('translateRoute (canonical → display)', () => {
+    it('maps an exact canonical route', () => {
+      expect(localizedSite().translateRoute('/About-Us', 'fr')).toBe('/a-propos')
+      expect(localizedSite().translateRoute('/About-Us', 'es')).toBe('/acerca-de')
+    })
+
+    it('bypasses the default locale (route unchanged)', () => {
+      expect(localizedSite().translateRoute('/About-Us', 'en')).toBe('/About-Us')
+    })
+
+    it('prefix-cascades a localized parent to its children', () => {
+      expect(localizedSite().translateRoute('/blog/my-post', 'fr')).toBe('/blogue/my-post')
+    })
+
+    it('preserves :param segments through the cascade', () => {
+      expect(localizedSite().translateRoute('/blog/:slug', 'fr')).toBe('/blogue/:slug')
+    })
+
+    it('returns the route unchanged when nothing maps', () => {
+      expect(localizedSite().translateRoute('/contact', 'fr')).toBe('/contact')
+      expect(localizedSite().translateRoute('/About-Us', 'de')).toBe('/About-Us')
+    })
+  })
+
+  describe('reverseTranslateRoute (display → canonical)', () => {
+    it('reverses an exact localized route', () => {
+      expect(localizedSite().reverseTranslateRoute('/a-propos', 'fr')).toBe('/About-Us')
+    })
+
+    it('reverses a prefix-cascaded child route', () => {
+      expect(localizedSite().reverseTranslateRoute('/blogue/my-post', 'fr')).toBe('/blog/my-post')
+    })
+
+    it('bypasses the default locale', () => {
+      expect(localizedSite().reverseTranslateRoute('/About-Us', 'en')).toBe('/About-Us')
+    })
+  })
+
+  describe('getLocaleUrl (cross-locale switching)', () => {
+    it('maps a canonical route to a prefixed localized URL from the default locale', () => {
+      const w = localizedSite({ activeLocale: 'en' })
+      expect(w.getLocaleUrl('fr', '/About-Us')).toBe('/fr/a-propos')
+      expect(w.getLocaleUrl('es', '/About-Us')).toBe('/es/acerca-de')
+    })
+
+    it('returns the unprefixed canonical route for the default locale', () => {
+      const w = localizedSite({ activeLocale: 'en' })
+      expect(w.getLocaleUrl('en', '/About-Us')).toBe('/About-Us')
+    })
+
+    it('switches between two non-default locales via the canonical route', () => {
+      const w = localizedSite({ activeLocale: 'fr' })
+      expect(w.getLocaleUrl('es', '/a-propos')).toBe('/es/acerca-de')
+    })
+
+    it('switches a non-default locale back to the default', () => {
+      const w = localizedSite({ activeLocale: 'fr' })
+      expect(w.getLocaleUrl('en', '/a-propos')).toBe('/About-Us')
+    })
+  })
+})
