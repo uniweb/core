@@ -9,6 +9,7 @@ import DataStore from './datastore.js'
 import EntityStore from './entity-store.js'
 import FetcherDispatcher from './fetcher-dispatcher.js'
 import ObservableState from './observable-state.js'
+import { normalizeSeo } from './seo.js'
 
 /**
  * Website — orchestration root for a single site instance.
@@ -73,6 +74,8 @@ export default class Website {
     this.pageRoutes = []
     this.themeData = {}
     this.config = {}
+    this.seo = {} // site-level SEO/social defaults (normalized; cascade to pages)
+    this.keywords = null // site-level default keywords (localized list or null)
     this.siteDefaultLocale = 'en'
     this.defaultLocale = 'en'
     this.activeLocale = 'en'
@@ -152,6 +155,12 @@ export default class Website {
     this.pageRoutes = this.pages.map((page) => page.route)
     this.themeData = theme
     this.config = config
+
+    // Site-level SEO/social metadata — defaults that cascade to every page's
+    // effective head meta (Page.getHeadMeta). `config.seo` / `config.keywords`
+    // ride the raw site.yml spread; normalize seo to the canonical shape here.
+    this.seo = normalizeSeo(config.seo)
+    this.keywords = config.keywords || null
 
     this.siteDefaultLocale = config.defaultLanguage || 'en'
     this.defaultLocale = config.domainLocale || this.siteDefaultLocale

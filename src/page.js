@@ -7,6 +7,7 @@
 
 import Block from './block.js'
 import ObservableState from './observable-state.js'
+import { normalizeSeo } from './seo.js'
 
 // Normalize a page's nav-visibility into a deduped hideIn array (the layout-area
 // names the page is suppressed from). Reads the canonical hideIn (array, or a single
@@ -63,16 +64,8 @@ export default class Page {
       params: pageData.layout?.params || {},
     }
 
-    // SEO configuration
-    this.seo = {
-      noindex: pageData.seo?.noindex || false,
-      image: pageData.seo?.image || null,
-      ogTitle: pageData.seo?.ogTitle || null,
-      ogDescription: pageData.seo?.ogDescription || null,
-      canonical: pageData.seo?.canonical || null,
-      changefreq: pageData.seo?.changefreq || null,
-      priority: pageData.seo?.priority || null,
-    }
+    // SEO configuration (canonical shape — shared with the site level via normalizeSeo)
+    this.seo = normalizeSeo(pageData.seo)
 
     // Parent page (set by Website.buildPageHierarchy())
     this.parent = null
@@ -159,16 +152,22 @@ export default class Page {
    */
   getHeadMeta() {
     const resolvedTitle = this.getTitle()
+    // Site-level seo provides the defaults; a page overrides any field it sets.
+    // (Website.seo / Website.keywords are the normalized site-root values.)
+    const site = this.website?.seo || {}
+    const siteKeywords = this.website?.keywords || null
     return {
       title: resolvedTitle,
       description: this.description,
-      keywords: this.keywords,
+      keywords: this.keywords || siteKeywords,
       canonical: this.seo.canonical,
-      robots: this.seo.noindex ? 'noindex, nofollow' : null,
+      robots: this.seo.noindex || site.noindex ? 'noindex, nofollow' : null,
       og: {
-        title: this.seo.ogTitle || resolvedTitle,
-        description: this.seo.ogDescription || this.description,
-        image: this.seo.image,
+        // Page content wins; site-level seo only fills gaps. Image is the
+        // exception authors most want cascaded (the shared social card).
+        title: this.seo.ogTitle || resolvedTitle || site.ogTitle,
+        description: this.seo.ogDescription || this.description || site.ogDescription,
+        image: this.seo.image || site.image,
         url: this.route,
       },
     }
