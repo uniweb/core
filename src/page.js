@@ -266,6 +266,18 @@ export default class Page {
   }
 
   /**
+   * Get the last body block's info.
+   * Symmetric to getFirstBodyBlockInfo — e.g. a footer adapting to the
+   * content section directly above it.
+   *
+   * @returns {Object|null} Last body block's info or null
+   */
+  getLastBodyBlockInfo() {
+    const blocks = this.bodyBlocks
+    return blocks?.[blocks.length - 1]?.getBlockInfo() || null
+  }
+
+  /**
    * Get all blocks (header, body, footer) as flat array
    * Respects page layout preferences (hide list)
    * @returns {Block[]}
