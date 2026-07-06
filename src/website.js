@@ -1075,9 +1075,13 @@ export default class Website {
 
       // Check visibility based on navigation type
       if (!includeHidden) {
+        // `hidden` = unpublished (a fortiori not in nav). In a published build it
+        // is already pruned; this also keeps dev drafts out of the menus.
         if (page.hidden) return false
-        // navType is the requested nav area ('header'/'footer'/any foundation area);
-        // hideIn lists the areas this page is suppressed from.
+        // hideIn lists the areas this page is suppressed from; '*' suppresses it
+        // from every area (reachable-but-out-of-all-menus). navType is the
+        // requested area ('header'/'footer'/any foundation-declared area).
+        if (page.hideIn?.includes('*')) return false
         if (navType && page.hideIn?.includes(navType)) return false
       }
 

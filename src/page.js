@@ -48,10 +48,16 @@ export default class Page {
     // Rewrite target (if set, this route is served by an external site)
     this.rewrite = pageData.rewrite || null
 
-    // Navigation visibility. `hidden` excludes the page from all nav; `hideIn` is a
-    // per-area denylist (layout-area names, e.g. ['header','footer']). The legacy
-    // hideInHeader/hideInFooter booleans are folded into hideIn and kept as derived
-    // accessors for back-compat.
+    // Two orthogonal visibility axes:
+    //  • `hidden` — REACHABILITY. When true the page is excluded from the published
+    //    site entirely (the build prunes it and its subtree); it survives only in
+    //    dev/authoring for preview. A hidden page is also, a fortiori, absent from
+    //    nav. This is NOT a nav-only flag.
+    //  • `hideIn` — NAV PLACEMENT. A per-area denylist (layout-area names, e.g.
+    //    ['header','footer']) applied while the page IS routed. The sentinel '*'
+    //    means "suppressed from every nav area" (still routed) — this is how a page
+    //    is kept reachable-but-out-of-all-menus. The legacy hideInHeader/hideInFooter
+    //    booleans fold into hideIn and are kept as derived accessors for back-compat.
     this.hidden = pageData.hidden || false
     this.hideIn = normalizeHideIn(pageData)
     this.hideInHeader = this.hideIn.includes('header')
@@ -394,11 +400,13 @@ export default class Page {
   /**
    * Check if page should appear in a named nav area ('header', 'footer', or any
    * foundation-declared area). The general form behind showInHeader/showInFooter.
+   * False when the page is unpublished (`hidden`), suppressed from every area
+   * (`hideIn` contains '*'), or suppressed from this specific area.
    * @param {string} area
    * @returns {boolean}
    */
   showInNav(area) {
-    return !this.hidden && !this.hideIn.includes(area)
+    return !this.hidden && !this.hideIn.includes('*') && !this.hideIn.includes(area)
   }
 
   /**

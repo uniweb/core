@@ -31,11 +31,21 @@ describe('Page nav visibility (hideIn)', () => {
     expect(mk({ hideIn: ['header'], hideInHeader: true }).hideIn).toEqual(['header'])
   })
 
-  it('hidden excludes from every nav area regardless of hideIn', () => {
+  it('hidden (unpublished) excludes from every nav area regardless of hideIn', () => {
     const p = mk({ hidden: true })
     expect(p.showInNav('header')).toBe(false)
     expect(p.showInNav('footer')).toBe(false)
     expect(p.showInHeader()).toBe(false)
+  })
+
+  it("hideIn '*' excludes from every nav area while the page stays routed", () => {
+    const p = mk({ hideIn: ['*'] })
+    expect(p.hidden).toBe(false) // still published/reachable — nav-only
+    expect(p.showInNav('header')).toBe(false)
+    expect(p.showInNav('footer')).toBe(false)
+    expect(p.showInNav('sidebar')).toBe(false)
+    expect(p.showInHeader()).toBe(false)
+    expect(p.showInFooter()).toBe(false)
   })
 
   it('defaults to visible everywhere when nothing is set', () => {
