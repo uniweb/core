@@ -437,6 +437,15 @@ export default class Block {
    * @returns {Object|null} Next block's info or null
    */
   getNextBlockInfo() {
+    // Layout-area blocks (header/footer/panels) live on a shared, contentless
+    // area page — not the content page being rendered — so walking their own
+    // page's sequence never reaches the content. Their "next block" is the
+    // first content section of the active page (a header adapting to the
+    // section it floats over). Resolve against the active page instead.
+    const active = this.website?.activePage
+    if (active && active !== this.page) {
+      return active.getFirstBodyBlockInfo()
+    }
     const index = this.getIndex()
     if (index < 0 || !this.page) return null
     return this.page.getBlockInfo(index + 1)
@@ -448,6 +457,12 @@ export default class Block {
    * @returns {Object|null} Previous block's info or null
    */
   getPrevBlockInfo() {
+    // See getNextBlockInfo: from a shared layout-area block, "previous" is the
+    // last content section of the active page (e.g. a footer adapting to it).
+    const active = this.website?.activePage
+    if (active && active !== this.page) {
+      return active.getLastBodyBlockInfo()
+    }
     const index = this.getIndex()
     if (index <= 0 || !this.page) return null
     return this.page.getBlockInfo(index - 1)
