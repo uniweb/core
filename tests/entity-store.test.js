@@ -613,3 +613,29 @@ describe('EntityStore + real Website: end-to-end detailPage resolution', () => {
     expect(result.data.articles.map((a) => a.route)).toEqual(['/blog/first', '/blog/second'])
   })
 })
+
+describe('EntityStore detailPage — SECTION-level (block.fetch) resolution', () => {
+  it('resolves detailPage from a SECTION own fetch (block.fetch) on a page with NO page fetch', () => {
+    const cfg = { path: '/data/articles.json', schema: 'articles', detailPage: 'page:detail' }
+    const h = makeHarness()
+    h.website.resolveDetailPageTemplate = () => '/blog/:slug'
+    h.dataStore.set(deriveCacheKey(cfg), { data: [{ slug: 'x', title: 'X' }] })
+    // The section carries its own full fetch; the page has none.
+    const block = makeBlock({ fetch: cfg, page: makePage({ fetch: null }) }, h.website)
+    const result = h.entityStore.resolve(block, {})
+    expect(result.status).toBe('ready')
+    expect(result.data.articles[0].route).toBe('/blog/x')
+  })
+
+  it('section fetch.detailPage WINS over page fetch.detailPage for the same schema', () => {
+    const sectionCfg = { path: '/data/articles.json', schema: 'articles', detailPage: 'page:section' }
+    const pageCfg = { path: '/data/articles.json', schema: 'articles', detailPage: 'page:page' }
+    const h = makeHarness()
+    h.website.resolveDetailPageTemplate = (ref) =>
+      ref === 'page:section' ? '/section/:slug' : '/page/:slug'
+    h.dataStore.set(deriveCacheKey(sectionCfg), { data: [{ slug: 'x' }] })
+    const block = makeBlock({ fetch: sectionCfg, page: makePage({ fetch: pageCfg }) }, h.website)
+    const result = h.entityStore.resolve(block, {})
+    expect(result.data.articles[0].route).toBe('/section/x')
+  })
+})
