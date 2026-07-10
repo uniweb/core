@@ -146,6 +146,28 @@ export default class EntityStore {
   }
 
   /**
+   * Post-process assembled collection data: for each fetch config that declares a
+   * `detailPage` page-ref, resolve it to a locale route template (O(1), via the
+   * Website's `_pageIdMap`) and inject a `route` on each record — so a dynamic-list
+   * card links to the collection's canonical detail page regardless of which page
+   * the list sits on. Runs after `data` is fully assembled, in BOTH the sync (peek)
+   * and async (fetch) paths. Replaces the old runtime `getCollectionDetailRoute`
+   * page-tree scan. A dangling `detailPage` (unresolvable ref) is a no-op — the
+   * component degrades gracefully; records with a baked `route` (file lane) are kept.
+   */
+  _applyDetailRoutes(data, configs, website) {
+    if (!data || !website?.resolveDetailPageTemplate) return
+    for (const [schema, cfg] of configs) {
+      if (!cfg.detailPage) continue
+      const items = data[schema]
+      if (!Array.isArray(items) || items.length === 0) continue
+      const template = website.resolveDetailPageTemplate(cfg.detailPage)
+      if (!template) continue
+      data[schema] = items.map((item) => addDetailRoute(item, template))
+    }
+  }
+
+  /**
    * Auto-inject `detail:` on collection refs whose collection has
    * `deferred:` declared. The detail pattern points at the per-record
    * source so the existing dynamic-route singular flow fetches a record
@@ -363,6 +385,7 @@ export default class EntityStore {
     }
 
     if (allCached) {
+      this._applyDetailRoutes(data, configs, block.website)
       return { status: 'ready', data }
     }
     return { status: 'pending', data: null }
@@ -465,6 +488,7 @@ export default class EntityStore {
     }
 
     if (parallelFetches.length > 0) await Promise.all(parallelFetches)
+    this._applyDetailRoutes(data, configs, block.website)
     return { data }
   }
 }
@@ -476,4 +500,28 @@ function peekArray(dispatcher, cfg, ctx) {
   const cached = dispatcher.peek(cfg, ctx)
   if (!cached) return null
   return Array.isArray(cached.data) ? cached.data : null
+}
+
+/**
+ * Interpolate a record's fields into a detail-page route template to build its
+ * `route` (the canonical href for a card). `/blog/:slug` + `{ slug: 'a-post' }`
+ * → `/blog/a-post`. Returns a SHALLOW COPY with `route` added — never mutates the
+ * cached record (the same collection may back several sections with different
+ * detail pages). Idempotent + back-compat: a record that already carries a `route`
+ * (the file lane bakes one via collection-processor) is returned untouched. A
+ * `:param` with no matching record field → no `route` (graceful; degrades to the
+ * component's own fallback rather than emitting a broken href).
+ */
+function addDetailRoute(item, template) {
+  if (!item || typeof item !== 'object' || item.route !== undefined) return item
+  let missing = false
+  const route = template.replace(/:(\w+)/g, (_, name) => {
+    const value = item[name]
+    if (value == null) {
+      missing = true
+      return ''
+    }
+    return encodeURIComponent(String(value))
+  })
+  return missing ? item : { ...item, route }
 }

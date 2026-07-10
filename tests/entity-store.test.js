@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import EntityStore from '../src/entity-store.js'
 import DataStore, { deriveCacheKey } from '../src/datastore.js'
 import FetcherDispatcher from '../src/fetcher-dispatcher.js'
+import Website from '../src/website.js'
 
 /**
  * Build a minimal Website-shaped stub with a real FetcherDispatcher and
@@ -498,5 +499,117 @@ describe('EntityStore.fetch', () => {
       const result = await entityStore.fetch(block, {})
       expect(result.data.articles.map((a) => a.slug)).toEqual(['a', 'c'])
     })
+  })
+})
+
+describe('EntityStore detailPage → record.route injection', () => {
+  const cfg = { path: '/data/articles.json', schema: 'articles', detailPage: 'page:detail' }
+
+  function seed(articles, resolver) {
+    const h = makeHarness()
+    if (resolver !== undefined) h.website.resolveDetailPageTemplate = resolver
+    h.dataStore.set(deriveCacheKey(cfg), { data: articles })
+    const block = makeBlock({ page: makePage({ fetch: cfg }) }, h.website)
+    return { ...h, block }
+  }
+
+  it('injects the canonical route on each record (sync path), url-encoding the param', () => {
+    const articles = [{ slug: 'a-post', title: 'A' }, { slug: 'b post', title: 'B' }]
+    const { entityStore, block } = seed(articles, (ref) =>
+      ref === 'page:detail' ? '/blog/:slug' : null
+    )
+    const result = entityStore.resolve(block, {})
+    expect(result.status).toBe('ready')
+    expect(result.data.articles[0].route).toBe('/blog/a-post')
+    expect(result.data.articles[1].route).toBe('/blog/b%20post')
+    // cached source records are NOT mutated (same collection may back other sections)
+    expect(articles[0].route).toBeUndefined()
+  })
+
+  it('injects on the async fetch path too', async () => {
+    const h = makeHarness({ fetcherImpl: () => Promise.resolve({ data: [{ slug: 'x', title: 'X' }] }) })
+    h.website.resolveDetailPageTemplate = () => '/blog/:slug'
+    const block = makeBlock({ page: makePage({ fetch: cfg }) }, h.website)
+    const result = await h.entityStore.fetch(block, {})
+    expect(result.data.articles[0].route).toBe('/blog/x')
+  })
+
+  it('leaves records untouched for a dangling detailPage ref', () => {
+    const { entityStore, block } = seed([{ slug: 'a', title: 'A' }], () => null)
+    const result = entityStore.resolve(block, {})
+    expect(result.data.articles[0].route).toBeUndefined()
+  })
+
+  it('preserves a record’s existing baked route (file lane back-compat)', () => {
+    const { entityStore, block } = seed(
+      [{ slug: 'a', title: 'A', route: '/blog/a' }],
+      () => '/other/:slug'
+    )
+    const result = entityStore.resolve(block, {})
+    expect(result.data.articles[0].route).toBe('/blog/a')
+  })
+
+  it('skips a record missing the :param field (no broken href)', () => {
+    const { entityStore, block } = seed([{ title: 'no slug' }], () => '/blog/:slug')
+    const result = entityStore.resolve(block, {})
+    expect(result.data.articles[0].route).toBeUndefined()
+  })
+
+  it('is a no-op when the fetch config declares no detailPage', () => {
+    const plain = { path: '/data/articles.json', schema: 'articles' }
+    const h = makeHarness()
+    h.website.resolveDetailPageTemplate = () => '/blog/:slug'
+    h.dataStore.set(deriveCacheKey(plain), { data: [{ slug: 'a', title: 'A' }] })
+    const block = makeBlock({ page: makePage({ fetch: plain }) }, h.website)
+    const result = h.entityStore.resolve(block, {})
+    expect(result.data.articles[0].route).toBeUndefined()
+  })
+})
+
+describe('EntityStore + real Website: end-to-end detailPage resolution', () => {
+  it('a list preview on ANY page links to the collection’s canonical detail (real _pageIdMap)', () => {
+    // A site where Home carries an articles preview but the detail page lives
+    // under Blog — the exact cross-page case the runtime scan got wrong.
+    const w = new Website({
+      content: {
+        config: { name: 'T', defaultLanguage: 'en' },
+        theme: {},
+        pages: [
+          { route: '/', isIndex: true, title: 'Home', sections: [] },
+          { route: '/blog', id: 'blog-list', title: 'Blog', sections: [] },
+          {
+            route: '/blog/:slug',
+            id: 'article-detail',
+            isDynamic: true,
+            paramName: 'slug',
+            parentSchema: 'articles',
+            title: 'Article',
+            sections: [],
+          },
+        ],
+      },
+    })
+
+    const cfg = {
+      path: '/data/articles.json',
+      schema: 'articles',
+      detailPage: 'page:article-detail',
+    }
+    w.dataStore.set(deriveCacheKey(cfg), {
+      data: [{ slug: 'first', title: 'First' }, { slug: 'second', title: 'Second' }],
+    })
+
+    // A block on the HOME page (route '/') whose fetch pulls the articles preview.
+    const block = {
+      fetch: null,
+      dynamicContext: null,
+      page: { route: '/', fetch: cfg, parent: null, dynamicContext: null },
+      website: w,
+    }
+
+    const result = w.entityStore.resolve(block, {})
+    expect(result.status).toBe('ready')
+    // Cards link to /blog/:slug (canonical), NOT /first relative to Home.
+    expect(result.data.articles.map((a) => a.route)).toEqual(['/blog/first', '/blog/second'])
   })
 })

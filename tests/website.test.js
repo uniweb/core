@@ -233,3 +233,46 @@ describe('Website route translation (localized slugs)', () => {
     })
   })
 })
+
+describe('Website.resolveDetailPageTemplate', () => {
+  function siteWithDetail() {
+    return new Website({
+      content: {
+        config: { name: 'T', defaultLanguage: 'en' },
+        theme: {},
+        pages: [
+          { route: '/', isIndex: true, title: 'Home', sections: [] },
+          { route: '/blog', id: 'blog-list', title: 'Blog', sections: [] },
+          {
+            route: '/blog/:slug',
+            id: 'article-detail',
+            isDynamic: true,
+            paramName: 'slug',
+            parentSchema: 'articles',
+            title: 'Article',
+            sections: [],
+          },
+        ],
+      },
+    })
+  }
+
+  it('resolves a page:<stable_id> ref to the [slug] route template', () => {
+    expect(siteWithDetail().resolveDetailPageTemplate('page:article-detail')).toBe('/blog/:slug')
+  })
+
+  it('accepts a bare stable_id (no page: prefix)', () => {
+    expect(siteWithDetail().resolveDetailPageTemplate('article-detail')).toBe('/blog/:slug')
+  })
+
+  it('returns null for a dangling ref (target deleted / not found)', () => {
+    expect(siteWithDetail().resolveDetailPageTemplate('page:gone')).toBeNull()
+  })
+
+  it('returns null for empty / non-string input', () => {
+    const w = siteWithDetail()
+    expect(w.resolveDetailPageTemplate('')).toBeNull()
+    expect(w.resolveDetailPageTemplate(null)).toBeNull()
+    expect(w.resolveDetailPageTemplate(undefined)).toBeNull()
+  })
+})

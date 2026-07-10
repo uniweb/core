@@ -792,6 +792,39 @@ export default class Website {
   }
 
   /**
+   * Resolve a `page:<stable_id>` detail-page reference (from a fetch config's
+   * `detailPage`) to a locale-specific route TEMPLATE, e.g. '/blog/:slug'. The
+   * entity store interpolates each record's field into the `:param` slot to build
+   * a card's href — so a dynamic-list preview links to the collection's canonical
+   * detail page regardless of which page it sits on.
+   *
+   * O(1): a `_pageIdMap` lookup (keyed on stable_id, same map makeHref uses), NOT
+   * a page-tree scan. Returns null when the ref is unresolvable — the target page
+   * was deleted or de-dynamicized (a dangling ref); the caller degrades gracefully
+   * (leaves the record without a `route`). Rename-safe: a stable_id survives page
+   * reorganization.
+   *
+   * @param {string} pageRef - `page:<stable_id>` (bare `<stable_id>` also accepted)
+   * @returns {string|null} locale-specific route template, or null if unresolvable
+   */
+  resolveDetailPageTemplate(pageRef) {
+    if (!pageRef || typeof pageRef !== 'string') return null
+    const id = pageRef.startsWith('page:') ? pageRef.slice(5) : pageRef
+    const page = this._pageIdMap?.get(id)
+    if (!page || !page.route) {
+      if (
+        typeof console !== 'undefined' &&
+        typeof process !== 'undefined' &&
+        process?.env?.NODE_ENV !== 'production'
+      ) {
+        console.warn(`[resolveDetailPageTemplate] Detail page not found: ${pageRef}`)
+      }
+      return null
+    }
+    return this.translateRoute(page.route)
+  }
+
+  /**
    * Get available languages
    * @deprecated Use getLocales() instead
    */
