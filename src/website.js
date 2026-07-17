@@ -596,11 +596,12 @@ export default class Website {
         pageData.notFound = true
       }
 
-      // Store in dynamic context for entity resolution
-      pageData.dynamicContext.currentItem = currentItem || null
-      pageData.dynamicContext.allItems = items
-
-      // Track whether collection data was available at creation time
+      // Track whether collection data was available at creation time.
+      // Note: the matched record and the sibling list are intentionally NOT
+      // stored on dynamicContext — nothing reads them (documented shape is
+      // { paramName, paramValue, schema }; the record reaches components via
+      // content.data, siblings via `fetch: { refine: true, detail: false }`).
+      // The local `currentItem`/`items` above drive title/description/notFound.
       pageData._collectionLoaded = items.length > 0
     }
 
