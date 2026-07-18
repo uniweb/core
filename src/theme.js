@@ -305,21 +305,24 @@ export default class Theme {
   /**
    * Get a specific font family
    *
-   * @param {string} type - Font type ('body', 'heading', 'mono')
+   * @param {string} type - Font type ('body', 'heading', 'code'; 'mono' is a
+   *   deprecated alias of 'code')
    * @returns {string|null} Font family string or null
    */
   getFont(type) {
-    return this._fonts[type] || null
+    const role = type === 'mono' ? 'code' : type
+    return this._fonts[role] ?? this._fonts[type] ?? null
   }
 
   /**
    * Get CSS variable reference for a font
    *
-   * @param {string} type - Font type
+   * @param {string} type - Font type ('mono' resolves to the 'code' role)
    * @returns {string} CSS var() reference
    */
   getFontVar(type) {
-    return `var(--font-${type})`
+    const role = type === 'mono' ? 'code' : type
+    return `var(--font-${role})`
   }
 
   // ============================================================

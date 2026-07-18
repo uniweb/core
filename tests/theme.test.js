@@ -268,7 +268,7 @@ describe('Theme', () => {
       fonts: {
         body: 'Inter, sans-serif',
         heading: 'Poppins, sans-serif',
-        mono: 'Fira Code, monospace',
+        code: 'Fira Code, monospace',
       },
     })
 
@@ -277,7 +277,7 @@ describe('Theme', () => {
         const fonts = theme.getFonts()
         expect(fonts.body).toBe('Inter, sans-serif')
         expect(fonts.heading).toBe('Poppins, sans-serif')
-        expect(fonts.mono).toBe('Fira Code, monospace')
+        expect(fonts.code).toBe('Fira Code, monospace')
       })
 
       it('returns a copy (not mutable)', () => {
@@ -292,6 +292,11 @@ describe('Theme', () => {
       it('returns font family for type', () => {
         expect(theme.getFont('body')).toBe('Inter, sans-serif')
         expect(theme.getFont('heading')).toBe('Poppins, sans-serif')
+        expect(theme.getFont('code')).toBe('Fira Code, monospace')
+      })
+
+      it('resolves the deprecated `mono` type to the `code` role', () => {
+        expect(theme.getFont('mono')).toBe('Fira Code, monospace')
       })
 
       it('returns null for non-existent type', () => {
@@ -303,6 +308,11 @@ describe('Theme', () => {
       it('returns CSS var reference for font', () => {
         expect(theme.getFontVar('body')).toBe('var(--font-body)')
         expect(theme.getFontVar('heading')).toBe('var(--font-heading)')
+        expect(theme.getFontVar('code')).toBe('var(--font-code)')
+      })
+
+      it('maps the deprecated `mono` type to the `code` var', () => {
+        expect(theme.getFontVar('mono')).toBe('var(--font-code)')
       })
     })
   })
