@@ -295,8 +295,8 @@ describe('Theme', () => {
         expect(theme.getFont('code')).toBe('Fira Code, monospace')
       })
 
-      it('resolves the deprecated `mono` type to the `code` role', () => {
-        expect(theme.getFont('mono')).toBe('Fira Code, monospace')
+      it('returns null for `mono` (no longer aliased to code)', () => {
+        expect(theme.getFont('mono')).toBeNull()
       })
 
       it('returns null for non-existent type', () => {
@@ -311,8 +311,8 @@ describe('Theme', () => {
         expect(theme.getFontVar('code')).toBe('var(--font-code)')
       })
 
-      it('maps the deprecated `mono` type to the `code` var', () => {
-        expect(theme.getFontVar('mono')).toBe('var(--font-code)')
+      it('maps `mono` to its own var, not code', () => {
+        expect(theme.getFontVar('mono')).toBe('var(--font-mono)')
       })
     })
   })
