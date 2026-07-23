@@ -4,7 +4,8 @@
   "description": "Core classes for the Uniweb platform - Uniweb, Website, Page, Block",
   "type": "module",
   "exports": {
-    ".": "./src/index.js"
+    ".": "./src/index.js",
+    "./locale-config": "./src/locale-config.js"
   },
   "files": [
     "src"

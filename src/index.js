@@ -20,6 +20,13 @@ export { default as ObservableState } from './observable-state.js'
 
 // Utilities
 export { substitutePlaceholders } from './substitute-placeholders.js'
+export {
+  normalizeLanguageList,
+  isWildcardLanguages,
+  resolveDefaultLocale,
+  resolvePublishableLocales,
+  validateLanguageConfig
+} from './locale-config.js'
 export { evaluate as evaluateWhere, match as matchWhere } from './where.js'
 export { isRichSchema } from './schemas.js'
 export { resolveStyle as resolveRequestStyle, listStyleNames as listRequestStyleNames } from './request-styles/index.js'

@@ -10,6 +10,7 @@ import EntityStore from './entity-store.js'
 import FetcherDispatcher from './fetcher-dispatcher.js'
 import ObservableState from './observable-state.js'
 import { normalizeSeo } from './seo.js'
+import { resolveDefaultLocale } from './locale-config.js'
 
 /**
  * Website — orchestration root for a single site instance.
@@ -162,7 +163,7 @@ export default class Website {
     this.seo = normalizeSeo(config.seo)
     this.keywords = config.keywords || null
 
-    this.siteDefaultLocale = config.defaultLanguage || 'en'
+    this.siteDefaultLocale = resolveDefaultLocale(config)
     this.defaultLocale = config.domainLocale || this.siteDefaultLocale
     this.activeLocale = config.activeLocale || this.defaultLocale
 
@@ -229,7 +230,7 @@ export default class Website {
    * @private
    */
   buildLocalesList(config) {
-    const defaultLocale = config.defaultLanguage || 'en'
+    const defaultLocale = resolveDefaultLocale(config)
     const languages = config.languages || []
 
     // Normalize input: convert strings to objects, keep objects as-is
