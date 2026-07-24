@@ -404,3 +404,33 @@ export default class Theme {
     }
   }
 }
+
+/**
+ * Does a site's appearance config make the dark scheme reachable at all?
+ *
+ * This is the behavioral "can this site ever show dark" predicate — distinct
+ * from Theme.supportsScheme(), which literally answers "is this scheme listed
+ * in `schemes:`". A site reaches dark if it offers a toggle, defaults to dark
+ * or system, or explicitly lists dark in `schemes`.
+ *
+ * CANONICAL SHARED PREDICATE. It MUST stay in lockstep with the dark-CSS
+ * emission guard in @uniweb/theming's css-generator.js (`generateThemeCSS`,
+ * "Dark scheme support" block): that guard decides whether the `.scheme-dark`
+ * rules physically exist, and this decides whether the runtime may boot into
+ * or switch to dark. If the two disagree, you get a scheme with no matching
+ * CSS (page claims dark, renders light) — the exact desync class this unifies
+ * away. @uniweb/theming cannot import @uniweb/core, so its copy is annotated to
+ * point here; everything that consumes the model (runtime boot, kit's
+ * useAppearance) imports THIS one.
+ *
+ * @param {Object} appearance - the resolved theme.yml `appearance:` block
+ * @returns {boolean}
+ */
+export function hasDarkScheme(appearance = {}) {
+  return Boolean(
+    appearance.allowToggle ||
+      appearance.default === 'dark' ||
+      appearance.default === 'system' ||
+      appearance.schemes?.includes('dark')
+  )
+}

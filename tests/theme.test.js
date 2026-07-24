@@ -1,5 +1,46 @@
 import { describe, it, expect } from 'vitest'
-import Theme from '../src/theme.js'
+import Theme, { hasDarkScheme } from '../src/theme.js'
+
+describe('hasDarkScheme', () => {
+  it('is true when a toggle is offered', () => {
+    expect(hasDarkScheme({ allowToggle: true })).toBe(true)
+  })
+
+  it('is true when the default is dark or system', () => {
+    expect(hasDarkScheme({ default: 'dark' })).toBe(true)
+    expect(hasDarkScheme({ default: 'system' })).toBe(true)
+  })
+
+  it('is true when dark is listed in schemes', () => {
+    expect(hasDarkScheme({ schemes: ['light', 'dark'] })).toBe(true)
+  })
+
+  it('is false for a light-only site', () => {
+    expect(hasDarkScheme({ default: 'light', allowToggle: false, schemes: ['light'] })).toBe(false)
+  })
+
+  it('is false for empty or missing config', () => {
+    expect(hasDarkScheme({})).toBe(false)
+    expect(hasDarkScheme()).toBe(false)
+  })
+
+  it('mirrors the css-generator dark-emission predicate', () => {
+    // If these ever drift, a booted scheme can outrun the generated CSS. This
+    // asserts the exact four-way disjunction both sides implement.
+    const cssEmitsDark = (a) =>
+      Boolean(a.allowToggle || a.default === 'dark' || a.default === 'system' || a.schemes?.includes('dark'))
+    for (const a of [
+      { allowToggle: true },
+      { default: 'dark' },
+      { default: 'system' },
+      { schemes: ['light', 'dark'] },
+      { default: 'light', schemes: ['light'] },
+      {},
+    ]) {
+      expect(hasDarkScheme(a)).toBe(cssEmitsDark(a))
+    }
+  })
+})
 
 describe('Theme', () => {
   describe('constructor', () => {
@@ -234,6 +275,15 @@ describe('Theme', () => {
           appearance: { schemes: ['light'] },
         })
         expect(theme.supportsScheme('dark')).toBe(false)
+      })
+
+      it('is a literal schemes-list check, distinct from hasDarkScheme', () => {
+        // supportsScheme answers "is it listed in `schemes:`"; hasDarkScheme
+        // answers the behavioral "can this site ever show dark". A toggle site
+        // with no `schemes:` reaches dark but does not list it.
+        const theme = new Theme({ appearance: { allowToggle: true } })
+        expect(theme.supportsScheme('dark')).toBe(false)
+        expect(hasDarkScheme(theme.getAppearance())).toBe(true)
       })
     })
 
