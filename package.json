@@ -1,6 +1,6 @@
 {
   "name": "@uniweb/core",
-  "version": "0.7.28",
+  "version": "0.7.29",
   "description": "Core classes for the Uniweb platform - Uniweb, Website, Page, Block",
   "type": "module",
   "exports": {
