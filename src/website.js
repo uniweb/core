@@ -1174,6 +1174,45 @@ export default class Website {
   }
 
   /**
+   * Get the page tree for the branch a route sits in.
+   *
+   * A sidebar shows one branch of a site, not the whole thing: under /docs it
+   * lists the documentation, and under a different top-level section it would
+   * list that instead. Every documentation shell built on this framework has
+   * hand-written the same narrowing, so it lives here — it is a question about
+   * the page graph, with no React and no DOM in it.
+   *
+   * Answers the branch's children when it has any, the branch itself when it
+   * is a leaf, and the whole hierarchy when the route matches no branch (the
+   * site root, most often). The pages come back in the order the build settled
+   * on; `pages:` lists are resolved at build time, so there is nothing to sort.
+   *
+   * @param {Object} [options]
+   * @param {string} options.route - The active route, e.g. '/docs/reference/cli'
+   * @param {string} [options.for] - Layout area being filled ('left', 'header', …).
+   *   Checked against each page's `hideIn`, so a page can sit out of this rail
+   *   while staying in the menu. Name the area the tree is actually for.
+   * @param {boolean} [options.includeHidden=false] - Include unpublished pages
+   * @returns {Array<Object>} Page info objects, nested
+   *
+   * @example
+   * // In a sidebar component rendered into the `left` layout area
+   * const pages = website.getBranchHierarchy({ route: location.pathname, for: 'left' })
+   */
+  getBranchHierarchy({ route = '', for: navType, includeHidden = false } = {}) {
+    const normalize = (value) => (value || '').replace(/^\/+/, '').replace(/\/+$/, '')
+
+    const all = this.getPageHierarchy({ for: navType, includeHidden })
+    const branchName = normalize(route).split('/')[0]
+    if (!branchName) return all
+
+    const branch = all.find((page) => normalize(page.route) === branchName)
+    if (!branch) return all
+
+    return branch.children?.length ? branch.children : [branch]
+  }
+
+  /**
    * Get pages for header navigation
    * Convenience method equivalent to getPageHierarchy({ for: 'header' })
    * @returns {Array<Object>}
