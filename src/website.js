@@ -1011,6 +1011,21 @@ export default class Website {
 
     return {
       enabled: this.isSearchEnabled(),
+      // Which provider serves results. `index` (the default) downloads a
+      // prebuilt index and queries it in the browser — free, and works on any
+      // host. `endpoint` queries a server-side search API, which is what makes
+      // dynamic/API-backed content searchable. Any other value names a
+      // foundation-supplied search transport.
+      //
+      // Kit resolves and loads the provider; core only passes the declaration
+      // through, so a site that never searches pays nothing for the vocabulary
+      // (see kit's search module for the resolution rules).
+      provider: config.provider || 'index',
+      // Base-RELATIVE path for the `endpoint` provider. Left raw here: kit
+      // resolves it against `basePath`, so one spelling works whether the site
+      // is served from the root, from a subdirectory, or from a backend
+      // subpath. Undefined unless declared.
+      endpoint: config.endpoint,
       indexUrl: this.getSearchIndexUrl(),
       locale: this.getActiveLocale(),
       include: {
@@ -1029,7 +1044,14 @@ export default class Website {
   }
 
   /**
-   * Get the URL for the search index file
+   * Get the URL for the search index file.
+   *
+   * Includes `basePath`, so the URL is correct on a site deployed under a
+   * subdirectory (`base: /docs/`) and on a backend-hosted site served from a
+   * subpath. Omitting it was a real bug: the returned path was fetched
+   * verbatim, so search 404'd on every non-root deployment while data fetching
+   * — which resolves the same base — worked.
+   *
    * @returns {string} URL to fetch the search index
    */
   getSearchIndexUrl() {
@@ -1037,7 +1059,10 @@ export default class Website {
     const isDefault = locale === this.getDefaultLocale()
 
     // Default locale uses root path, others use locale prefix
-    return isDefault ? '/search-index.json' : `/${locale}/search-index.json`
+    const path = isDefault ? '/search-index.json' : `/${locale}/search-index.json`
+
+    // `basePath` is already normalized without a trailing slash ('' at root).
+    return `${this.basePath || ''}${path}`
   }
 
   /**
