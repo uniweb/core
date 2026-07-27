@@ -15,16 +15,18 @@
  */
 
 import { substitutePlaceholders } from './substitute-placeholders.js'
+import { isFetchRefinement, resolveFetchConfigs } from './fetch-config.js'
 
 /**
  * Is `block.fetch` a per-instance refinement of the ancestor's fetch config
  * rather than a new source? The canonical spelling is `refine: true`; the
  * legacy spelling `inherit: true` is still honored for one release with a
  * dev-mode warning.
+ *
+ * The predicate itself lives in `./fetch-config.js` with the rest of the
+ * cascade rule; this alias keeps the local call sites reading as they did.
  */
-function isRefinement(bf) {
-  return bf?.refine === true || bf?.inherit === true
-}
+const isRefinement = isFetchRefinement
 
 let inheritDeprecationWarned = false
 function warnInheritDeprecation(block) {
@@ -96,53 +98,38 @@ export default class EntityStore {
   }
 
   /**
-   * Return a localized copy of a fetch config for collection data.
-   * Non-default locales get /{locale} prefixed onto /data/ paths so the
-   * client fetches the translated JSON (/fr/data/articles.json).
-   */
-  _localizeConfig(cfg, website) {
-    if (!cfg.path || !website) return cfg
-    const locale = website.getActiveLocale?.()
-    const defaultLocale = website.getDefaultLocale?.()
-    if (!locale || locale === defaultLocale) return cfg
-    if (!cfg.path.startsWith('/data/')) return cfg
-    return { ...cfg, path: `/${locale}${cfg.path}` }
-  }
-
-  /**
    * Walk the four-level hierarchy and collect fetch configs for the
    * requested schemas. First match per schema wins.
+   *
+   * This method's job is to read the four source slots off the object graph;
+   * the rule applied to them (precedence, first-match-per-schema, locale
+   * normalization, deferred-detail injection) lives in `./fetch-config.js`,
+   * shared with every other host that has to answer the same question. Do not
+   * re-inline it here — divergence between copies is what the extraction
+   * exists to prevent.
    */
   _findFetchConfigs(block, requested) {
-    const configs = new Map()
-    const collectAll = requested.length === 0
-    const sources = []
-
     if (block.fetch?.inherit === true && block.fetch?.refine !== true) {
       warnInheritDeprecation(block)
     }
-    if (block.fetch && !isRefinement(block.fetch)) sources.push(block.fetch)
-    const page = block.page
-    if (page?.fetch) sources.push(page.fetch)
-    if (page?.parent?.fetch) sources.push(page.parent.fetch)
-    const siteFetch = block.website?.config?.fetch
-    if (siteFetch) sources.push(siteFetch)
 
+    const page = block.page
     const website = block.website
 
-    for (const source of sources) {
-      const configList = Array.isArray(source) ? source : [source]
-      for (const cfg of configList) {
-        if (!cfg.schema) continue
-        if (configs.has(cfg.schema)) continue
-        if (collectAll || requested.includes(cfg.schema)) {
-          const localized = this._localizeConfig(cfg, website)
-          const withDetail = this._applyDeferredDetail(localized, website)
-          configs.set(cfg.schema, withDetail)
-        }
-      }
-    }
-    return configs
+    return resolveFetchConfigs(
+      [
+        block.fetch && !isRefinement(block.fetch) ? block.fetch : null,
+        page?.fetch,
+        page?.parent?.fetch,
+        website?.config?.fetch,
+      ],
+      {
+        schemas: requested,
+        locale: website?.getActiveLocale?.() ?? null,
+        defaultLocale: website?.getDefaultLocale?.() ?? null,
+        collections: website?.config?.collections ?? null,
+      },
+    )
   }
 
   /**
@@ -165,52 +152,6 @@ export default class EntityStore {
       if (!template) continue
       data[schema] = items.map((item) => addDetailRoute(item, template))
     }
-  }
-
-  /**
-   * Auto-inject `detail:` on collection refs whose collection has
-   * `deferred:` declared. The detail pattern points at the per-record
-   * source so the existing dynamic-route singular flow fetches a record
-   * with all fields (including the deferred ones) instead of the
-   * matched-item-from-the-cascade-collection (without).
-   *
-   * Two patterns:
-   *
-   *   - Markdown-backed collections (the build emits per-record files
-   *     at `/data/<name>/<slug>.json`): the auto-injected pattern is
-   *     that path. `isLocalPath` resolution downstream gives the
-   *     fetch a `path:` shape.
-   *
-   *   - API-backed collections (the source is a remote URL; the build
-   *     emits no per-record files): the author declares a `detailUrl:`
-   *     on the collection — e.g., `/api/articles/{slug}` — and the
-   *     auto-injected pattern uses it. `isLocalPath` resolution
-   *     downstream gives the fetch a `url:` shape (because the
-   *     collection itself has `url:`, not `path:`).
-   *
-   * Conventions:
-   *   - Per-record sources are keyed by `item.slug`. The injected
-   *     pattern uses the `{slug}` placeholder; substitution works when
-   *     the dynamic route's paramName is 'slug' (the documented
-   *     convention). Routes with other param names need an explicit
-   *     author-written `detail:` value.
-   *   - Author-supplied `cfg.detail` always wins. This helper only fills
-   *     in the default for collections that have declared deferred fields.
-   *   - Per-record files are not currently localized; sites needing
-   *     localized deferred collections write their own `detail:` URL.
-   */
-  _applyDeferredDetail(cfg, website) {
-    if (cfg.detail !== undefined) return cfg
-    const schema = cfg.schema
-    if (!schema) return cfg
-    const collConfig = website?.config?.collections?.[schema]
-    if (!collConfig || typeof collConfig !== 'object') return cfg
-    const deferred = Array.isArray(collConfig.deferred) ? collConfig.deferred : null
-    if (!deferred || deferred.length === 0) return cfg
-    const pattern = typeof collConfig.detailUrl === 'string'
-      ? collConfig.detailUrl
-      : `/data/${schema}/{slug}.json`
-    return { ...cfg, detail: pattern }
   }
 
   /**
