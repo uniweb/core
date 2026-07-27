@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.js",
-    "./locale-config": "./src/locale-config.js"
+    "./locale-config": "./src/locale-config.js",
+    "./section-id": "./src/section-id.js"
   },
   "files": [
     "src"
