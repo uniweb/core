@@ -8,6 +8,70 @@
 import { parseContent as parseSemanticContent } from '@uniweb/semantic-parser'
 import { normalizeTokenValue } from '@uniweb/theming'
 
+/**
+ * Lift container fences out of a content document.
+ *
+ * A ` ```@Component{params} ` fence parses to an `inset_block` node carrying a
+ * body of real block content. This rewrites each one to the `inset_placeholder`
+ * a leaf inset leaves behind, so a container resolves through exactly the same
+ * path: `getInset(refId)` → a Block → the foundation's component. Kit and the
+ * SSR renderer already handle placeholders, so neither needs to know containers
+ * exist.
+ *
+ * PURE with respect to the input. `blockData.content` is shared with the sync /
+ * pull machinery, which must keep seeing `inset_block` — that is the canonical
+ * stored shape. Nodes on the path to a container are cloned; everything else is
+ * passed through by reference, so a document with no containers costs one array
+ * walk and allocates nothing.
+ *
+ * Containers are NOT recursed into here. A container's body becomes its child
+ * Block's content, and that Block's constructor lifts its own containers — so
+ * nesting resolves one level at a time, each at the level that owns it.
+ *
+ * @param {Object} content - ProseMirror document (never mutated)
+ * @returns {{ content: Object, refs: Array<{refId, type, params, content}> }}
+ */
+function liftContainers(content) {
+  if (!content || !Array.isArray(content.content)) return { content, refs: [] }
+
+  const refs = []
+
+  const visit = (nodes) => {
+    let changed = false
+    const out = nodes.map((node) => {
+      if (!node) return node
+
+      if (node.type === 'inset_block') {
+        const { component, ...params } = node.attrs || {}
+        const refId = `container_${refs.length}`
+        refs.push({
+          refId,
+          type: component,
+          params,
+          content: { type: 'doc', content: node.content || [] },
+        })
+        changed = true
+        return { type: 'inset_placeholder', attrs: { refId, embedKind: 'block' } }
+      }
+
+      if (Array.isArray(node.content)) {
+        const inner = visit(node.content)
+        if (inner !== node.content) {
+          changed = true
+          return { ...node, content: inner }
+        }
+      }
+      return node
+    })
+    return changed ? out : nodes
+  }
+
+  const next = visit(content.content)
+  return next === content.content
+    ? { content, refs }
+    : { content: { ...content, content: next }, refs }
+}
+
 export default class Block {
   constructor(blockData, id, page) {
     this.id = id
@@ -22,8 +86,17 @@ export default class Block {
     // 1. Raw ProseMirror content (from content collection)
     // 2. Pre-parsed content with main/items structure
     // For now, store raw and parse on demand
-    this.rawContent = blockData.content || {}
-    this.parsedContent = this.parseContent(blockData.content)
+    //
+    // Container fences (```@Component around a body) arrive as `inset_block`
+    // nodes and are lifted out HERE, into the same placeholder + refId shape
+    // the build gives leaf insets. Doing it at render-graph construction
+    // rather than at build time is deliberate: `inset_block` is the canonical
+    // STORED shape, so the content that syncs and round-trips must keep
+    // carrying it. `blockData.content` is left untouched — the lift produces a
+    // new tree and only this Block's view of it changes.
+    const lifted = liftContainers(blockData.content)
+    this.rawContent = lifted.content || {}
+    this.parsedContent = this.parseContent(lifted.content)
 
     // Merge fetched data from prerender (if present)
     // Prerender stores fetched data in blockData.parsedContent.data
@@ -112,6 +185,30 @@ export default class Block {
         )
         this.insets.push(child)
       }
+    }
+
+    // Containers, appended AFTER the leaf insets so `block.insets[0]` keeps
+    // meaning what it meant to every foundation already using <Visual>.
+    // Unlike a leaf inset, a container's body becomes the child Block's
+    // content, so the foundation's component receives a fully parsed
+    // `content` — title, paragraphs, items, sequence — exactly as a section
+    // does. Nested containers resolve for free: the child Block runs this
+    // same constructor over its own body.
+    for (let i = 0; i < lifted.refs.length; i++) {
+      const ref = lifted.refs[i]
+      this.insets.push(
+        new Block(
+          {
+            type: ref.type,
+            params: ref.params || {},
+            content: ref.content,
+            stableId: ref.refId,
+            refId: ref.refId,
+          },
+          `${id}_container_${i}`,
+          this.page
+        )
+      )
     }
 
     // Fetch configuration (from section frontmatter)
