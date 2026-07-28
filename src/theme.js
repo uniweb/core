@@ -13,28 +13,6 @@ const SHADE_LEVELS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950]
 // Valid color contexts
 const VALID_CONTEXTS = ['light', 'medium', 'dark']
 
-// Default semantic tokens by context
-const DEFAULT_CONTEXT_TOKENS = {
-  light: {
-    bg: 'var(--neutral-50)',
-    text: 'var(--neutral-950)',
-    heading: 'var(--neutral-900)',
-    link: 'var(--primary-600)',
-  },
-  medium: {
-    bg: 'var(--neutral-100)',
-    text: 'var(--neutral-950)',
-    heading: 'var(--neutral-900)',
-    link: 'var(--primary-600)',
-  },
-  dark: {
-    bg: 'var(--neutral-900)',
-    text: 'var(--neutral-50)',
-    heading: 'white',
-    link: 'var(--primary-400)',
-  },
-}
-
 /**
  * Theme class for runtime theme access
  */
@@ -154,40 +132,42 @@ export default class Theme {
   // Context Access
   // ============================================================
 
-  /**
-   * Get a semantic token value for a context
+  /*
+   * REMOVED 2026-07-28: getContextToken(context, token) and
+   * getContextTokens(context), plus the DEFAULT_CONTEXT_TOKENS table backing
+   * them. Read this before reintroducing either.
    *
-   * @param {string} context - Context name ('light', 'medium', 'dark')
-   * @param {string} token - Token name (e.g., 'bg', 'text', 'link')
-   * @returns {string|null} Token value or null
+   * They were unreachable-by-design rather than merely stale. A lookup keyed on
+   * (context, token) answers "what does the .context-<name> class set by
+   * default?", but the question callers ask is "what colour is --heading HERE",
+   * and those diverge for two reasons no such lookup can see:
    *
-   * @example
-   * theme.getContextToken('light', 'bg') // → "var(--neutral-50)"
-   * theme.getContextToken('dark', 'text') // → "var(--neutral-50)"
+   *   - a section's own `theme:` overrides, emitted as `#section-{id} { … }` by
+   *     @uniweb/theming's buildSectionOverrides;
+   *   - the active site scheme, where `.scheme-dark` redefines the root tokens.
+   *
+   * So a correct-looking answer would still be wrong whenever a section
+   * overrides tokens or the visitor is in dark mode — the failure being a
+   * confident wrong value, not an error. (The table had also drifted: it held
+   * `bg`/`text`, retired in favour of `section`/`body`, and four tokens where
+   * the live set is ~25. Repopulating it would have made a misleading API look
+   * trustworthy, which is worse than leaving it visibly incomplete.)
+   *
+   * What to use instead:
+   *   - an actually-resolved value (canvas, SVG, a chart matching the theme):
+   *     getComputedStyle(el).getPropertyValue('--heading') — this accounts for
+   *     both section overrides and the active scheme, which no static table can;
+   *   - the defaults table itself (tooling, a theme editor):
+   *     getDefaultContextTokens() from @uniweb/theming, which owns it;
+   *   - ordinary component styling: the CSS variables directly. Reading tokens
+   *     into JS to branch on them is the `isDark ? … : …` pattern semantic
+   *     tokens exist to remove.
+   *
+   * SHADE_LEVELS below is duplicated from @uniweb/theming too, and was left
+   * deliberately: both copies are identical and the 11-step scale is fixed by
+   * the design, so there is no drift to prevent — noted so the next reader
+   * knows it was considered rather than missed.
    */
-  getContextToken(context, token) {
-    // Check custom context tokens first
-    const customContext = this._contexts[context]
-    if (customContext && customContext[token]) {
-      return customContext[token]
-    }
-
-    // Fall back to defaults
-    const defaults = DEFAULT_CONTEXT_TOKENS[context]
-    return defaults?.[token] || null
-  }
-
-  /**
-   * Get all tokens for a context
-   *
-   * @param {string} context - Context name
-   * @returns {Object} Token name → value mapping
-   */
-  getContextTokens(context) {
-    const defaults = DEFAULT_CONTEXT_TOKENS[context] || {}
-    const custom = this._contexts[context] || {}
-    return { ...defaults, ...custom }
-  }
 
   /**
    * Get the CSS class name for a context
@@ -422,6 +402,15 @@ export default class Theme {
  * away. @uniweb/theming cannot import @uniweb/core, so its copy is annotated to
  * point here; everything that consumes the model (runtime boot, kit's
  * useAppearance) imports THIS one.
+ *
+ * A warning is not a mechanism, and this one has been tested: while it stood,
+ * a SECOND shared table in this same file — DEFAULT_CONTEXT_TOKENS, duplicating
+ * @uniweb/theming's — drifted to retired token names and lost twenty entries
+ * without anyone noticing, because nothing called the two methods that read it.
+ * It was removed 2026-07-28 (see the note where it sat). Treat the lockstep
+ * above as a live obligation with a track record, not a formality: if you find
+ * yourself copying a value out of @uniweb/theming into this file, that is the
+ * moment this comment is for.
  *
  * @param {Object} appearance - the resolved theme.yml `appearance:` block
  * @returns {boolean}

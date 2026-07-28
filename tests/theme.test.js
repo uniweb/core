@@ -140,44 +140,32 @@ describe('Theme', () => {
   })
 
   describe('Context Access', () => {
+    // The remaining tests here read context NAMES, not token values, so this
+    // fixture's contents are incidental. Kept in real token spelling
+    // (`section`, not the retired `bg`) so nothing in this file teaches a name
+    // the system no longer has.
     const theme = new Theme({
       contexts: {
-        light: { bg: 'white', 'custom-token': '#ff0000' },
-        dark: { bg: 'black' },
+        light: { section: 'white', 'custom-token': '#ff0000' },
+        dark: { section: 'black' },
       },
     })
 
-    describe('getContextToken', () => {
-      it('returns custom token value', () => {
-        expect(theme.getContextToken('light', 'bg')).toBe('white')
-        expect(theme.getContextToken('light', 'custom-token')).toBe('#ff0000')
-      })
-
-      it('returns default token when not overridden', () => {
-        // Default light text is var(--neutral-950)
-        expect(theme.getContextToken('light', 'text')).toBe('var(--neutral-950)')
-      })
-
-      it('returns null for non-existent token in non-existent context', () => {
-        expect(theme.getContextToken('nonexistent', 'bg')).toBeNull()
-      })
-    })
-
-    describe('getContextTokens', () => {
-      it('returns merged default and custom tokens', () => {
-        const tokens = theme.getContextTokens('light')
-        expect(tokens.bg).toBe('white') // Custom
-        expect(tokens.text).toBe('var(--neutral-950)') // Default
-        expect(tokens['custom-token']).toBe('#ff0000') // Custom
-      })
-
-      it('returns defaults for context without customization', () => {
-        const theme = new Theme({})
-        const tokens = theme.getContextTokens('medium')
-        expect(tokens).toHaveProperty('bg')
-        expect(tokens).toHaveProperty('text')
-      })
-    })
+    // getContextToken / getContextTokens were removed 2026-07-28 along with the
+    // DEFAULT_CONTEXT_TOKENS table behind them — see the note in src/theme.js.
+    //
+    // Their tests are gone rather than rewritten, and the reason is worth
+    // keeping: they asserted `bg` and `text`, names retired in favour of
+    // `section` and `body` before these tests were written. So the suite was
+    // green *because* it pinned the same stale table the implementation used —
+    // the two agreed with each other and disagreed with the product. Rewriting
+    // them against the real token set would have re-created that trap one rename
+    // later, which is the argument for deleting the API rather than fixing it.
+    //
+    // What replaced it is not a core method: the value in force at an element
+    // depends on that section's `theme:` overrides and the active scheme, so it
+    // is read with getComputedStyle in the browser. The defaults table lives in
+    // @uniweb/theming, which is also where it is tested.
 
     describe('getContextClass', () => {
       it('returns context class name', () => {
