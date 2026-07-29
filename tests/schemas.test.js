@@ -111,3 +111,32 @@ describe('normalizeSchema', () => {
     ])
   })
 })
+
+describe('public surface', () => {
+  // My original tests imported '../src/schemas.js' DIRECTLY, so they passed while
+  // the barrel exported only `isRichSchema` and `import { normalizeSchema } from
+  // "@uniweb/core"` returned undefined. The frontend was blocked by it, and found
+  // it by RUNNING the import rather than reading the file — the same lesson their
+  // promotion bug taught: a test that never goes through the path a consumer uses
+  // is testing a shape no consumer sees.
+  //
+  // So this suite asserts the ENTRY, not the module. It is the only assertion here
+  // that could have caught it.
+  it('exports both schema helpers from the package entry', async () => {
+    const entry = await import('../src/index.js')
+    expect(typeof entry.isRichSchema).toBe('function')
+    expect(typeof entry.normalizeSchema).toBe('function')
+  })
+
+  it('normalizeSchema behaves identically through the entry', async () => {
+    const entry = await import('../src/index.js')
+    const resolvedNamedRef = {
+      name: 'P',
+      fields: { title: { type: 'string' } }
+    }
+    expect(entry.normalizeSchema(resolvedNamedRef).fields).toEqual([
+      { id: 'title', type: 'string' }
+    ])
+    expect(entry.normalizeSchema({ sections: {} })).toBeNull()
+  })
+})

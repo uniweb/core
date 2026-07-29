@@ -28,8 +28,11 @@ export {
   validateLanguageConfig
 } from './locale-config.js'
 export { evaluate as evaluateWhere, match as matchWhere } from './where.js'
-export { isRichSchema } from './schemas.js'
-export { resolveStyle as resolveRequestStyle, listStyleNames as listRequestStyleNames } from './request-styles/index.js'
+export { isRichSchema, normalizeSchema } from './schemas.js'
+export {
+  resolveStyle as resolveRequestStyle,
+  listStyleNames as listRequestStyleNames
+} from './request-styles/index.js'
 
 /**
  * The singleton Uniweb instance.
@@ -53,8 +56,20 @@ export function getUniweb() {
  *   this transport. Used only by the editor's preview iframe.
  * @returns {Uniweb} The created instance (also assigned to globalThis.uniweb).
  */
-export function createUniweb(content, foundation = null, extensions = [], { defaultFetcher = null, transport = null, dev = false } = {}) {
-  const instance = new Uniweb({ content, foundation, extensions, defaultFetcher, transport, dev })
+export function createUniweb(
+  content,
+  foundation = null,
+  extensions = [],
+  { defaultFetcher = null, transport = null, dev = false } = {}
+) {
+  const instance = new Uniweb({
+    content,
+    foundation,
+    extensions,
+    defaultFetcher,
+    transport,
+    dev
+  })
   globalThis.uniweb = instance
   return instance
 }
