@@ -28,9 +28,9 @@ describe('getSearchIndexUrl — base path', () => {
 
   it('includes the base path for a backend-served subpath', () => {
     const w = new Website({ content: content() })
-    w.setBasePath('/gateway/site/abc123/')
+    w.setBasePath('/sites/abc123/')
 
-    expect(w.getSearchIndexUrl()).toBe('/gateway/site/abc123/search-index.json')
+    expect(w.getSearchIndexUrl()).toBe('/sites/abc123/search-index.json')
   })
 
   it("treats '/' as no base path", () => {
