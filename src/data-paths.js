@@ -22,6 +22,18 @@
  * silent-failure trap in it (see `localizeConfig` — a missed site there
  * degrades to default-locale content with a 200, not a 404).
  *
+ * WHY THIS PATH IS NOT `_data`. The site's other reserved paths are
+ * underscore-prefixed — `_search`, `_pages/`, `_importmap/` — and the
+ * inconsistency invites a rename. It has been proposed and declined. Those
+ * are machinery: an endpoint and bundler artifacts, which no visitor should
+ * land on and which an underscore correctly marks as internal. Compiled
+ * collection JSON is the opposite — it is the site's own content, the same
+ * records an agent that found the site through `llms.txt` may reasonably
+ * fetch directly. `/data/articles.json` is a legitimate public address, and
+ * `data` is a legitimate page route; neither collides with the other, since
+ * pages emit `.html` and collections emit `.json`. Prefixing it would say
+ * "internal" about something that is not.
+ *
  * Zero-dependency leaf, like `./locale-config.js`, so a consumer that must
  * not pull core's graph (semantic-parser, theming) can import the subpath
  * `@uniweb/core/data-paths` directly.
