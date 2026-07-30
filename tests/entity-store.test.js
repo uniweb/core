@@ -3,6 +3,9 @@ import EntityStore from '../src/entity-store.js'
 import DataStore, { deriveCacheKey } from '../src/datastore.js'
 import FetcherDispatcher from '../src/fetcher-dispatcher.js'
 import Website from '../src/website.js'
+// Derived, never re-spelled: the convention is pinned once, in
+// `tests/data-paths.test.js`. See the note there before pinning it again.
+import { collectionDataUrl } from '../src/data-paths.js'
 
 /**
  * Build a minimal Website-shaped stub with a real FetcherDispatcher and
@@ -334,20 +337,23 @@ describe('EntityStore.fetch', () => {
     expect(fetcherSpy).toHaveBeenCalledWith(fetchConfig, expect.anything())
   })
 
-  it('localizes /data/ paths for non-default locale', async () => {
+  it('localizes compiled-collection paths for non-default locale', async () => {
     const articles = [{ slug: 'a', title: 'Bonjour' }]
     const { entityStore, fetcherSpy, website } = makeHarness({
       fetcherImpl: () => Promise.resolve({ data: articles }),
     })
     website.getActiveLocale = () => 'fr'
 
-    const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
+    const fetchConfig = { path: collectionDataUrl('articles'), schema: 'articles' }
     const page = makePage({ fetch: fetchConfig })
     const block = makeBlock({ page }, website)
 
     await entityStore.fetch(block, {})
     expect(fetcherSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ path: '/fr/data/articles.json', schema: 'articles' }),
+      expect.objectContaining({
+        path: `/fr${collectionDataUrl('articles')}`,
+        schema: 'articles',
+      }),
       expect.anything(),
     )
   })
@@ -366,7 +372,7 @@ describe('EntityStore.fetch', () => {
     expect(fetcherSpy).toHaveBeenCalledWith(fetchConfig, expect.anything())
   })
 
-  it('does not localize non-/data/ local paths', async () => {
+  it('does not localize local paths outside the compiled-collection tree', async () => {
     const { entityStore, fetcherSpy, website } = makeHarness({
       fetcherImpl: () => Promise.resolve({ data: { key: 'value' } }),
     })
@@ -386,11 +392,11 @@ describe('EntityStore.fetch', () => {
 
     const articles = [{ slug: 'a', title: 'Bonjour' }]
     dataStore.set(
-      deriveCacheKey({ path: '/fr/data/articles.json', schema: 'articles' }),
+      deriveCacheKey({ path: `/fr${collectionDataUrl('articles')}`, schema: 'articles' }),
       { data: articles },
     )
 
-    const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
+    const fetchConfig = { path: collectionDataUrl('articles'), schema: 'articles' }
     const page = makePage({ fetch: fetchConfig })
     const block = makeBlock({ page }, website)
 

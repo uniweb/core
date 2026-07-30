@@ -27,6 +27,14 @@ export {
   resolvePublishableLocales,
   validateLanguageConfig
 } from './locale-config.js'
+export {
+  DATA_DIR,
+  DATA_URL_PREFIX,
+  collectionDataUrl,
+  recordDataUrl,
+  collectionNameFromUrl,
+  isDataUrl
+} from './data-paths.js'
 export { evaluate as evaluateWhere, match as matchWhere } from './where.js'
 export { isRichSchema, normalizeSchema } from './schemas.js'
 export {

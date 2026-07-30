@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.js",
+    "./data-paths": "./src/data-paths.js",
     "./fetch-config": "./src/fetch-config.js",
     "./locale-config": "./src/locale-config.js",
     "./section-id": "./src/section-id.js"

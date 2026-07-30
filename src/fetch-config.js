@@ -12,16 +12,22 @@
  * carrying a level or a semantic the other lacked). This module is the single
  * definition they call.
  *
- * INTENTIONALLY A LEAF: no imports, so it is safe to load anywhere — including
- * environments with no DOM, no filesystem, and a hard bundle-size ceiling.
- * Importing anything here (or from the package root) would defeat that. Keep
- * it dependency-free.
+ * INTENTIONALLY A LEAF: safe to load anywhere — including environments with no
+ * DOM, no filesystem, and a hard bundle-size ceiling. The rule that protects
+ * that is **no transitive graph**: import nothing from the package root (which
+ * pulls semantic-parser and theming) and nothing that itself imports. A
+ * zero-dependency sibling leaf is admissible and `./data-paths.js` is the only
+ * one taken — the path convention it holds has to be identical here and in the
+ * build that emits the files, and a second copy of that string is precisely
+ * the drift this module exists to prevent.
  *
  * WHAT THIS DOES NOT OWN: where the sources come from. A caller holding a live
  * object graph reads them off the graph; a caller holding a content document
  * reads them off the JSON. Both hand the same ordered array to
  * `resolveFetchConfigs`. That difference is real and stays with the caller.
  */
+
+import { isDataUrl, recordDataUrl } from './data-paths.js'
 
 /**
  * Is this fetch declaration a per-instance *refinement* of an ancestor's
@@ -54,7 +60,7 @@ export function isFetchRefinement(cfg) {
 function localizeConfig(cfg, locale, defaultLocale) {
   if (!cfg.path) return cfg
   if (!locale || locale === defaultLocale) return cfg
-  if (!cfg.path.startsWith('/data/')) return cfg
+  if (!isDataUrl(cfg.path)) return cfg
   return { ...cfg, path: `/${locale}${cfg.path}` }
 }
 
@@ -99,7 +105,7 @@ function applyDeferredDetail(cfg, collections) {
   if (!deferred || deferred.length === 0) return cfg
   const pattern = typeof collConfig.detailUrl === 'string'
     ? collConfig.detailUrl
-    : `/data/${schema}/{slug}.json`
+    : recordDataUrl(schema, '{slug}')
   return { ...cfg, detail: pattern }
 }
 
