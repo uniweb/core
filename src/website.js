@@ -11,6 +11,7 @@ import FetcherDispatcher from './fetcher-dispatcher.js'
 import ObservableState from './observable-state.js'
 import { normalizeSeo } from './seo.js'
 import { resolveDefaultLocale } from './locale-config.js'
+import { matchDynamicRoute } from './route-match.js'
 
 /**
  * Website — orchestration root for a single site instance.
@@ -498,27 +499,10 @@ export default class Website {
    * @returns {Object|null} Match result with params, or null if no match
    */
   _matchDynamicRoute(pattern, path) {
-    // Extract param names and build regex
-    const paramNames = []
-    const regexStr = pattern
-      .replace(/[.*+?^${}()|[\]\\]/g, '\\$&') // Escape special chars except :
-      .replace(/:(\w+)/g, (_, paramName) => {
-        paramNames.push(paramName)
-        return '([^/]+)' // Capture anything except /
-      })
-
-    const regex = new RegExp(`^${regexStr}$`)
-    const match = path.match(regex)
-
-    if (!match) return null
-
-    // Build params object
-    const params = {}
-    paramNames.forEach((name, i) => {
-      params[name] = decodeURIComponent(match[i + 1])
-    })
-
-    return { params }
+    // Delegates to the exported matcher so a host rendering this site
+    // server-side can reach the identical rule — see ./route-match.js for why
+    // that is a contract rather than an implementation detail.
+    return matchDynamicRoute(pattern, path)
   }
 
   /**
