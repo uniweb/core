@@ -227,8 +227,22 @@ export default class FetcherDispatcher {
     const cached = this._dataStore.get(key)
     if (cached) return { data: cached.data, meta: cached.meta }
 
+    // An in-flight entry whose master has ALREADY aborted is a corpse: its
+    // underlying request is cancelled and its promise will settle to
+    // `{ data: [], error: 'aborted' }`. Attaching to it would hand this caller
+    // a cancelled result it never asked to cancel — `_attachSignal` has no way
+    // to re-arm a fired master. Treat it as a miss and start a fresh fetch.
+    //
+    // This is the sequential counterpart to the refcounting below. Refcounting
+    // covers CONCURRENT waiters (B attaches before A aborts, so the master
+    // stays live). It cannot cover SEQUENTIAL ones (A aborts, then B arrives),
+    // which is exactly React StrictMode's dev double-mount: the cleanup and the
+    // re-run happen in one synchronous commit, so B always lands in the window
+    // after the abort and before `_runFetcher`'s continuation clears the entry.
+    // Without this check the second mount inherits the first mount's abort and
+    // the block renders empty data — see tests/fetcher-dispatcher.test.js.
     const existing = this._dataStore.inflight.get(key)
-    if (existing) {
+    if (existing && !existing.master?.signal.aborted) {
       this._attachSignal(existing, ctx.signal)
       return existing.promise
     }

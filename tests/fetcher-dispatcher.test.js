@@ -377,6 +377,54 @@ describe('FetcherDispatcher', () => {
       expect(seenSignal.aborted).toBe(true)
     })
 
+    // Regression: React StrictMode's dev double-mount. The two tests above
+    // cover CONCURRENT waiters, where refcounting keeps the master live. They
+    // cannot cover the SEQUENTIAL order, which is the one StrictMode produces:
+    // cleanup and effect re-run happen in one synchronous commit, so the second
+    // mount always lands AFTER the first mount's abort and BEFORE _runFetcher's
+    // continuation clears the in-flight entry. A master that has already fired
+    // cannot be re-armed, so attaching there would hand the surviving mount a
+    // cancelled request — the block renders `content.data.<schema> === []`
+    // while a production (non-StrictMode) build renders fine.
+    it('starts a fresh fetch when the in-flight entry has already aborted', async () => {
+      const dataStore = new DataStore()
+      const signals = []
+      const defaultFetcher = {
+        resolve: vi.fn(
+          (req, ctx) =>
+            new Promise((resolve) => {
+              signals.push(ctx.signal)
+              const timer = setTimeout(() => resolve({ data: ['program-a'] }), 0)
+              // Mirrors default-fetcher.js: an aborted fetch RESOLVES with an
+              // error field, it does not throw.
+              ctx.signal?.addEventListener('abort', () => {
+                clearTimeout(timer)
+                resolve({ data: [], error: 'aborted' })
+              })
+            }),
+        ),
+      }
+      const d = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher })
+      const req = { path: '/data/programs.json', schema: 'programs' }
+
+      const c1 = new AbortController()
+      const p1 = d.dispatch(req, { signal: c1.signal }) // mount 1
+      c1.abort() //                                        cleanup 1
+      const c2 = new AbortController()
+      const p2 = d.dispatch(req, { signal: c2.signal }) // mount 2 (survives)
+
+      const [r1, r2] = await Promise.all([p1, p2])
+
+      // The abandoned first mount still sees its own cancellation…
+      expect(r1.error).toBe('aborted')
+      // …but the surviving mount gets a real result, not the corpse.
+      expect(r2.error).toBeUndefined()
+      expect(r2.data).toEqual(['program-a'])
+      // A second, independent request was issued rather than reusing the entry.
+      expect(defaultFetcher.resolve).toHaveBeenCalledTimes(2)
+      expect(signals[1].aborted).toBe(false)
+    })
+
     it('aborts the master immediately when the first attached signal is already aborted', async () => {
       const dataStore = new DataStore()
       let seenSignal
