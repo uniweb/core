@@ -38,7 +38,7 @@
     "vitest": "^4.1.7"
   },
   "dependencies": {
-    "@uniweb/semantic-parser": "workspace:*",
-    "@uniweb/theming": "workspace:*"
+    "@uniweb/semantic-parser": "workspace:^",
+    "@uniweb/theming": "workspace:^"
   }
 }
