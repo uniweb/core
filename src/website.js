@@ -14,6 +14,27 @@ import { resolveDefaultLocale } from './locale-config.js'
 import { matchDynamicRoute } from './route-match.js'
 
 /**
+ * Decode a route that arrived from a URL.
+ *
+ * `location.pathname` is percent-encoded per RFC 3986, while page routes and
+ * `i18n.routeTranslations` are authored as plain text — so the two are only
+ * comparable once the incoming side is decoded.
+ *
+ * Guarded rather than bare: a route may legitimately contain a `%` that is not
+ * an escape (`/100%-Guide` authored by hand, or a value already decoded once),
+ * and `decodeURIComponent` throws `URIError` on those. Falling back to the input
+ * keeps a malformed route matching exactly as well as it did before.
+ */
+function decodeRoute(route) {
+  if (typeof route !== 'string' || !route.includes('%')) return route
+  try {
+    return decodeURIComponent(route)
+  } catch {
+    return route
+  }
+}
+
+/**
  * Website — orchestration root for a single site instance.
  *
  * Accepts the site content payload plus the primary foundation and any
@@ -321,16 +342,32 @@ export default class Website {
     if (!locale || locale === this.siteDefaultLocale) return displayRoute
     const entry = this._routeTranslations[locale]
     if (!entry) return displayRoute
+
+    // The caller hands us a route that came from a URL, and a browser
+    // percent-encodes everything outside the unreserved set — so a French slug
+    // arrives as `/Sites-Web/Th%C3%A8me-du-site-Web`. The translation map is
+    // built from site.yml, where it is authored as plain text. Decoding here
+    // rather than at each call site is deliberate: getPage(), normalizeRoute()
+    // and getLocaleUrl() all feed this, and a future caller would have to
+    // remember otherwise.
+    //
+    // Without it translateRoute() emits a URL this method cannot read back —
+    // every translated route carrying a non-ASCII character or an apostrophe
+    // resolved to nothing and rendered the 404 page, while the SAME route with
+    // an all-ASCII slug worked. `route-match.js` already decodes captured
+    // params for exactly this reason.
+    const route = decodeRoute(displayRoute)
+
     // Exact match
-    const canonical = entry.reverse.get(displayRoute)
+    const canonical = entry.reverse.get(route)
     if (canonical) return canonical
     // Prefix match
     for (const [trans, canon] of entry.reverse) {
-      if (displayRoute.startsWith(trans + '/')) {
-        return canon + displayRoute.slice(trans.length)
+      if (route.startsWith(trans + '/')) {
+        return canon + route.slice(trans.length)
       }
     }
-    return displayRoute
+    return route
   }
 
   /**
@@ -412,7 +449,10 @@ export default class Website {
     // Strip locale prefix if present (e.g., '/fr/about' → '/about')
     // Pages are stored with non-prefixed routes; the locale is a URL concern,
     // not a page identity concern.
-    let stripped = route
+    // Decode before ANY comparison: a published payload can hold translated
+    // display routes verbatim, so the direct match below needs the same plain
+    // text form the reverse-translate path does.
+    let stripped = decodeRoute(route)
     if (this.activeLocale && this.activeLocale !== this.defaultLocale) {
       const prefix = `/${this.activeLocale}`
       if (stripped === prefix || stripped === `${prefix}/`) {
@@ -440,10 +480,17 @@ export default class Website {
     }
 
     // Reverse-translate display route to canonical (e.g., '/acerca-de' → '/about')
-    stripped = this.reverseTranslateRoute(stripped)
+    //
+    // Feed it the TRAILING-SLASH-NORMALIZED form. The translation map is keyed
+    // without a trailing slash, so `/acerca-de/` missed the exact lookup and
+    // fell through to the prefix branch, which rewrites only the FIRST segment
+    // — `/blogue/mi-articulo/` became `/blog/mi-articulo/`, leaving the child
+    // segment untranslated and pointing at no page. It looked like it worked
+    // for as long as every child slug happened to be identical in both locales.
+    stripped = this.reverseTranslateRoute(normalizedStripped)
 
-    // Normalize trailing slashes for consistent matching
-    // '/about/' and '/about' should match the same page
+    // A translation VALUE may itself carry a trailing slash, so normalize again
+    // rather than assuming the input normalization covered it.
     const normalizedRoute = stripped === '/' ? '/' : stripped.replace(/\/$/, '')
 
     // Priority 1b: Exact match on canonical route
