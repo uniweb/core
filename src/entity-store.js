@@ -14,8 +14,8 @@
  * and in-flight dedup.
  */
 
-import { substitutePlaceholders } from './substitute-placeholders.js'
 import { isFetchRefinement, resolveFetchConfigs } from './fetch-config.js'
+import { buildDetailConfig } from './detail-url.js'
 
 /**
  * Is `block.fetch` a per-instance refinement of the ancestor's fetch config
@@ -157,67 +157,12 @@ export default class EntityStore {
   /**
    * Build a detail-URL fetch config from a collection config + dynamic context.
    *
-   * Three forms of `detail:`:
-   *   - `'rest'`                — append paramValue as a path segment.
-   *   - `'query'`               — append `?paramName=paramValue`.
-   *   - `'/articles/{slug}'`    — custom URL pattern with {paramName} placeholders.
-   *   - `{ body, envelope }`    — object form. Reuses the collection's url /
-   *                               method / headers / auth; adds per-detail
-   *                               body (with placeholder substitution) and
-   *                               per-detail envelope.
+   * Delegates to the exported resolver so a host fetching this record
+   * server-side reaches the identical rule — see `./detail-url.js` for why the
+   * four `detail:` forms are a contract rather than an implementation detail.
    */
   _buildDetailConfig(collectionConfig, dynamicContext) {
-    const { detail } = collectionConfig
-    if (!detail) return null
-    const { paramName, paramValue } = dynamicContext
-    if (!paramName || paramValue === undefined) return null
-
-    const baseUrl = collectionConfig.url || collectionConfig.path
-    if (!baseUrl) return null
-    const isLocalPath = !!collectionConfig.path && !collectionConfig.url
-
-    // Object form: `detail: { body, envelope }`. Reuses collection's URL +
-    // method + headers + auth. The body is placeholder-substituted against
-    // the dynamic context so `body: { variables: { slug: "{slug}" } }` works.
-    if (detail && typeof detail === 'object') {
-      const out = {
-        ...(isLocalPath ? { path: baseUrl } : { url: baseUrl }),
-        schema: collectionConfig.schema,
-        transform: collectionConfig.transform,
-      }
-      if (collectionConfig.method) out.method = collectionConfig.method
-      if (detail.body !== undefined) {
-        out.body = substitutePlaceholders(detail.body, { [paramName]: paramValue }, { encode: false })
-      } else if (collectionConfig.body !== undefined) {
-        out.body = substitutePlaceholders(collectionConfig.body, { [paramName]: paramValue }, { encode: false })
-      }
-      if (detail.envelope) out.envelope = detail.envelope
-      return out
-    }
-
-    // String-form: URL-based conventions.
-    let detailUrl
-    if (detail === 'rest') {
-      const [basePath, queryString] = baseUrl.split('?')
-      const cleanBase = basePath.replace(/\/$/, '')
-      detailUrl = queryString
-        ? `${cleanBase}/${encodeURIComponent(paramValue)}?${queryString}`
-        : `${cleanBase}/${encodeURIComponent(paramValue)}`
-    } else if (detail === 'query') {
-      const sep = baseUrl.includes('?') ? '&' : '?'
-      detailUrl = `${baseUrl}${sep}${paramName}=${encodeURIComponent(paramValue)}`
-    } else {
-      // Custom pattern like '/articles/{slug}' — substitute placeholders
-      // from the dynamic-route context. Only placeholders matching the
-      // active paramName resolve; others pass through as literal `{name}`.
-      detailUrl = substitutePlaceholders(detail, { [paramName]: paramValue })
-    }
-
-    return {
-      ...(isLocalPath ? { path: detailUrl } : { url: detailUrl }),
-      schema: collectionConfig.schema,
-      transform: collectionConfig.transform,
-    }
+    return buildDetailConfig(collectionConfig, dynamicContext)
   }
 
   /**
