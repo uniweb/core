@@ -11,28 +11,7 @@ import FetcherDispatcher from './fetcher-dispatcher.js'
 import ObservableState from './observable-state.js'
 import { normalizeSeo } from './seo.js'
 import { resolveDefaultLocale } from './locale-config.js'
-import { matchDynamicRoute } from './route-match.js'
-
-/**
- * Decode a route that arrived from a URL.
- *
- * `location.pathname` is percent-encoded per RFC 3986, while page routes and
- * `i18n.routeTranslations` are authored as plain text — so the two are only
- * comparable once the incoming side is decoded.
- *
- * Guarded rather than bare: a route may legitimately contain a `%` that is not
- * an escape (`/100%-Guide` authored by hand, or a value already decoded once),
- * and `decodeURIComponent` throws `URIError` on those. Falling back to the input
- * keeps a malformed route matching exactly as well as it did before.
- */
-function decodeRoute(route) {
-  if (typeof route !== 'string' || !route.includes('%')) return route
-  try {
-    return decodeURIComponent(route)
-  } catch {
-    return route
-  }
-}
+import { matchDynamicRoute, decodeRouteValue } from './route-match.js'
 
 /**
  * Website — orchestration root for a single site instance.
@@ -354,9 +333,9 @@ export default class Website {
     // Without it translateRoute() emits a URL this method cannot read back —
     // every translated route carrying a non-ASCII character or an apostrophe
     // resolved to nothing and rendered the 404 page, while the SAME route with
-    // an all-ASCII slug worked. `route-match.js` already decodes captured
-    // params for exactly this reason.
-    const route = decodeRoute(displayRoute)
+    // an all-ASCII slug worked. The helper is shared with the captured-param
+    // decode in `route-match.js`, which needs the identical guard.
+    const route = decodeRouteValue(displayRoute)
 
     // Exact match
     const canonical = entry.reverse.get(route)
@@ -452,7 +431,7 @@ export default class Website {
     // Decode before ANY comparison: a published payload can hold translated
     // display routes verbatim, so the direct match below needs the same plain
     // text form the reverse-translate path does.
-    let stripped = decodeRoute(route)
+    let stripped = decodeRouteValue(route)
     if (this.activeLocale && this.activeLocale !== this.defaultLocale) {
       const prefix = `/${this.activeLocale}`
       if (stripped === prefix || stripped === `${prefix}/`) {
