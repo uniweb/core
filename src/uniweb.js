@@ -12,7 +12,7 @@
  */
 
 import Website from './website.js'
-import Analytics from './analytics.js'
+import Tracker from './tracker.js'
 
 export default class Uniweb {
   /**
@@ -72,7 +72,21 @@ export default class Uniweb {
     // Populated by prerender before rendering, read synchronously by Icon.
     this.iconCache = new Map()
 
-    this.analytics = new Analytics(content?.analytics || content?.config?.analytics || {})
+    // Site tracking — one event stream (`kb/framework/plans/tracking.md`).
+    //
+    // ⛔ Deliberately constructed DISABLED, and the runtime replaces it in L2
+    // (`wire-foundation.js` → `wireTracker`). It cannot be configured here even
+    // though `activeWebsite` already exists two lines up, because the address is
+    // resolved against `website.basePath` and **that is still `''` at this
+    // point** — `setBasePath()` runs later, from the runtime. Resolving here
+    // would silently drop the base prefix on every subdirectory deployment.
+    //
+    // The disabled instance is not a placeholder to null-check: it is a working
+    // no-op, so `uniweb.tracking.track(…)` is safe in every lane — press,
+    // unipress, an SSR isolate, or before wiring — with no guard at the call
+    // site. Same slot-declared-here-so-seal-permits-assignment pattern as
+    // `defaultInsets` above.
+    this.tracking = new Tracker()
 
     Object.seal(this)
   }

@@ -237,3 +237,52 @@ describe('Block', () => {
     })
   })
 })
+
+describe('Block.track', () => {
+  function trackingPage(route = '/blog') {
+    return {
+      website: { getDefaultBlockType: () => 'DefaultSection' },
+      getBlockIndex: () => 0,
+      getBlockInfo: () => null,
+      getNavRoute: () => route,
+    }
+  }
+
+  afterEach(() => {
+    delete globalThis.uniweb
+  })
+
+  it('attaches the page path and the section type', () => {
+    const track = vi.fn()
+    globalThis.uniweb = { tracking: { track } }
+    const block = new Block({ type: 'VideoHero', content: {} }, '1', trackingPage('/about'))
+
+    block.track('video_milestone', { milestone: 50 })
+
+    expect(track).toHaveBeenCalledWith('video_milestone', {
+      path: '/about',
+      section: 'VideoHero',
+      milestone: 50,
+    })
+  })
+
+  it('lets the caller override the derived context', () => {
+    const track = vi.fn()
+    globalThis.uniweb = { tracking: { track } }
+    const block = new Block({ type: 'Hero', content: {} }, '1', trackingPage('/a'))
+
+    block.track('custom', { section: 'Elsewhere' })
+
+    expect(track).toHaveBeenCalledWith('custom', { path: '/a', section: 'Elsewhere' })
+  })
+
+  // The whole point of the no-op contract: a foundation calls this
+  // unconditionally, and a site with no tracking destination is the default.
+  it('does not throw when nothing is wired', () => {
+    const block = new Block({ type: 'Hero', content: {} }, '1', trackingPage())
+    expect(() => block.track('x', { a: 1 })).not.toThrow()
+
+    globalThis.uniweb = {} // singleton present, tracker absent
+    expect(() => block.track('x')).not.toThrow()
+  })
+})

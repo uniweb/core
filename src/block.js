@@ -274,6 +274,39 @@ export default class Block {
   }
 
   /**
+   * Report an event from this section — a video milestone, a download, an
+   * expand, anything the foundation considers worth counting.
+   *
+   * ```js
+   * block.track('video_milestone', { milestone: 50 })
+   * ```
+   *
+   * The section type and the page path are attached automatically, because a
+   * block already knows both — a foundation should not have to thread context
+   * it was handed. Same arrangement as `useFormSubmit({ block })`.
+   *
+   * ⛔ **No guard is needed at the call site.** A site with no tracking
+   * destination is the default: the call returns having done nothing, opened no
+   * connection and thrown nothing. Absent is the normal state, not an error.
+   *
+   * ⭐ **This is the one tracking entry point that is not behind kit**, and that
+   * is deliberate rather than an exception: the block **arrives as a prop**
+   * (`{ content, params, block }`), so calling a method on it is not reaching
+   * for the `uniweb` global — which foundations must never do. For an event
+   * with no block in hand, use kit's `useTracker()`.
+   *
+   * @param {string} event - event name; the registry is open
+   * @param {Object} [data] - the caller's own fields
+   */
+  track(event, data = {}) {
+    globalThis.uniweb?.tracking?.track(event, {
+      path: this.path,
+      section: this.type,
+      ...data
+    })
+  }
+
+  /**
    * The parent page's URL path, one level up from the current page.
    * Use this for "Back" links in detail pages: /blog/1 → /blog
    *

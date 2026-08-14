@@ -37,6 +37,12 @@ export {
 } from './data-paths.js'
 export { evaluate as evaluateWhere, match as matchWhere } from './where.js'
 export { isRichSchema, normalizeSchema } from './schemas.js'
+export { default as Tracker } from './tracker.js'
+// Also available as the zero-dependency leaves `@uniweb/core/services` and
+// `@uniweb/core/base-path` — which is how `@uniweb/runtime` reaches them,
+// since it must not pull the package root into an SSR/Worker bundle.
+export { resolveService, resolveServiceUrl, readServiceOptions } from './services.js'
+export { applyBasePath } from './base-path.js'
 export {
   resolveStyle as resolveRequestStyle,
   listStyleNames as listRequestStyleNames

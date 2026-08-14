@@ -5,12 +5,15 @@
   "type": "module",
   "exports": {
     ".": "./src/index.js",
+    "./base-path": "./src/base-path.js",
     "./data-paths": "./src/data-paths.js",
     "./detail-url": "./src/detail-url.js",
     "./fetch-config": "./src/fetch-config.js",
     "./locale-config": "./src/locale-config.js",
     "./route-match": "./src/route-match.js",
-    "./section-id": "./src/section-id.js"
+    "./section-id": "./src/section-id.js",
+    "./services": "./src/services.js",
+    "./tracker": "./src/tracker.js"
   },
   "files": [
     "src"
