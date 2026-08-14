@@ -18,6 +18,7 @@ import {
   normalizeRoute,
   isDynamicRoute,
   stripLocalePrefix,
+  decodeRouteValue,
 } from '../src/route-match.js'
 
 describe('matchDynamicRoute — what a param matches', () => {
@@ -53,6 +54,26 @@ describe('matchDynamicRoute — what a param matches', () => {
   it('decodes percent-encoding in the captured value', () => {
     expect(matchDynamicRoute('/blog/:slug', '/blog/caf%C3%A9')).toEqual({
       params: { slug: 'café' },
+    })
+  })
+
+  // A path segment is attacker-controlled, and this runs inside the request
+  // path on hosts that resolve routes server-side — so an unguarded decode is
+  // a visitor-triggerable 500 on any site with a dynamic route. Keeping the raw
+  // capture rather than returning null is deliberate: a malformed escape must
+  // not turn into a 404 on a page that exists.
+  it('does not throw on a malformed escape — keeps the raw capture', () => {
+    expect(matchDynamicRoute('/blog/:slug', '/blog/%zz')).toEqual({
+      params: { slug: '%zz' },
+    })
+    expect(matchDynamicRoute('/blog/:slug', '/blog/100%-guide')).toEqual({
+      params: { slug: '100%-guide' },
+    })
+  })
+
+  it('decodes what it can even when another param is malformed', () => {
+    expect(matchDynamicRoute('/:a/:b', '/caf%C3%A9/%zz')).toEqual({
+      params: { a: 'café', b: '%zz' },
     })
   })
 
@@ -129,6 +150,24 @@ describe('routePatternToRegex', () => {
       true,
       true,
     ])
+  })
+})
+
+describe('decodeRouteValue', () => {
+  it('decodes a well-formed escape', () => {
+    expect(decodeRouteValue('caf%C3%A9')).toBe('café')
+    expect(decodeRouteValue('/Sites-Web/Th%C3%A8me')).toBe('/Sites-Web/Thème')
+  })
+
+  it('returns the input for a malformed escape instead of throwing', () => {
+    expect(decodeRouteValue('%zz')).toBe('%zz')
+    expect(decodeRouteValue('/100%-Guide')).toBe('/100%-Guide')
+    expect(decodeRouteValue('%')).toBe('%')
+  })
+
+  it('passes through anything without a percent, including non-strings', () => {
+    expect(decodeRouteValue('/about')).toBe('/about')
+    expect(decodeRouteValue(undefined)).toBeUndefined()
   })
 })
 

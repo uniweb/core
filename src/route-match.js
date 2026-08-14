@@ -101,6 +101,35 @@ export function routePatternToRegex(pattern) {
 }
 
 /**
+ * Decode a value that arrived from a URL, falling back to the raw input.
+ *
+ * Guarded rather than bare, for two independent reasons:
+ *
+ * A `%` that is not an escape is legitimate content — `/100%-Guide` authored by
+ * hand, or a value that has already been decoded once — and `decodeURIComponent`
+ * throws `URIError` on those. Falling back to the input keeps such a route
+ * matching exactly as well as it did before.
+ *
+ * And the input is attacker-controlled: `/blog/%zz` is a URL anyone can paste or
+ * link. This module is called by hosts that resolve a path to a page *per
+ * request*, where a throw out of the matcher is a visitor-triggerable 500 rather
+ * than a client-side error. A malformed escape is not a reason to lose an
+ * otherwise-good match, so the fallback is the raw capture rather than a miss —
+ * a route miss would turn a typo'd escape into a 404 on a page that exists.
+ *
+ * @param {string} value
+ * @returns {string}
+ */
+export function decodeRouteValue(value) {
+  if (typeof value !== 'string' || !value.includes('%')) return value
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
+/**
  * Match a concrete path against a route pattern.
  *
  * ```js
@@ -109,8 +138,9 @@ export function routePatternToRegex(pattern) {
  * matchDynamicRoute('/blog/:slug', '/blog/')         // → null  (a param is non-empty)
  * ```
  *
- * Captured values are `decodeURIComponent`-ed, so a path carries percent
- * encoding and the param does not.
+ * Captured values are decoded, so a path carries percent encoding and the param
+ * does not. A malformed escape falls back to the raw capture rather than
+ * throwing — see `decodeRouteValue`. This function does not throw.
  *
  * @param {string} pattern - Route pattern with `:param` placeholders
  * @param {string} path - Concrete path to match
@@ -123,7 +153,7 @@ export function matchDynamicRoute(pattern, path) {
 
   const params = {}
   paramNames.forEach((name, i) => {
-    params[name] = decodeURIComponent(match[i + 1])
+    params[name] = decodeRouteValue(match[i + 1])
   })
   return { params }
 }
