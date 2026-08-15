@@ -343,12 +343,12 @@ describe('consent', () => {
     expect(tracker.consentStatus()).toBe('granted')
   })
 
-  it('records the decision in a FRAMED document — the editor preview', async () => {
+  it('records the decision in a FRAMED document', async () => {
     // Enablement and consent answer different questions: "have we anywhere to
-    // send?" and "what did the visitor say?". A framed tracker is disabled, but
-    // an author building a consent banner has to be able to watch it work, and
-    // the suppression that matters is on the sending rather than the
-    // remembering.
+    // send?" and "what did the visitor say?". The framed suppression exists so
+    // an authoring session cannot inflate a site's numbers, and it belongs on
+    // the sending — a status that can never move leaves a banner rendered and
+    // undismissable.
     const tracker = await freshTracker(
       { endpoint: ENDPOINT, consentRequired: true },
       makeBrowser({ framed: true })

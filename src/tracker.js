@@ -225,17 +225,17 @@ export default class Tracker {
    *
    * ⛔ **Recording the decision is NOT gated on `isEnabled()`, deliberately.**
    * Consent is *the visitor's answer*; enablement is *whether we have anywhere
-   * to send*. They are different questions and conflating them silently broke
-   * the one surface a consent component has:
+   * to send*. Two different questions, and conflating them meant a decision
+   * could not be recorded **when no destination resolved** — benign while our
+   * own queue is the only thing gated on consent, a correctness bug the moment
+   * anything else is.
    *
-   *   - in the **editor preview** the tracker is framed and therefore disabled,
-   *     so `grant()` did nothing and `useTrackingConsent()` never moved off
-   *     `'granted'` — an author could not see their own banner work while
-   *     building it, and the banner is exactly the kind of thing you build by
-   *     looking at it.
-   *   - with **no destination resolved**, a decision could not be recorded at
-   *     all — which becomes a correctness bug the moment anything other than
-   *     our own queue is gated on it.
+   * The same conflation suppressed recording inside a framed document. That
+   * suppression exists so an authoring session cannot inflate a site's own
+   * numbers (see `detectFramed`), and it belongs on the *sending*: with
+   * `consentRequired` the status starts `'pending'` and could not move at all,
+   * so a banner following the documented pattern would render and then never
+   * dismiss.
    *
    * Nothing is sent as a result: `flush()` keeps its own `isEnabled()` guard,
    * so a disabled tracker still transmits nothing no matter what is recorded
