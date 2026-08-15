@@ -343,6 +343,36 @@ describe('consent', () => {
     expect(tracker.consentStatus()).toBe('granted')
   })
 
+  it('records the decision in a FRAMED document — the editor preview', async () => {
+    // Enablement and consent answer different questions: "have we anywhere to
+    // send?" and "what did the visitor say?". A framed tracker is disabled, but
+    // an author building a consent banner has to be able to watch it work, and
+    // the suppression that matters is on the sending rather than the
+    // remembering.
+    const tracker = await freshTracker(
+      { endpoint: ENDPOINT, consentRequired: true },
+      makeBrowser({ framed: true })
+    )
+    expect(tracker.consentStatus()).toBe('pending')
+
+    tracker.setConsent(true)
+
+    expect(tracker.consentStatus()).toBe('granted')
+    // Controls: recording a decision is not emitting one.
+    expect(tracker.isEnabled()).toBe(false)
+    expect(globalThis.fetch).not.toHaveBeenCalled()
+  })
+
+  it('records the decision with NO destination resolved', async () => {
+    const tracker = await freshTracker({ consentRequired: true }, makeBrowser())
+    expect(tracker.consentStatus()).toBe('pending')
+
+    tracker.setConsent(false)
+
+    expect(tracker.consentStatus()).toBe('denied')
+    expect(globalThis.fetch).not.toHaveBeenCalled()
+  })
+
   it('caps the pending buffer so an unanswered banner cannot grow it forever', async () => {
     const tracker = await pending()
     for (let i = 0; i < 200; i++) tracker.track(`e${i}`)

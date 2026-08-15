@@ -223,10 +223,27 @@ export default class Tracker {
    * decision, and the views that preceded the click are not lost. Denying
    * discards the buffer and stops accepting.
    *
+   * ⛔ **Recording the decision is NOT gated on `isEnabled()`, deliberately.**
+   * Consent is *the visitor's answer*; enablement is *whether we have anywhere
+   * to send*. They are different questions and conflating them silently broke
+   * the one surface a consent component has:
+   *
+   *   - in the **editor preview** the tracker is framed and therefore disabled,
+   *     so `grant()` did nothing and `useTrackingConsent()` never moved off
+   *     `'granted'` — an author could not see their own banner work while
+   *     building it, and the banner is exactly the kind of thing you build by
+   *     looking at it.
+   *   - with **no destination resolved**, a decision could not be recorded at
+   *     all — which becomes a correctness bug the moment anything other than
+   *     our own queue is gated on it.
+   *
+   * Nothing is sent as a result: `flush()` keeps its own `isEnabled()` guard,
+   * so a disabled tracker still transmits nothing no matter what is recorded
+   * here. This changes what the tracker *remembers*, never what it *emits*.
+   *
    * @param {boolean} granted
    */
   setConsent(granted) {
-    if (!this.isEnabled()) return
     this.consent = granted ? 'granted' : 'denied'
     if (granted) {
       this.flush()
