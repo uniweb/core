@@ -180,9 +180,6 @@ export default class Tracker {
     // reports three times.
     this.currentPath = null
 
-    this.flushIntervalId = null
-    this.onPageHide = null
-    this.onVisibilityChange = null
     this.framed = detectFramed()
 
     // Called once when consent moves to granted, and never otherwise. The
@@ -384,35 +381,34 @@ export default class Tracker {
     })
   }
 
-  /** @private */
+  /**
+   * Both of these are armed once, for the life of the document, and are never
+   * detached — so neither the interval id nor the handler references are kept.
+   *
+   * ⛔ **There is deliberately no `destroy()`.** One shipped, was called by
+   * nothing, and cost 334 bytes minified in a package **every site loads
+   * whether it tracks or not** (`@uniweb/core` is not tree-shaken — the
+   * singleton's constructor holds a `Tracker`, so the class can never be
+   * dropped). Removing it took three instance fields with it, since they
+   * existed only to serve it.
+   *
+   * ⭐ The precedent is the thing this class replaced: `analytics.js` was dead
+   * code that shipped to every site for months because nobody deleted it.
+   * Adding a never-called teardown method would have been the same mistake at
+   * smaller scale. If a lifecycle that needs teardown ever appears, it arrives
+   * *with* its call site — which is the order that keeps this honest.
+   *
+   * @private
+   */
   armFlushInterval() {
-    this.flushIntervalId = setInterval(() => this.flush(), this.flushInterval)
+    setInterval(() => this.flush(), this.flushInterval)
   }
 
   /** @private */
   armUnloadHandlers() {
-    this.onPageHide = () => this.flush(true)
-    this.onVisibilityChange = () => {
+    window.addEventListener('pagehide', () => this.flush(true))
+    window.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') this.flush(true)
-    }
-    window.addEventListener('pagehide', this.onPageHide)
-    window.addEventListener('visibilitychange', this.onVisibilityChange)
-  }
-
-  /** Stop the interval, detach listeners, and send what is left. */
-  destroy() {
-    if (this.flushIntervalId) {
-      clearInterval(this.flushIntervalId)
-      this.flushIntervalId = null
-    }
-    if (isBrowser) {
-      if (this.onPageHide) window.removeEventListener('pagehide', this.onPageHide)
-      if (this.onVisibilityChange) {
-        window.removeEventListener('visibilitychange', this.onVisibilityChange)
-      }
-    }
-    this.onPageHide = null
-    this.onVisibilityChange = null
-    this.flush(true)
+    })
   }
 }

@@ -65,8 +65,19 @@ describe('absent means no-op', () => {
     const tracker = await freshTracker({}, browser)
 
     expect(tracker.isEnabled()).toBe(false)
-    expect(tracker.flushIntervalId).toBe(null)
+    expect(vi.getTimerCount()).toBe(0)
     expect(Object.keys(browser.listeners)).toHaveLength(0)
+  })
+
+  it('control — a CONFIGURED tracker does arm both', async () => {
+    // Without this the assertion above passes for any tracker, including one
+    // that never arms anything under any circumstances.
+    const browser = makeBrowser()
+    const tracker = await freshTracker({ endpoint: ENDPOINT }, browser)
+
+    expect(tracker.isEnabled()).toBe(true)
+    expect(vi.getTimerCount()).toBe(1)
+    expect(Object.keys(browser.listeners).sort()).toEqual(['pagehide', 'visibilitychange'])
   })
 
   it('swallows every call without throwing or queueing', async () => {
@@ -78,7 +89,6 @@ describe('absent means no-op', () => {
       tracker.flush()
       tracker.flush(true)
       tracker.setConsent(true)
-      tracker.destroy()
     }).not.toThrow()
 
     expect(tracker.queue).toHaveLength(0)
@@ -394,19 +404,6 @@ describe('delivery', () => {
     expect(tracker.queue).toHaveLength(0)
     tracker.track('b')
     expect(globalThis.fetch).toHaveBeenCalledTimes(2) // one per event, not a loop
-  })
-
-  it('arms the interval and unload listeners only when enabled', async () => {
-    const browser = makeBrowser()
-    const tracker = await freshTracker({ endpoint: ENDPOINT }, browser)
-
-    expect(tracker.flushIntervalId).not.toBe(null)
-    expect(Object.keys(browser.listeners).sort()).toEqual(['pagehide', 'visibilitychange'])
-
-    tracker.destroy()
-    expect(tracker.flushIntervalId).toBe(null)
-    expect(browser.listeners.pagehide).toHaveLength(0)
-    expect(browser.listeners.visibilitychange).toHaveLength(0)
   })
 
   it('flushes on the interval', async () => {
