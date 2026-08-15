@@ -160,8 +160,11 @@ export default class Tracker {
     // 'granted' | 'denied' | 'pending'. Without a consent requirement the
     // operator's act of declaring a destination IS the decision, and the
     // framework does not presume a jurisdiction on their behalf.
+    // ⛔ The requirement is consumed HERE and not stored. A `consentRequired`
+    // field was kept alongside and read by nothing — dead instance state in a
+    // class every site loads, which is what `destroy()` and its three fields
+    // were removed for. The starting status is the whole of what the flag means.
     this.consent = options.consentRequired ? 'pending' : 'granted'
-    this.consentRequired = !!options.consentRequired
 
     this.queue = []
     this.acquisition = null
