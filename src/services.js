@@ -180,26 +180,62 @@ export function resolveService(website, name) {
 }
 
 /**
- * Read a service's declaration object, whichever tier supplied it.
+ * Read a service's options, filling each key from the first tier that declares
+ * it — **the site's value wins per key, and the host fills the gaps.**
  *
  * `resolveService` answers *where*; this answers *with what options*. Only the
  * object form carries any — a shorthand string is an address and nothing else.
- * Used by `tracking:` for `consent:`; a future service with its own options
- * reads them the same way rather than inventing a second lookup.
  *
- * The tiers are checked in the same order and for the same reason, so a site
- * that authors the object form is not silently merged with a host's.
+ * ## ⛔ Why per-key rather than all-or-nothing
+ *
+ * This used to return the site's object whole whenever the site declared
+ * *anything*, so a single authored key hid every option the host offered. That
+ * put the two readers in this file on different rules, and the disagreement was
+ * not cosmetic:
+ *
+ *   - `resolveService` already falls through **per key** — a site declaration
+ *     carrying no `endpoint` lets the host's endpoint answer.
+ *   - `readServiceOptions` fell through **not at all**.
+ *
+ * ⇒ A site declaring only `tracking: { tags: [...] }` therefore kept sending to
+ * the **host's** endpoint while discarding the **host's** `consent` setting —
+ * using someone's collector while ignoring their gate. Not a corner case: it is
+ * what an operator gets by turning on a third-party tag while their host
+ * supplies the collector.
+ *
+ * One rule now covers both readers, and it is the one a reader of two-tier
+ * config already expects: the more specific tier wins where it speaks, and says
+ * nothing where it is silent.
+ *
+ * ⚖️ **Consequence worth stating, because it decides a question that would
+ * otherwise need its own rule:** a host's `consent` applies only when the site
+ * declared none. That is the host *filling a gap*, never overriding an
+ * operator's decision — so there is no "most restrictive wins" special case,
+ * and an operator who wants no gate on a host that asks for one writes
+ * `consent: none` and is done.
+ *
+ * ⚠️ **The merge is shallow and deliberately so.** Keys replace, they do not
+ * combine: a site's `tags` replaces a host's rather than concatenating with it.
+ * Combining would make the result depend on what a host happens to offer, which
+ * is precisely the unpredictability a site's own config should not have.
  *
  * @param {object} website
  * @param {string} name
- * @returns {object} the declaration object, or `{}` when there is none
+ * @returns {object} the effective options, or `{}` when no tier declares any
  */
 export function readServiceOptions(website, name) {
   const config = website?.config
-  const authored = config?.[name]
-  if (authored !== undefined) {
-    return authored && typeof authored === 'object' ? authored : {}
-  }
-  const hosted = config?.services?.[name]
-  return hosted && typeof hosted === 'object' ? hosted : {}
+  return { ...asOptions(config?.services?.[name]), ...asOptions(config?.[name]) }
+}
+
+/**
+ * A declaration contributes options only in its object form. A string is an
+ * address, an array is malformed, and neither carries a key worth spreading.
+ *
+ * @param {*} declaration
+ * @returns {object}
+ */
+function asOptions(declaration) {
+  if (!declaration || typeof declaration !== 'object' || Array.isArray(declaration)) return {}
+  return declaration
 }
