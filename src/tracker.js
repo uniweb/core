@@ -185,6 +185,15 @@ export default class Tracker {
     this.onVisibilityChange = null
     this.framed = detectFramed()
 
+    // Called once when consent moves to granted, and never otherwise. The
+    // runtime uses it to load a site's declared third-party tags at the moment
+    // they become permitted; nothing in core knows or cares what it does.
+    //
+    // ⛔ Declared HERE because the instance is sealed below — an assignment to
+    // an undeclared property throws in module code, and the caller assigns this
+    // after construction. Same reason `Uniweb.defaultInsets` is pre-declared.
+    this.onGranted = null
+
     if (isBrowser && this.isEnabled()) {
       this.acquisition = captureAcquisition()
       // Minted even when consent is pending: events buffered before the visitor
@@ -200,14 +209,30 @@ export default class Tracker {
   }
 
   /**
-   * Enabled means: a destination exists, we are in a browser, and we are not
-   * inside someone's iframe. Consent is checked separately — a consent-pending
-   * tracker is *enabled* and buffering, which is a different state from off.
+   * Whether this document is one where the site's telemetry should run at all —
+   * a real visit in a browser, rather than a server render or a framed
+   * authoring preview. Says nothing about whether anything is *configured*.
+   *
+   * Split out from `isEnabled()` because a second consumer needs exactly this
+   * half: the runtime loads a site's declared third-party tags, which have no
+   * endpoint of ours to check but must be suppressed in the same contexts and
+   * for the same reason. One predicate, so the two cannot drift.
+   *
+   * @returns {boolean}
+   */
+  isLiveDocument() {
+    return isBrowser && !this.framed
+  }
+
+  /**
+   * Enabled means: a destination exists, and this is a live document. Consent
+   * is checked separately — a consent-pending tracker is *enabled* and
+   * buffering, which is a different state from off.
    *
    * @returns {boolean}
    */
   isEnabled() {
-    return !!this.endpoint && isBrowser && !this.framed
+    return !!this.endpoint && this.isLiveDocument()
   }
 
   /** @returns {'granted'|'denied'|'pending'} */
@@ -244,11 +269,23 @@ export default class Tracker {
    * @param {boolean} granted
    */
   setConsent(granted) {
+    const wasGranted = this.consent === 'granted'
     this.consent = granted ? 'granted' : 'denied'
-    if (granted) {
-      this.flush()
-    } else {
+
+    if (!granted) {
       this.queue = []
+      return
+    }
+
+    this.flush()
+
+    // Fires on the TRANSITION only, so a component calling grant() twice does
+    // not load a site's tags twice. The callback is cleared as it runs: this is
+    // a one-time permission, not a subscription.
+    if (!wasGranted && this.onGranted) {
+      const notify = this.onGranted
+      this.onGranted = null
+      notify()
     }
   }
 
