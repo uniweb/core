@@ -48,6 +48,14 @@ export default class Page {
     // Rewrite target (if set, this route is served by an external site)
     this.rewrite = pageData.rewrite || null
 
+    // Opt this page into section-level instrumentation (`trackSections` in
+    // page.yml). Off by default, and PAGE-LEVEL ONLY — there is deliberately no
+    // site-wide or folder-level spelling, because one event per section on every
+    // page of a site produces far more distinct values than an analytics
+    // consumer can reasonably retain. The runtime reads it to decide whether to
+    // arm an observer; it means nothing without a tracking destination.
+    this.trackSections = pageData.trackSections || false
+
     // Two orthogonal visibility axes:
     //  • `hidden` — REACHABILITY. When true the page is excluded from the published
     //    site entirely (the build prunes it and its subtree); it survives only in
