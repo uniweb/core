@@ -7,6 +7,7 @@
 
 import { parseContent as parseSemanticContent } from '@uniweb/semantic-parser'
 import { normalizeTokenValue } from '@uniweb/theming'
+import { sectionDomId } from './section-id.js'
 
 /**
  * Lift container fences out of a content document.
@@ -285,6 +286,29 @@ export default class Block {
    * block already knows both — a foundation should not have to thread context
    * it was handed. Same arrangement as `useFormSubmit({ block })`.
    *
+   * ## ⭐ `section` and `section_id` answer DIFFERENT questions — both ride
+   *
+   * `section` is the component **type** (`Hero`); `section_id` is this
+   * **instance** (`section-hero`), the same string the renderers write as the
+   * DOM id, so it joins to the anchor a search result already links to.
+   *
+   * | | cardinality to a collector | survives a foundation swap | survives a content rename |
+   * |---|---|---|---|
+   * | `section` (type) | the foundation's vocabulary — bounded, small | ⛔ no | ✅ yes |
+   * | `section_id` (instance) | pages × sections — needs scoping to be storable | ✅ yes | ⛔ **no — a rename silently splits the series** |
+   *
+   * ⛔ **Both are sent, deliberately, and dropping either later is a wire
+   * break.** A consumer storing only one is free to ignore the other — the cost
+   * of carrying it is one field — whereas **collecting under an identity that is
+   * later changed throws the data away rather than merely delaying it.**
+   * *(Agreed 3-way with the backend and hosting lanes, 2026-08-17;
+   * `kb/framework/plans/tracking.md` §10b carries the cardinality numbers that
+   * are the reason.)*
+   *
+   * ⚠️ Instance identity on the wire is **`(path, section_id)`** — `path` is
+   * already here, so no `path#section` composite is ever sent and neither side
+   * keeps one in sync.
+   *
    * ⛔ **No guard is needed at the call site.** A site with no tracking
    * destination is the default: the call returns having done nothing, opened no
    * connection and thrown nothing. Absent is the normal state, not an error.
@@ -302,6 +326,7 @@ export default class Block {
     globalThis.uniweb?.tracking?.track(event, {
       path: this.path,
       section: this.type,
+      section_id: sectionDomId(this),
       ...data
     })
   }

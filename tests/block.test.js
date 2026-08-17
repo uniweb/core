@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import Block from '../src/block.js'
+import { sectionDomId } from '../src/section-id.js'
 
 // Minimal page/website mock
 function mockPage() {
@@ -252,28 +253,67 @@ describe('Block.track', () => {
     delete globalThis.uniweb
   })
 
-  it('attaches the page path and the section type', () => {
+  it('attaches the page path, the section type and the section instance id', () => {
     const track = vi.fn()
     globalThis.uniweb = { tracking: { track } }
-    const block = new Block({ type: 'VideoHero', content: {} }, '1', trackingPage('/about'))
+    const block = new Block(
+      { type: 'VideoHero', stableId: 'hero', content: {} },
+      '1',
+      trackingPage('/about')
+    )
 
     block.track('video_milestone', { milestone: 50 })
 
     expect(track).toHaveBeenCalledWith('video_milestone', {
       path: '/about',
       section: 'VideoHero',
+      section_id: 'section-hero',
       milestone: 50,
     })
+  })
+
+  // `section` and `section_id` answer different questions and a consumer may
+  // store either, so BOTH must ride — see the table in Block.track's docblock.
+  // The instance id is the one the renderers write as the DOM id, so it joins
+  // to the anchor a search result links to; deriving it here rather than
+  // formatting a string keeps `@uniweb/core/section-id` the only place the rule
+  // is written down (the search extractor already drifted from it once).
+  it('derives section_id by the SHARED rule, not a local spelling', () => {
+    const track = vi.fn()
+    globalThis.uniweb = { tracking: { track } }
+    const block = new Block({ type: 'Hero', stableId: 'pricing', content: {} }, '3', trackingPage())
+
+    block.track('section_view')
+
+    expect(track.mock.calls[0][1].section_id).toBe(sectionDomId(block))
+    expect(track.mock.calls[0][1].section_id).toBe('section-pricing')
+  })
+
+  // Caveat 2 of the wire contract: with no stableId the id falls back to the
+  // POSITIONAL index, which moves under reordering. A consumer detects that
+  // from the string itself — a purely numeric suffix means "do not trend this".
+  it('falls back to the positional id when a section has no stable identity', () => {
+    const track = vi.fn()
+    globalThis.uniweb = { tracking: { track } }
+    const block = new Block({ type: 'Hero', content: {} }, '2', trackingPage())
+
+    block.track('section_view')
+
+    expect(track.mock.calls[0][1].section_id).toBe('section-2')
   })
 
   it('lets the caller override the derived context', () => {
     const track = vi.fn()
     globalThis.uniweb = { tracking: { track } }
-    const block = new Block({ type: 'Hero', content: {} }, '1', trackingPage('/a'))
+    const block = new Block({ type: 'Hero', stableId: 'a', content: {} }, '1', trackingPage('/a'))
 
-    block.track('custom', { section: 'Elsewhere' })
+    block.track('custom', { section: 'Elsewhere', section_id: 'section-elsewhere' })
 
-    expect(track).toHaveBeenCalledWith('custom', { path: '/a', section: 'Elsewhere' })
+    expect(track).toHaveBeenCalledWith('custom', {
+      path: '/a',
+      section: 'Elsewhere',
+      section_id: 'section-elsewhere',
+    })
   })
 
   // The whole point of the no-op contract: a foundation calls this
