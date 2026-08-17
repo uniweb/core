@@ -407,10 +407,10 @@ export default class Block {
   /**
    * Options handed to the semantic parser for this block.
    *
-   * `assets` carries the host's asset-URL template (`config.assets.url`) so a
+   * `assets` carries the host's asset-URL pattern (`config.assets.url`) so a
    * node's `assetId`/`assetExt` resolve to a real URL. It is read from the
    * published payload and passed as an explicit input rather than reached for
-   * as module state — the parser must never know a host, and a template is the
+   * as module state — the parser must never know a host, and a pattern is the
    * only thing that tells it one.
    *
    * ⚠️ This depends on `website.config` being populated before a Block is
@@ -739,7 +739,7 @@ export default class Block {
    *
    * @param {string|Object} raw - Raw background value from frontmatter
    * @param {Object} [options] - Parse options; `options.assets.url` is the host's
-   *        asset-URL template, used to resolve a store-held background.
+   *        asset-URL pattern, used to resolve a store-held background.
    * @returns {Object} Normalized background config with mode
    */
   static normalizeBackground(raw, options) {
@@ -759,17 +759,17 @@ export default class Block {
    *
    * Same precedence as the node path: a store-held asset wins WHEN IT RESOLVES,
    * so a producer may write `assetId` beside a `src` and the `src` carries the
-   * render until a host declares a template.
+   * render until a host declares a pattern.
    */
   static resolveBackgroundMedia(bg, options) {
-    const template = options?.assets?.url
-    if (!template || !bg || typeof bg !== 'object') return bg
+    const pattern = options?.assets?.url
+    if (!pattern || !bg || typeof bg !== 'object') return bg
 
     let out = bg
     for (const key of ['image', 'video']) {
       const media = bg[key]
       if (!media || typeof media !== 'object') continue
-      const url = resolveAssetUrl(media.assetId, media.assetExt, template)
+      const url = resolveAssetUrl(media.assetId, media.assetExt, pattern)
       if (url) out = { ...out, [key]: { ...media, src: url } }
     }
     return out
