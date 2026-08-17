@@ -5,7 +5,10 @@
  * child blocks, and state management. Connects to foundation components.
  */
 
-import { parseContent as parseSemanticContent } from '@uniweb/semantic-parser'
+import {
+  parseContent as parseSemanticContent,
+  resolveAssetUrl
+} from '@uniweb/semantic-parser'
 import { normalizeTokenValue } from '@uniweb/theming'
 import { sectionDomId } from './section-id.js'
 
@@ -157,7 +160,7 @@ export default class Block {
     if (rawBg && !this.standardOptions.background) {
       this.standardOptions = {
         ...this.standardOptions,
-        background: Block.normalizeBackground(rawBg)
+        background: Block.normalizeBackground(rawBg, this.parseOptions())
       }
     }
 
@@ -726,9 +729,45 @@ export default class Block {
    * - Object without mode: mode inferred from which fields are present
    *
    * @param {string|Object} raw - Raw background value from frontmatter
+   * @param {Object} [options] - Parse options; `options.assets.url` is the host's
+   *        asset-URL template, used to resolve a store-held background.
    * @returns {Object} Normalized background config with mode
    */
-  static normalizeBackground(raw) {
+  static normalizeBackground(raw, options) {
+    return Block.resolveBackgroundMedia(Block.normalizeBackgroundShape(raw), options)
+  }
+
+  /**
+   * Resolve a store-held background asset (`assetId` + `assetExt`) to a `src`.
+   *
+   * ⭐ This runs HERE, at normalize time, and deliberately not at render. A
+   * background is drawn by two twinned implementations — `Background.jsx` (SPA)
+   * and `ssr-renderer.js` (SSG + edge) — which both read `background.image?.src`.
+   * Resolving at render would mean the identical change in both, and the twins
+   * drifting is this repo's standing hazard: the lane you tested keeps working
+   * while the other is wrong in production. One resolution here, and both lanes
+   * get it for free.
+   *
+   * Same precedence as the node path: a store-held asset wins WHEN IT RESOLVES,
+   * so a producer may write `assetId` beside a `src` and the `src` carries the
+   * render until a host declares a template.
+   */
+  static resolveBackgroundMedia(bg, options) {
+    const template = options?.assets?.url
+    if (!template || !bg || typeof bg !== 'object') return bg
+
+    let out = bg
+    for (const key of ['image', 'video']) {
+      const media = bg[key]
+      if (!media || typeof media !== 'object') continue
+      const url = resolveAssetUrl(media.assetId, media.assetExt, template)
+      if (url) out = { ...out, [key]: { ...media, src: url } }
+    }
+    return out
+  }
+
+  /** Shape normalization only — no resolution. See `normalizeBackground`. */
+  static normalizeBackgroundShape(raw) {
     // String shorthand — classify by content
     if (typeof raw === 'string') {
       // URL or path → image/video

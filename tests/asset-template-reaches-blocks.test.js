@@ -72,3 +72,54 @@ describe('config.assets reaches a Block at parse time', () => {
     expect(firstImageUrl(w)).toBe('/fallback.png')
   })
 })
+
+describe('section backgrounds resolve too', () => {
+  // A background is a media OBJECT on a section param, not an `image` node, so
+  // it never touches the parser. Raised by the backend lane from their own
+  // projection: `assetId` on a background would otherwise resolve nowhere, and a
+  // site whose inline images are future-proof while its backgrounds are not is
+  // worse than either form applied consistently.
+  const withBackground = (background) => ({
+    config: { name: 'Test', defaultLanguage: 'en', assets: { url: TEMPLATE } },
+    theme: {},
+    pages: [
+      {
+        route: '/',
+        isIndex: true,
+        title: 'Home',
+        sections: [{ type: 'Hero', content: { type: 'doc', content: [] }, params: { background } }],
+      },
+    ],
+  })
+
+  const bgOf = (content) =>
+    new Website({ content }).pages[0].bodyBlocks[0].standardOptions.background
+
+  it('resolves an image background through the template', () => {
+    const bg = bgOf(withBackground({ image: { assetId: ID, assetExt: 'jpg' } }))
+    expect(bg.mode).toBe('image')
+    expect(bg.image.src).toBe(`https://assets.example.com/dist/${ID}/base.jpg`)
+  })
+
+  it('resolves a video background', () => {
+    const bg = bgOf(withBackground({ video: { assetId: ID, assetExt: 'mp4' } }))
+    expect(bg.mode).toBe('video')
+    expect(bg.video.src).toBe(`https://assets.example.com/dist/${ID}/base.mp4`)
+  })
+
+  it('leaves a plain src background untouched', () => {
+    const bg = bgOf(withBackground({ image: { src: '/hero.jpg' } }))
+    expect(bg.image.src).toBe('/hero.jpg')
+  })
+
+  it('CONTROL: falls back to src when the site declares no template', () => {
+    const content = withBackground({ image: { assetId: ID, assetExt: 'jpg', src: '/old.jpg' } })
+    delete content.config.assets
+    expect(bgOf(content).image.src).toBe('/old.jpg')
+  })
+
+  it('does not disturb the non-media modes', () => {
+    expect(bgOf(withBackground('#ff0000')).mode).toBe('color')
+    expect(bgOf(withBackground('linear-gradient(red, blue)')).mode).toBe('gradient')
+  })
+})
