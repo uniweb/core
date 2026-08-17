@@ -402,10 +402,33 @@ export default class Block {
    * Uses @uniweb/semantic-parser for intelligent content extraction
    * Returns flat content structure
    */
+  /**
+   * Options handed to the semantic parser for this block.
+   *
+   * `assets` carries the host's asset-URL template (`config.assets.url`) so a
+   * node's `assetId`/`assetExt` resolve to a real URL. It is read from the
+   * published payload and passed as an explicit input rather than reached for
+   * as module state — the parser must never know a host, and a template is the
+   * only thing that tells it one.
+   *
+   * ⚠️ This depends on `website.config` being populated before a Block is
+   * constructed, and it is — but only because `Page.bodyBlocks` is a LAZY
+   * getter, so blocks are built at render, long after the Website constructor
+   * returns. The constructor itself assigns `this.pages` (line ~149) BEFORE
+   * `this.config` (line ~159), so an eager Block would parse against an empty
+   * config and every asset would silently fall through to `src` — working
+   * output, no error, no resolution. Do not make block construction eager
+   * without moving the config assignment first.
+   */
+  parseOptions() {
+    const assets = this.website?.config?.assets
+    return assets ? { assets } : {}
+  }
+
   extractFromProseMirror(doc) {
     try {
       // Parse with semantic-parser - returns flat structure
-      const parsed = parseSemanticContent(doc)
+      const parsed = parseSemanticContent(doc, this.parseOptions())
 
       // Parsed content is now flat: { title, pretitle, paragraphs, links, items, sequence, ... }
       return parsed
