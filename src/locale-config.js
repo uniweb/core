@@ -2,7 +2,7 @@
  * Shared locale-config helpers — the ONE home for the language rules that
  * build, sync, runtime, and the CLI all apply to a site's config.
  *
- * Contract (kb/framework/build/uwx-format.md → "Per-locale publish readiness"):
+ * Contract ("Per-locale publish readiness"):
  * - `languages` (site.yml) / `info.languages` (wire) — the DECLARED working
  *   set. A plain, strongly-validated string list.
  * - `publishLanguages` (site.yml) / `info.publish_languages` (wire) — publish

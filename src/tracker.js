@@ -4,7 +4,7 @@
  * ⭐ **A page visit is a trackable event.** That sentence is the design. There is
  * one destination, one envelope, and one queue; the runtime emits `page_view`
  * automatically and a foundation emits whatever else it likes, through the same
- * path. Design doc: `kb/framework/plans/tracking.md`.
+ * path.
  *
  * ```
  * { event: 'page_view',       path: '/about', referrer?, utm_* }
@@ -94,7 +94,7 @@ const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefine
  * symptom when forgotten, which is the whole reason this one reads the DOM
  * instead; two suppressions where one is authoritative is how you get a stale
  * one. The two guards now fail independently, in different repos, for the same
- * violation. `kb/framework/plans/tracking.md` §8.
+ * violation.
  */
 function detectFramed() {
   if (!isBrowser) return false

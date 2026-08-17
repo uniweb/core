@@ -304,9 +304,8 @@ export default class Block {
    * break.** A consumer storing only one is free to ignore the other — the cost
    * of carrying it is one field — whereas **collecting under an identity that is
    * later changed throws the data away rather than merely delaying it.**
-   * *(Agreed 3-way with the backend and hosting lanes, 2026-08-17;
-   * `kb/framework/plans/tracking.md` §10b carries the cardinality numbers that
-   * are the reason.)*
+   * *(Agreed across the producing and serving sides, 2026-08-17; the cardinality
+   * numbers that are the reason are recorded internally.)*
    *
    * ⚠️ Instance identity on the wire is **`(path, section_id)`** — `path` is
    * already here, so no `path#section` composite is ever sent and neither side

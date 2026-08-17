@@ -72,7 +72,7 @@ export default class Uniweb {
     // Populated by prerender before rendering, read synchronously by Icon.
     this.iconCache = new Map()
 
-    // Site tracking — one event stream (`kb/framework/plans/tracking.md`).
+    // Site tracking — one event stream.
     //
     // ⛔ Deliberately constructed DISABLED, and the runtime replaces it in L2
     // (`wire-foundation.js` → `wireTracker`). It cannot be configured here even
