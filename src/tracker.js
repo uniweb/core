@@ -71,6 +71,30 @@ const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefine
  * loudly.
  *
  * A cross-origin parent throws on `window.top` access; that also means framed.
+ *
+ * ⚠️ **The boundary condition: this checks `framed`, not `preview`.** A preview
+ * rendered in a popup or a top-level tab would be same-origin and NOT framed,
+ * `isLiveDocument()` would return true, and — like every failure in this area —
+ * it would have no symptom: the payload stays internally consistent while the
+ * owner's own edits quietly inflate their numbers.
+ *
+ * ✅ **Covered on the other side too, by a test rather than a promise**
+ * **[frontend, measured; relayed 2026-08-17]**: `preview-runtime` imports the
+ * real `setup` / `provider` / `foundation-loader` (not a fork), all five of its
+ * mounts are `<iframe>`, and the popup case is already instantiated —
+ * `DetachedPreview.jsx` is a popup *root* with the runtime in an iframe inside
+ * it, so the guard holds. A non-framed preview is not reachable by re-parenting
+ * at all: content and foundation arrive *only* over the frame-bridge, so going
+ * non-framed means replacing the transport. Their
+ * `previewFraming.smoke.test.js` pins both the iframe property and the exact set
+ * of mounting files, so a new mount fails there.
+ *
+ * ⛔ **Do not "fix" this by adding an explicit preview flag from the harness.**
+ * A suppression that depends on another lane remembering something has no
+ * symptom when forgotten, which is the whole reason this one reads the DOM
+ * instead; two suppressions where one is authoritative is how you get a stale
+ * one. The two guards now fail independently, in different repos, for the same
+ * violation. `kb/framework/plans/tracking.md` §8.
  */
 function detectFramed() {
   if (!isBrowser) return false
