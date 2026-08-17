@@ -420,7 +420,17 @@ export default class Block {
    * returns. The constructor itself assigns `this.pages` (line ~149) BEFORE
    * `this.config` (line ~159), so an eager Block would parse against an empty
    * config and every asset would silently fall through to `src` — working
-   * output, no error, no resolution. Do not make block construction eager
+   * output, no error, no resolution.
+   *
+   * ⚠️ **That getter now has a SECOND consumer, in another lane.** The editor
+   * relies on it re-running: `updateParams` → `website.rebuild` → `_applyContent`
+   * → `page.bodyBlocks` constructs fresh Blocks, which is what re-normalises a
+   * section background on every live edit (traced by the frontend lane,
+   * 2026-08-17, before deleting their own duplicate normaliser). So making block
+   * construction eager breaks background editing as well as asset resolution —
+   * two failures, two lanes, one cause, and neither visible from the other side.
+   *
+   * Do not make block construction eager
    * without moving the config assignment first.
    */
   parseOptions() {
