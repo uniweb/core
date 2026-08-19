@@ -171,13 +171,28 @@ export default class Tracker {
    * @param {Object} options
    * @param {string} [options.endpoint] - destination; **required to enable**
    * @param {boolean} [options.consentRequired=false] - hold everything until granted
-   * @param {number} [options.flushInterval=5000]
+   * @param {number} [options.flushIntervalMs=5000] - batch window, MILLISECONDS
    * @param {number} [options.maxQueueSize=10]
    * @param {boolean} [options.debug=false]
    */
   constructor(options = {}) {
     this.endpoint = options.endpoint || null
-    this.flushInterval = options.flushInterval || 5000
+    // ⭐ **`Ms` is in the name because the unit cannot be inferred from the
+    // value, and the failure is silent and inverted.** A bare `flushInterval:
+    // 30` meaning *thirty seconds* reads here as 30 **milliseconds** — flushing
+    // ~33x a second, the opposite of the intent, indistinguishable from working
+    // config, and paid for by the host rather than by whoever typed it. The wire
+    // field the host emits is `flushIntervalMs` for the same reason; this option
+    // is spelled to match so nothing has to translate between them.
+    //
+    // ⛔ **No floor is imposed, deliberately.** A minimum here would be a second
+    // copy of a policy the host already owns, able only to disagree with theirs —
+    // the same reason this framework never co-owns a serve location. What is
+    // rejected is not a *small* value but an *invalid* one: anything non-finite
+    // or <= 0 would arm a spinning or never-firing timer, so it falls back to the
+    // default rather than being honoured.
+    const interval = options.flushIntervalMs
+    this.flushIntervalMs = Number.isFinite(interval) && interval > 0 ? interval : 5000
     this.maxQueueSize = options.maxQueueSize || 10
     this.debug = options.debug || false
 
@@ -472,7 +487,7 @@ export default class Tracker {
    * @private
    */
   armFlushInterval() {
-    setInterval(() => this.flush(), this.flushInterval)
+    setInterval(() => this.flush(), this.flushIntervalMs)
   }
 
   /** @private */
