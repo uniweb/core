@@ -207,6 +207,17 @@ export default class Tracker {
     // reports three times.
     this.currentPath = null
 
+    // What the runtime may ARM, as two independent narrowings. Both are `null`
+    // when nothing narrows, which is the common case and the cheap one.
+    //
+    // ⛔ **Neither ever filters `track()`.** The registry is open by design, and
+    // a client-side allowlist over a foundation's own events would export one
+    // host's policy onto every host — including hosts that sent no list, whose
+    // sites would silently drop everything their foundation emits. These gate
+    // the runtime's OWN emissions and nothing else. See `arms()`.
+    this.hostEvents = options.hostEvents ? new Set(options.hostEvents) : null
+    this.siteEmit = options.siteEmit ? new Set(options.siteEmit) : null
+
     this.framed = detectFramed()
 
     // Called once when consent moves to granted, and never otherwise. The
@@ -257,6 +268,39 @@ export default class Tracker {
    */
   isEnabled() {
     return !!this.endpoint && this.isLiveDocument()
+  }
+
+  /**
+   * Whether the runtime should ARM one of its own automatic emitters.
+   *
+   * ⭐ **Three questions, in the order that makes each one's absence safe:**
+   *
+   * 1. **Is there anywhere to send, in a live document?** — `isEnabled()`.
+   * 2. **Will the host consume this?** `hostEvents` is the host's cost switch:
+   *    no point arming an observer for a row nobody stores. ⛔ **Absent means NO
+   *    NARROWING, never an empty set** — a host that sends no list is an older
+   *    or simpler one, and reading absence as "consume nothing" would take
+   *    every site on that host dark with every gate reading yes.
+   * 3. **Did the site ask for it?** `siteEmit` is the operator's own selection.
+   *    Absent means everything.
+   *
+   * `override` is the per-page answer where one exists (`page.trackSections`).
+   * It replaces the SITE's answer and cannot escape the host's: a page may
+   * widen what its own site configured, and may not conjure a row the host
+   * declined to store.
+   *
+   * ⛔ **Not consulted by `track()`.** A foundation's events are never gated —
+   * see the constructor.
+   *
+   * @param {string} event
+   * @param {boolean} [override] - the per-page decision, when the caller has one
+   * @returns {boolean}
+   */
+  arms(event, override) {
+    if (!this.isEnabled()) return false
+    if (this.hostEvents && !this.hostEvents.has(event)) return false
+    if (override != null) return !!override
+    return !this.siteEmit || this.siteEmit.has(event)
   }
 
   /** @returns {'granted'|'denied'|'pending'} */
@@ -333,7 +377,7 @@ export default class Tracker {
    * @param {string} path
    */
   trackPageView(path) {
-    if (!this.isEnabled() || !path) return
+    if (!this.arms('page_view') || !path) return
     if (path === this.currentPath) return
     this.currentPath = path
     // Promptly, rather than waiting out the batch window: a page view is the
