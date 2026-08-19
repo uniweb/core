@@ -48,13 +48,24 @@ export default class Page {
     // Rewrite target (if set, this route is served by an external site)
     this.rewrite = pageData.rewrite || null
 
-    // Opt this page into section-level instrumentation (`trackSections` in
-    // page.yml). Off by default, and PAGE-LEVEL ONLY — there is deliberately no
-    // site-wide or folder-level spelling, because one event per section on every
-    // page of a site produces far more distinct values than an analytics
-    // consumer can reasonably retain. The runtime reads it to decide whether to
-    // arm an observer; it means nothing without a tracking destination.
-    this.trackSections = pageData.trackSections || false
+    // This page's answer on section-level instrumentation (`trackSections` in
+    // page.yml) — an OVERRIDE, not a switch.
+    //
+    // ⭐ **Three states, and the third is the point.** `undefined` means the page
+    // said nothing and the site's own `tracking.emit` decides; `true` and
+    // `false` override it in either direction, so an owner can instrument one
+    // page of a quiet site or exempt a noisy page of a loud one.
+    //
+    // ⛔ **`|| false` was wrong here and collapsed the tri-state**, which made
+    // page-level the ONLY spelling and forced every owner to tick pages
+    // individually. The wire already carried all three — `content-collector`
+    // emits the key only when it is `!= null` — so nothing but this line had to
+    // change. ⇒ Read `?? undefined`, never a boolean coercion.
+    //
+    // The runtime passes it to `Tracker.arms('section_view', …)`, which is where
+    // the precedence against the host's own list is resolved. It means nothing
+    // without a tracking destination.
+    this.trackSections = pageData.trackSections ?? undefined
 
     // Two orthogonal visibility axes:
     //  • `hidden` — REACHABILITY. When true the page is excluded from the published
