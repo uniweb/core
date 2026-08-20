@@ -274,6 +274,77 @@ describe('acquisition context — captured once, replayed on every page view', (
     expect(sentEvents()[0]).not.toHaveProperty('referrer')
   })
 
+  /**
+   * `continues` — the bit that survives dropping the same-origin referrer.
+   *
+   * ⭐ **Measured in Chrome 151 before this was built**, because the design
+   * rested on an assumption nobody had checked: a same-origin plain-`<a>`
+   * navigation (what kit's `<Link reload>` renders) DOES populate
+   * `document.referrer`, an address-bar arrival does NOT, and a page sending
+   * `<meta name="referrer" content="no-referrer">` collapses the first onto the
+   * second. ⚠️ One engine only — Firefox and Safari are unverified, and this is
+   * spec-governed behaviour where agreement is expected but not shown.
+   */
+  it('marks a same-origin arrival as a continuation', async () => {
+    const tracker = await freshTracker(
+      { endpoint: ENDPOINT },
+      makeBrowser({ referrer: 'https://site.test/previous' })
+    )
+    tracker.trackPageView('/a')
+    expect(sentEvents()[0].continues).toBe(true)
+  })
+
+  // The control that makes the one above mean something: an EXTERNAL referral
+  // is a real arrival, so it must carry `referrer` and NOT the bit. Without
+  // this, "sets continues" is indistinguishable from "always sets continues".
+  it('does not mark an external referral as a continuation', async () => {
+    const tracker = await freshTracker(
+      { endpoint: ENDPOINT },
+      makeBrowser({ referrer: 'https://elsewhere.test/post' })
+    )
+    tracker.trackPageView('/a')
+    const event = sentEvents()[0]
+    expect(event.referrer).toBe('https://elsewhere.test/post')
+    expect(event).not.toHaveProperty('continues')
+  })
+
+  // ⛔ Emitted only when true, so a direct arrival carries nothing. Absent then
+  // means both "not a continuation" and "a runtime too old to say" — collapsing
+  // to today's behaviour rather than to a wrong answer.
+  it('says nothing at all on a direct arrival', async () => {
+    const tracker = await freshTracker({ endpoint: ENDPOINT }, makeBrowser({ referrer: '' }))
+    tracker.trackPageView('/a')
+    expect(sentEvents()[0]).not.toHaveProperty('continues')
+  })
+
+  // It rides on EVERY page view of the document, like referrer and utm_*, since
+  // it is captured once and replayed — a visitor who continues in and then
+  // navigates has not turned into a direct arrival.
+  it('rides every page view of the document, not only the first', async () => {
+    const tracker = await freshTracker(
+      { endpoint: ENDPOINT },
+      makeBrowser({ referrer: 'https://site.test/previous' })
+    )
+    tracker.trackPageView('/a')
+    tracker.trackPageView('/b')
+    expect(sentEvents().map((e) => e.continues)).toEqual([true, true])
+  })
+
+  // ⛔ The privacy line: the bit says a visit continues, never WHICH visit. If
+  // it ever carried an id, this file's categorical no-persistent-identifier
+  // claim would be false while every other test still passed.
+  it('carries no identity — the bit is a boolean and nothing else', async () => {
+    const tracker = await freshTracker(
+      { endpoint: ENDPOINT },
+      makeBrowser({ referrer: 'https://site.test/previous' })
+    )
+    tracker.trackPageView('/a')
+    expect(typeof sentEvents()[0].continues).toBe('boolean')
+    expect(Object.keys(sentEvents()[0]).sort()).toEqual(
+      ['continues', 'event', 'path', 'visit'].sort()
+    )
+  })
+
   it('omits the fields entirely when there is no acquisition context', async () => {
     const tracker = await freshTracker({ endpoint: ENDPOINT }, makeBrowser())
     tracker.trackPageView('/a')

@@ -49,9 +49,10 @@
  * ## Field lifetime — captured once, replayed on every page view
  *
  * `document.referrer` and the landing `utm_*` params exist **at arrival and
- * nowhere afterwards**: the referrer never changes across SPA navigation, and
- * the params leave the URL on the first navigation. So they are captured once,
- * here, and attached to every `page_view` of the document.
+ * nowhere afterwards** — as does `continues`, which is derived from the same
+ * read: the referrer never changes across SPA navigation, and the params leave
+ * the URL on the first navigation. So they are captured once, here, and
+ * attached to every `page_view` of the document.
  *
  * ⇒ **Consequence worth knowing when reading the numbers:** a per-view facet
  * built on them is *derived, not observed*. `utm_source` counts "views by
@@ -113,11 +114,35 @@ function captureAcquisition() {
 
   // Same-origin referrers are dropped: internal navigation is not a referral,
   // and counting it would make a site its own top referrer on every page.
+  //
+  // ⭐ **But dropping it destroys the only thing separating two different
+  // events, so the fact that it WAS same-origin is kept as one bit.** A full
+  // document load happens either because someone arrived from outside, or
+  // because a visitor already on the site triggered a real navigation — a
+  // locale switch through kit's `<Link reload>` being the shipped case. Both
+  // reach a collector with no referrer: the first never had one, the second had
+  // it discarded here. ⇒ An "entry pages" metric built on that **invents**
+  // arrivals, counting a locale switch as somebody landing on the Spanish page.
+  //
+  // ⚖️ `continues` states the FACT, not the conclusion. Whether a continuation
+  // disqualifies an entry is the consumer's call; a field named for one metric
+  // ages badly the moment a second one wants it.
+  //
+  // ⛔ **It carries no identity and links nothing.** It says only *this document
+  // continues a visit*, never *which* — so the categorical claim in this file's
+  // header, that nothing persistent is minted, is untouched. Correlating two
+  // visits would be a session, which is exactly what is refused.
   const referrer = document.referrer
   if (referrer) {
     try {
       if (new URL(referrer).origin !== window.location.origin) {
         context.referrer = referrer
+      } else {
+        // Emitted only when true. Absent means "not a continuation" AND "an
+        // older runtime that never sent it" — indistinguishable on purpose,
+        // because that collapses to today's behaviour rather than to a wrong
+        // answer, and it keeps the common payload the size it already was.
+        context.continues = true
       }
     } catch {
       // Unparseable — treat as absent rather than forwarding a malformed value.
