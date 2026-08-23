@@ -7,7 +7,9 @@ import {
   isWildcardLanguages,
   resolveDefaultLocale,
   resolvePublishableLocales,
-  validateLanguageConfig
+  validateLanguageConfig,
+  localeLabel,
+  LOCALE_DISPLAY_NAMES
 } from '../src/locale-config.js'
 
 describe('normalizeLanguageList', () => {
@@ -203,5 +205,43 @@ describe('validateLanguageConfig', () => {
     expect(codes(res.warnings)).toContain('invalid-publish-language-entry')
     // string is not treated as a list → resolver sees [] → explicit empty
     expect(codes(res.errors)).toEqual(['nothing-publishable'])
+  })
+})
+
+
+describe('localeLabel', () => {
+  test('a bare code resolves through the display-name table', () => {
+    expect(localeLabel('fr')).toBe('Français')
+    expect(localeLabel('zh-CN')).toBe('简体中文')
+  })
+
+  test('an object without a label resolves the same as its bare code', () => {
+    // This is the whole point: the plain-string form `languages: [fr]` must not
+    // produce a worse label than the legacy `{ code: fr, label: Français }` it
+    // is meant to replace.
+    expect(localeLabel({ code: 'fr' })).toBe(localeLabel('fr'))
+  })
+
+  test('an explicit label always wins', () => {
+    expect(localeLabel({ code: 'fr', label: 'Fr.' })).toBe('Fr.')
+  })
+
+  test('an unknown code falls back to the code uppercased', () => {
+    expect(localeLabel('xx')).toBe('XX')
+    expect(localeLabel({ code: 'xx' })).toBe('XX')
+  })
+
+  test('a codeless entry yields empty string rather than throwing', () => {
+    expect(localeLabel(null)).toBe('')
+    expect(localeLabel({})).toBe('')
+    expect(localeLabel({ code: '' })).toBe('')
+  })
+
+  test('every declared display name is a non-empty string', () => {
+    for (const [code, name] of Object.entries(LOCALE_DISPLAY_NAMES)) {
+      expect(typeof name).toBe('string')
+      expect(name.length).toBeGreaterThan(0)
+      expect(code).toMatch(/^[a-z]{2}(-[A-Z]{2})?$/)
+    }
   })
 })

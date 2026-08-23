@@ -276,3 +276,54 @@ describe('Website.resolveDetailPageTemplate', () => {
     expect(w.resolveDetailPageTemplate(undefined)).toBeNull()
   })
 })
+
+
+describe('locale labels', () => {
+  // Regression: a site that migrated `languages:` from the legacy
+  // `[{ code: fr, label: Français }]` form to the plain `[fr]` form the
+  // locale-config deprecation warning asks for lost its switcher labels —
+  // core left `label` absent, and the common foundation idiom
+  // `locale.label || locale.code` then rendered "fr". Measured 2026-08-23.
+  const langs = (config) =>
+    new Website({ content: simpleContent({ config }) })
+
+  it('resolves a label for plain-string languages', () => {
+    const w = langs({ defaultLanguage: 'en', languages: ['en', 'fr', 'zh-CN'] })
+    const byCode = Object.fromEntries(w.getLocales().map((l) => [l.code, l.label]))
+
+    expect(byCode.fr).toBe('Français')
+    expect(byCode['zh-CN']).toBe('简体中文')
+    expect(byCode.en).toBe('English')
+  })
+
+  it('gives the plain-string form the same labels as the legacy object form', () => {
+    const plain = langs({ defaultLanguage: 'en', languages: ['en', 'fr'] })
+    const legacy = langs({
+      defaultLanguage: 'en',
+      languages: [
+        { code: 'en', label: 'English' },
+        { code: 'fr', label: 'Français' }
+      ]
+    })
+
+    expect(plain.getLocales().map((l) => l.label)).toEqual(
+      legacy.getLocales().map((l) => l.label)
+    )
+    expect(plain.langs).toEqual(legacy.langs)
+  })
+
+  it('still lets an explicit label override the table', () => {
+    const w = langs({
+      defaultLanguage: 'en',
+      languages: [{ code: 'fr', label: 'Français (CA)' }]
+    })
+
+    expect(w.getLocales().find((l) => l.code === 'fr').label).toBe('Français (CA)')
+  })
+
+  it('falls back to the uppercased code for a locale the table does not know', () => {
+    const w = langs({ defaultLanguage: 'en', languages: ['en', 'qq'] })
+
+    expect(w.getLocales().find((l) => l.code === 'qq').label).toBe('QQ')
+  })
+})

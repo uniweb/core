@@ -10,7 +10,7 @@ import EntityStore from './entity-store.js'
 import FetcherDispatcher from './fetcher-dispatcher.js'
 import ObservableState from './observable-state.js'
 import { normalizeSeo } from './seo.js'
-import { resolveDefaultLocale } from './locale-config.js'
+import { resolveDefaultLocale, localeLabel } from './locale-config.js'
 import { matchDynamicRoute, decodeRouteValue } from './route-match.js'
 
 /**
@@ -226,8 +226,12 @@ export default class Website {
   /**
    * Build locales list from config
    * Supports both string codes and objects: ['es', 'fr'] or [{code: 'es', label: 'Español'}]
-   * Labels are passed through if provided; otherwise only code is returned.
-   * Use kit's getLocaleLabel() for display names.
+   * Every returned locale carries a resolved `label`: an explicitly configured
+   * one wins, otherwise it comes from LOCALE_DISPLAY_NAMES, otherwise the code
+   * uppercased. It used to be passed through only when configured, which made
+   * the common foundation idiom `locale.label || locale.code` render "fr"
+   * instead of "Français" for a plain-string `languages:` entry — i.e. the form
+   * locale-config tells authors to migrate to was the one that read worse.
    * @private
    */
   buildLocalesList(config) {
@@ -262,6 +266,7 @@ export default class Website {
     // Build final array with isDefault flag
     return Array.from(localeMap.values()).map(locale => ({
       ...locale,
+      label: localeLabel(locale),
       isDefault: locale.code === defaultLocale
     }))
   }
@@ -857,9 +862,16 @@ export default class Website {
   // ─────────────────────────────────────────────────────────────────
 
   /**
-   * Get all available locales
-   * Label is optional - use kit's getLocaleLabel() for display names if not provided.
-   * @returns {Array<{code: string, label?: string, isDefault: boolean}>}
+   * Get all available locales.
+   *
+   * `label` is always present and always displayable: an explicitly configured
+   * label wins, otherwise it is resolved from LOCALE_DISPLAY_NAMES, otherwise it
+   * is the code uppercased. So `locale.label` needs no fallback at the call site
+   * — the idiom `locale.label || locale.code` is now redundant rather than
+   * load-bearing, and kit's `getLocaleLabel()` is only needed for a code that
+   * did not come from here.
+   *
+   * @returns {Array<{code: string, label: string, isDefault: boolean}>}
    */
   getLocales() {
     return this.locales

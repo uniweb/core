@@ -41,6 +41,72 @@ function codeOf(entry) {
  * @param {*} value - The authored `languages` value.
  * @returns {boolean}
  */
+/**
+ * Human-readable display names for the locales a site is likely to declare.
+ *
+ * This lives in core, not kit, because core is what BUILDS the locale objects a
+ * foundation reads (`website.getLocales()`, `website.langs`). It used to live
+ * only in kit, so core could not resolve a label and left the field absent for
+ * a plain-string `languages:` entry — which meant the very form this module
+ * tells authors to migrate TO produced worse labels than the legacy object form
+ * it warns about. Measured 2026-08-23 on a site with 11 locales: dropping the
+ * `label:` keys silently turned "Français" into "fr" in the switcher, because
+ * the common foundation idiom is `locale.label || locale.code`.
+ *
+ * Kit re-exports this so `@uniweb/kit`'s `LOCALE_DISPLAY_NAMES` keeps working.
+ */
+export const LOCALE_DISPLAY_NAMES = {
+  en: 'English',
+  es: 'Español',
+  fr: 'Français',
+  de: 'Deutsch',
+  it: 'Italiano',
+  pt: 'Português',
+  nl: 'Nederlands',
+  pl: 'Polski',
+  ru: 'Русский',
+  ja: '日本語',
+  ko: '한국어',
+  zh: '中文',
+  'zh-CN': '简体中文',
+  'zh-TW': '繁體中文',
+  ar: 'العربية',
+  he: 'עברית',
+  hi: 'हिन्दी',
+  th: 'ไทย',
+  vi: 'Tiếng Việt',
+  tr: 'Türkçe',
+  uk: 'Українська',
+  cs: 'Čeština',
+  el: 'Ελληνικά',
+  hu: 'Magyar',
+  ro: 'Română',
+  sv: 'Svenska',
+  da: 'Dansk',
+  fi: 'Suomi',
+  no: 'Norsk',
+  id: 'Bahasa Indonesia',
+  ms: 'Bahasa Melayu'
+}
+
+/**
+ * Resolve a locale's display label.
+ *
+ * Priority: an explicitly configured `label` -> the display-name table -> the
+ * code uppercased. Accepts either a bare code string or a `{ code, label? }`
+ * object, so callers do not have to branch on which form the config used.
+ *
+ * @param {string|{code: string, label?: string}} entry
+ * @returns {string} Display label, or '' when the entry carries no code.
+ */
+export function localeLabel(entry) {
+  if (typeof entry === 'string') {
+    return LOCALE_DISPLAY_NAMES[entry] || entry.toUpperCase()
+  }
+  if (!entry || typeof entry.code !== 'string' || !entry.code) return ''
+  return entry.label || LOCALE_DISPLAY_NAMES[entry.code] || entry.code.toUpperCase()
+}
+
 export function isWildcardLanguages(value) {
   return value === '*' || (Array.isArray(value) && value.includes('*'))
 }
