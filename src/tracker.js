@@ -414,15 +414,64 @@ export default class Tracker {
    * Report a page view. Framework-owned: it carries the acquisition context and
    * dedupes consecutive reports of the same path.
    *
+   * ⭐ **`first_of_load` marks the one view that opened this document**, and it
+   * is computed here rather than living in `acquisition` — precisely because
+   * everything in `acquisition` is *replayed* onto every view, and this must
+   * not be. Exactly one emission per `Tracker` can carry it: `currentPath` is
+   * `null` only before the first report and is never reset.
+   *
+   * ⛔ **Why it exists at all, since a consumer holding the events can derive
+   * it from `visit`.** Not every consumer holds the events. A counter store
+   * that keeps no per-event rows cannot ask *"was this the first `page_view`
+   * with this `visit`?"* without remembering which `visit` values it has seen —
+   * which is retaining `visit`, arrived at by the back door. This bit makes the
+   * document-scoped question answerable with **no collector state at all**, and
+   * a store that deliberately retains nothing is a supported consumer, not an
+   * unusual one.
+   *
+   * ⛔ **The name carries the unit on purpose.** Bare `first` reads as *the
+   * visitor's first ever view*, which is a claim this file refuses to make and
+   * could not make — nothing here survives the document. The unit is **one
+   * document load**, so a panel built on it counts loads, never people and
+   * never sessions. *(`lane-chain.md` §4a: when a misread name is paid by
+   * another lane, put the constraint in the name.)*
+   *
+   * ⛔ **IT MUST NEVER SHIP IN A RELEASE THAT LACKS `continues`, and that is a
+   * standing contract rather than an accident of ordering.** A consumer uses
+   * its *presence* as proof that this emitter is new enough to have sent
+   * `continues` had the referrer been same-origin — which is what lets an
+   * entry-page metric drop the "runtime too old to say" case entirely instead
+   * of caveating it. Backport `first_of_load` to a line without `continues`
+   * and every such consumer starts counting continuations as arrivals, with
+   * nothing anywhere reporting an error. *(The dependency is one-way:
+   * `continues` without `first_of_load` is fine and shipped that way.)*
+   *
+   * ⚖️ **It states a FACT, not a metric** — the same discipline as `continues`.
+   * Whether a first-of-load view is an "entry page" also depends on
+   * `continues`, and that combination is the consumer's to make; a field named
+   * `entry` would age badly the moment a second metric wanted this bit.
+   *
    * @param {string} path
    */
   trackPageView(path) {
     if (!this.arms('page_view') || !path) return
     if (path === this.currentPath) return
+    const firstOfLoad = this.currentPath === null
     this.currentPath = path
     // Promptly, rather than waiting out the batch window: a page view is the
     // event most likely to be the only one of a short visit.
-    this.enqueue({ event: 'page_view', path, ...(this.acquisition || {}) }, true)
+    //
+    // Emitted only when true, like `continues` — absent is the negative, and it
+    // keeps every later view the size it already was.
+    this.enqueue(
+      {
+        event: 'page_view',
+        path,
+        ...(this.acquisition || {}),
+        ...(firstOfLoad ? { first_of_load: true } : {})
+      },
+      true
+    )
   }
 
   /**

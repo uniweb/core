@@ -146,7 +146,11 @@ describe('page views', () => {
     tracker.trackPageView('/a')
 
     const [event] = sentEvents()
-    expect(Object.keys(event).sort()).toEqual(['event', 'path', 'visit'])
+    // ⛔ Adding a key here is a DELIBERATE act and this line is the gate.
+    // `first_of_load` was added 2026-08-24; it is a boolean about this document
+    // load and carries no identity, which is the bar anything on this list has
+    // to clear.
+    expect(Object.keys(event).sort()).toEqual(['event', 'first_of_load', 'path', 'visit'])
     // No session duration, no timestamp, no identity at the wrapper level either.
     const body = JSON.parse(globalThis.fetch.mock.calls[0][1].body)
     expect(Object.keys(body)).toEqual(['events'])
@@ -341,7 +345,7 @@ describe('acquisition context — captured once, replayed on every page view', (
     tracker.trackPageView('/a')
     expect(typeof sentEvents()[0].continues).toBe('boolean')
     expect(Object.keys(sentEvents()[0]).sort()).toEqual(
-      ['continues', 'event', 'path', 'visit'].sort()
+      ['continues', 'event', 'first_of_load', 'path', 'visit'].sort()
     )
   })
 
@@ -350,7 +354,84 @@ describe('acquisition context — captured once, replayed on every page view', (
     tracker.trackPageView('/a')
     // Key-set equality, not toMatchObject: the point is that referrer and utm_*
     // are ABSENT, and toMatchObject would tolerate them.
-    expect(Object.keys(sentEvents()[0]).sort()).toEqual(['event', 'path', 'visit'])
+    // `first_of_load` is not an acquisition field — it is computed per view —
+    // so it is present here while every acquisition field is gone. That
+    // difference is the reason it does not live in `acquisition`.
+    expect(Object.keys(sentEvents()[0]).sort()).toEqual(['event', 'first_of_load', 'path', 'visit'])
+  })
+
+  /**
+   * `first_of_load` — the one view that opened this document.
+   *
+   * ⭐ **Why the framework emits a bit a consumer could derive.** Only a
+   * consumer that RETAINS events can derive it: "the first `page_view` with
+   * this `visit`" requires remembering which `visit` values have been seen,
+   * which is retaining `visit`. A counter store that keeps no per-event rows
+   * cannot, and is a supported consumer — a collector that aggregates into
+   * counters and keeps no rows is an ordinary shape, not an unusual one.
+   *
+   * ⛔ The pair below is the whole contract: it must appear on the first view
+   * and be ABSENT on the rest. Either half alone is satisfied by a constant.
+   */
+  it('marks the first page view of the document', async () => {
+    const tracker = await freshTracker({ endpoint: ENDPOINT }, makeBrowser())
+    tracker.trackPageView('/a')
+    expect(sentEvents()[0].first_of_load).toBe(true)
+  })
+
+  it('does NOT mark any later view of the same document', async () => {
+    const tracker = await freshTracker({ endpoint: ENDPOINT }, makeBrowser())
+    tracker.trackPageView('/a')
+    tracker.trackPageView('/b')
+    tracker.trackPageView('/c')
+    expect(sentEvents().map((e) => e.first_of_load)).toEqual([true, undefined, undefined])
+  })
+
+  // ⛔ The opposite of `continues`, and the contrast is the point: acquisition
+  // is captured once and REPLAYED, this is computed per view and emitted once.
+  // A regression that moved it into `acquisition` would redden here and pass
+  // the test above.
+  it('is emitted once even when acquisition rides every view', async () => {
+    const tracker = await freshTracker(
+      { endpoint: ENDPOINT },
+      makeBrowser({ referrer: 'https://site.test/previous' })
+    )
+    tracker.trackPageView('/a')
+    tracker.trackPageView('/b')
+    expect(sentEvents().map((e) => e.continues)).toEqual([true, true])
+    expect(sentEvents().map((e) => e.first_of_load)).toEqual([true, undefined])
+  })
+
+  // The StrictMode guard must not spend the bit. A double-invoked effect
+  // reports the same path twice; the second is dropped, so the NEXT real
+  // navigation must still be the second view and not the first.
+  it('survives a duplicate report of the same path', async () => {
+    const tracker = await freshTracker({ endpoint: ENDPOINT }, makeBrowser())
+    tracker.trackPageView('/a')
+    tracker.trackPageView('/a')
+    tracker.trackPageView('/b')
+    expect(sentEvents().map((e) => e.path)).toEqual(['/a', '/b'])
+    expect(sentEvents().map((e) => e.first_of_load)).toEqual([true, undefined])
+  })
+
+  // ⛔ Never `false`. Absent is the negative, like `continues` — a consumer
+  // branching on presence must not have to branch on value too.
+  it('is omitted rather than sent as false', async () => {
+    const tracker = await freshTracker({ endpoint: ENDPOINT }, makeBrowser())
+    tracker.trackPageView('/a')
+    tracker.trackPageView('/b')
+    expect(Object.keys(sentEvents()[1])).not.toContain('first_of_load')
+  })
+
+  // A foundation's own events are not page views and must not carry it.
+  it('never appears on a foundation event', async () => {
+    // maxQueueSize 1 so the single foundation event flushes — `track()` is not
+    // immediate, unlike `trackPageView`, and without this the assertion would
+    // run against an empty queue and pass for the wrong reason.
+    const tracker = await freshTracker({ endpoint: ENDPOINT, maxQueueSize: 1 }, makeBrowser())
+    tracker.track('read_depth', { depth: 25 })
+    expect(sentEvents()).toHaveLength(1)
+    expect(Object.keys(sentEvents()[0])).not.toContain('first_of_load')
   })
 })
 
