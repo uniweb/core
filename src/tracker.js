@@ -247,6 +247,24 @@ export default class Tracker {
     // reports three times.
     this.currentPath = null
 
+    // ── time_on_page ─────────────────────────────────────────────────────
+    // ⛔ Declared here because the instance is SEALED below — an assignment to
+    // an undeclared property throws in module code. Same reason `onGranted` and
+    // `Uniweb.defaultInsets` are pre-declared.
+    //
+    // ⭐ No new listener is needed for any of this: `armUnloadHandlers` already
+    // registers `pagehide` and `visibilitychange`, and `trackPageView` already
+    // knows the SPA route boundary. This is arithmetic inside handlers that
+    // already run.
+    /** When the current path became active. */
+    this.pageEnteredAt = null
+    /** Hidden time accrued on the current path, in ms. */
+    this.hiddenMs = 0
+    /** When the document last became hidden, or `null` while visible. */
+    this.hiddenSince = null
+    /** Guards against a second report for one page visit — see `reportTimeOnPage`. */
+    this.pageReported = false
+
     // What the runtime may ARM, as two independent narrowings. Both are `null`
     // when nothing narrows, which is the common case and the cheap one.
     //
@@ -456,8 +474,14 @@ export default class Tracker {
   trackPageView(path) {
     if (!this.arms('page_view') || !path) return
     if (path === this.currentPath) return
+    // The OUTGOING path's dwell closes here, before `currentPath` moves — this
+    // is the SPA boundary an unload-only implementation misses, which would
+    // report one duration per document and silently attribute it to the last
+    // page seen.
+    this.reportTimeOnPage()
     const firstOfLoad = this.currentPath === null
     this.currentPath = path
+    this.startTimeOnPage()
     // Promptly, rather than waiting out the batch window: a page view is the
     // event most likely to be the only one of a short visit.
     //
@@ -560,15 +584,85 @@ export default class Tracker {
    *
    * @private
    */
+  /**
+   * Begin measuring dwell on the path that just became active.
+   *
+   * @private
+   */
+  startTimeOnPage() {
+    this.pageEnteredAt = Date.now()
+    this.hiddenMs = 0
+    this.hiddenSince = null
+    this.pageReported = false
+  }
+
+  /**
+   * Report how long the visitor spent on the current path, once.
+   *
+   * ⭐ **A RAW scalar, with no floor and no clamp.** Both belong to the
+   * collector: a threshold baked in here is frozen at the speed of framework
+   * release → foundation rebuild → site republish, where the same threshold
+   * applied at write time changes when the host deploys. Dwell is also violently
+   * skewed — a tab left open overnight sits in the same mean as forty readers —
+   * so a clamp is genuinely needed; it is just not needed *here*.
+   *
+   * ⛔ **Hidden time is subtracted**, or this measures tab-open rather than
+   * reading. A backgrounded tab accrues nothing.
+   *
+   * ⛔ **Reported at a route change and at `pagehide` — NOT when the document
+   * merely becomes hidden.** Visibility is a *pause*, not an end: someone who
+   * switches tabs to look something up and comes back is still reading. Emitting
+   * on hidden would truncate exactly the engaged readers this metric exists to
+   * find, and — because the consumer derives a mean from a sum and a count —
+   * emitting more than once per page visit would inflate the count and make
+   * every mean wrong. Hence `pageReported`: **at most one per page visit.**
+   *
+   * ⚠️ **The cost of that choice, stated rather than hidden:** a page discarded
+   * while hidden, without `pagehide`, is never reported. That is an
+   * under-count, it is bounded, and it fails in the direction that does not
+   * corrupt the statistic.
+   *
+   * @private
+   */
+  reportTimeOnPage() {
+    if (this.pageReported || this.pageEnteredAt === null || !this.currentPath) return
+    if (!this.arms('time_on_page')) return
+
+    const now = Date.now()
+    // A tab hidden at this instant has not yet had its span folded in.
+    const openHidden = this.hiddenSince === null ? 0 : now - this.hiddenSince
+    const durationMs = now - this.pageEnteredAt - this.hiddenMs - openHidden
+
+    this.pageReported = true
+    // Negative is not reachable by arithmetic, but a clock adjustment mid-visit
+    // would produce one, and a negative duration poisons a sum the consumer
+    // cannot repair.
+    if (durationMs < 0) return
+    this.enqueue({ event: 'time_on_page', path: this.currentPath, durationMs })
+  }
+
+  /** @private */
   armFlushInterval() {
     setInterval(() => this.flush(), this.flushIntervalMs)
   }
 
   /** @private */
   armUnloadHandlers() {
-    window.addEventListener('pagehide', () => this.flush(true))
+    window.addEventListener('pagehide', () => {
+      // Order matters: the report must be QUEUED before the beacon goes, or it
+      // rides the next flush — and for a page being unloaded there is no next.
+      this.reportTimeOnPage()
+      this.flush(true)
+    })
     window.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') this.flush(true)
+      if (document.visibilityState === 'hidden') {
+        // A pause, not an end — see `reportTimeOnPage`. Only the clock stops.
+        if (this.hiddenSince === null) this.hiddenSince = Date.now()
+        this.flush(true)
+      } else if (this.hiddenSince !== null) {
+        this.hiddenMs += Date.now() - this.hiddenSince
+        this.hiddenSince = null
+      }
     })
   }
 }

@@ -45,6 +45,16 @@ function sentEvents() {
   return globalThis.fetch.mock.calls.flatMap((call) => JSON.parse(call[1].body).events)
 }
 
+/**
+ * Just the page views.
+ *
+ * ⭐ **One queue carries every event type**, so a suite about `page_view` has to
+ * say so. Before `time_on_page` shipped these assertions read the whole queue
+ * and were accidentally right — the next event emitted from inside the tracker
+ * itself would have broken them again.
+ */
+const pageViews = () => sentEvents().filter((e) => e.event === 'page_view')
+
 beforeEach(() => {
   vi.useFakeTimers()
   globalThis.fetch = vi.fn(() => Promise.resolve({ ok: true }))
@@ -123,14 +133,14 @@ describe('page views', () => {
     tracker.trackPageView('/a')
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(1)
-    expect(sentEvents()).toMatchObject([{ event: 'page_view', path: '/a' }])
+    expect(pageViews()).toMatchObject([{ event: 'page_view', path: '/a' }])
   })
 
   it('guards CONSECUTIVE same-path reports', async () => {
     const tracker = await freshTracker({ endpoint: ENDPOINT }, makeBrowser())
     tracker.trackPageView('/a')
     tracker.trackPageView('/a') // StrictMode double-invoke, or a stray re-render
-    expect(sentEvents()).toHaveLength(1)
+    expect(pageViews()).toHaveLength(1)
   })
 
   it('is NOT revisit-dedupe: A→B→A reports three times', async () => {
@@ -138,14 +148,14 @@ describe('page views', () => {
     tracker.trackPageView('/a')
     tracker.trackPageView('/b')
     tracker.trackPageView('/a')
-    expect(sentEvents().map((e) => e.path)).toEqual(['/a', '/b', '/a'])
+    expect(pageViews().map((e) => e.path)).toEqual(['/a', '/b', '/a'])
   })
 
   it('carries nothing beyond the closed payload plus the envelope', async () => {
     const tracker = await freshTracker({ endpoint: ENDPOINT }, makeBrowser())
     tracker.trackPageView('/a')
 
-    const [event] = sentEvents()
+    const [event] = pageViews()
     // ⛔ Adding a key here is a DELIBERATE act and this line is the gate.
     // `first_of_load` was added 2026-08-24; it is a boolean about this document
     // load and carries no identity, which is the bar anything on this list has
@@ -164,8 +174,12 @@ describe('the visit key — one document, not one visitor', () => {
     tracker.track('download')
     tracker.trackPageView('/b')
 
+    // FOUR, not three: leaving `/a` also reports its `time_on_page`. Counted
+    // deliberately rather than filtered out — the claim is that the envelope
+    // rides *every* event, and an event emitted from inside the tracker itself
+    // is exactly the one that could slip past `enqueue`.
     const keys = sentEvents().map((e) => e.visit)
-    expect(keys).toHaveLength(3)
+    expect(keys).toHaveLength(4)
     expect(keys[0]).toBeTruthy()
     expect(new Set(keys).size).toBe(1)
   })
@@ -190,8 +204,11 @@ describe('the visit key — one document, not one visitor', () => {
     tracker.setConsent(true) // flushes the buffer
     tracker.trackPageView('/b') // sent live
 
+    // THREE: `/a`'s dwell closes when `/b` arrives, and it must share the key —
+    // an event minted after the consent boundary that carried a different one
+    // would split a single visit in two.
     const keys = sentEvents().map((e) => e.visit)
-    expect(keys).toHaveLength(2)
+    expect(keys).toHaveLength(3)
     expect(new Set(keys).size).toBe(1)
   })
 
@@ -248,7 +265,7 @@ describe('acquisition context — captured once, replayed on every page view', (
     tracker.trackPageView('/a')
     tracker.trackPageView('/b')
 
-    const events = sentEvents()
+    const events = pageViews()
     expect(events).toHaveLength(2)
     for (const event of events) {
       expect(event.referrer).toBe('https://elsewhere.test/post')
@@ -331,7 +348,7 @@ describe('acquisition context — captured once, replayed on every page view', (
     )
     tracker.trackPageView('/a')
     tracker.trackPageView('/b')
-    expect(sentEvents().map((e) => e.continues)).toEqual([true, true])
+    expect(pageViews().map((e) => e.continues)).toEqual([true, true])
   })
 
   // ⛔ The privacy line: the bit says a visit continues, never WHICH visit. If
@@ -384,7 +401,7 @@ describe('acquisition context — captured once, replayed on every page view', (
     tracker.trackPageView('/a')
     tracker.trackPageView('/b')
     tracker.trackPageView('/c')
-    expect(sentEvents().map((e) => e.first_of_load)).toEqual([true, undefined, undefined])
+    expect(pageViews().map((e) => e.first_of_load)).toEqual([true, undefined, undefined])
   })
 
   // ⛔ The opposite of `continues`, and the contrast is the point: acquisition
@@ -398,8 +415,8 @@ describe('acquisition context — captured once, replayed on every page view', (
     )
     tracker.trackPageView('/a')
     tracker.trackPageView('/b')
-    expect(sentEvents().map((e) => e.continues)).toEqual([true, true])
-    expect(sentEvents().map((e) => e.first_of_load)).toEqual([true, undefined])
+    expect(pageViews().map((e) => e.continues)).toEqual([true, true])
+    expect(pageViews().map((e) => e.first_of_load)).toEqual([true, undefined])
   })
 
   // The StrictMode guard must not spend the bit. A double-invoked effect
@@ -410,8 +427,8 @@ describe('acquisition context — captured once, replayed on every page view', (
     tracker.trackPageView('/a')
     tracker.trackPageView('/a')
     tracker.trackPageView('/b')
-    expect(sentEvents().map((e) => e.path)).toEqual(['/a', '/b'])
-    expect(sentEvents().map((e) => e.first_of_load)).toEqual([true, undefined])
+    expect(pageViews().map((e) => e.path)).toEqual(['/a', '/b'])
+    expect(pageViews().map((e) => e.first_of_load)).toEqual([true, undefined])
   })
 
   // ⛔ Never `false`. Absent is the negative, like `continues` — a consumer
@@ -486,7 +503,7 @@ describe('consent', () => {
     tracker.setConsent(true)
 
     expect(tracker.consentStatus()).toBe('granted')
-    expect(sentEvents().map((e) => e.path)).toEqual(['/a'])
+    expect(pageViews().map((e) => e.path)).toEqual(['/a'])
   })
 
   it('discards the buffer on deny and stops accepting', async () => {
@@ -568,5 +585,164 @@ describe('delivery', () => {
 
     vi.advanceTimersByTime(5000)
     expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+  })
+})
+
+/**
+ * `time_on_page` — how long a visitor spent on one route.
+ *
+ * ⭐ **The whole design is "one event per page visit, raw".** A second event for
+ * one visit inflates the count the consumer divides by, so every mean it derives
+ * is wrong — and nothing downstream can detect it, because a sum and a count are
+ * both plausible whatever they hold. The guard is asserted directly.
+ */
+describe('time_on_page', () => {
+  const dwell = () => sentEvents().filter((e) => e.event === 'time_on_page')
+
+  /** Advance wall-clock time; the tracker reads `Date.now()`, not timers. */
+  let clock
+  beforeEach(() => {
+    clock = 1_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => clock)
+  })
+  const wait = (ms) => {
+    clock += ms
+  }
+
+  it('closes the OUTGOING page at a route change, not the incoming one', async () => {
+    const tracker = await freshTracker({ endpoint: ENDPOINT }, makeBrowser())
+    tracker.trackPageView('/a')
+    wait(5000)
+    tracker.trackPageView('/b')
+
+    expect(dwell()).toMatchObject([{ path: '/a', durationMs: 5000 }])
+  })
+
+  // ⛔ The failure an unload-only implementation has: one duration per DOCUMENT,
+  // silently attributed to the last page seen. Three routes must yield two
+  // closed dwells with their own paths — the third is still open.
+  it('reports per ROUTE across an SPA visit, not once per document', async () => {
+    const tracker = await freshTracker({ endpoint: ENDPOINT }, makeBrowser())
+    tracker.trackPageView('/a')
+    wait(1000)
+    tracker.trackPageView('/b')
+    wait(2000)
+    tracker.trackPageView('/c')
+
+    expect(dwell().map((e) => [e.path, e.durationMs])).toEqual([
+      ['/a', 1000],
+      ['/b', 2000]
+    ])
+  })
+
+  it('reports the last page at pagehide, which a route change never closes', async () => {
+    const browser = makeBrowser()
+    const tracker = await freshTracker({ endpoint: ENDPOINT }, browser)
+    tracker.trackPageView('/a')
+    wait(3000)
+    browser.listeners.pagehide.forEach((fn) => fn())
+
+    expect(dwell()).toMatchObject([{ path: '/a', durationMs: 3000 }])
+  })
+
+  // ⭐ Otherwise it measures tab-open rather than reading.
+  it('SUBTRACTS time the document spent hidden', async () => {
+    const browser = makeBrowser()
+    const tracker = await freshTracker({ endpoint: ENDPOINT }, browser)
+    const hide = () => {
+      browser.doc.visibilityState = 'hidden'
+      browser.listeners.visibilitychange.forEach((fn) => fn())
+    }
+    const show = () => {
+      browser.doc.visibilityState = 'visible'
+      browser.listeners.visibilitychange.forEach((fn) => fn())
+    }
+
+    tracker.trackPageView('/a')
+    wait(1000)
+    hide()
+    wait(60_000) // a minute in another tab
+    show()
+    wait(2000)
+    tracker.trackPageView('/b')
+
+    expect(dwell()).toMatchObject([{ path: '/a', durationMs: 3000 }])
+  })
+
+  // ⛔ Visibility is a PAUSE, not an end. Emitting here would truncate exactly
+  // the engaged readers this metric exists to find, and a second event for one
+  // visit would corrupt every mean derived from it.
+  it('does NOT report when the document merely becomes hidden', async () => {
+    const browser = makeBrowser()
+    const tracker = await freshTracker({ endpoint: ENDPOINT }, browser)
+    tracker.trackPageView('/a')
+    wait(1000)
+    browser.doc.visibilityState = 'hidden'
+    browser.listeners.visibilitychange.forEach((fn) => fn())
+
+    expect(dwell()).toHaveLength(0)
+  })
+
+  it('reports AT MOST ONCE per page visit, even when both terminal signals fire', async () => {
+    const browser = makeBrowser()
+    const tracker = await freshTracker({ endpoint: ENDPOINT }, browser)
+    tracker.trackPageView('/a')
+    wait(1000)
+    browser.listeners.pagehide.forEach((fn) => fn())
+    browser.listeners.pagehide.forEach((fn) => fn()) // a second one, or a late route change
+    tracker.trackPageView('/b')
+
+    expect(dwell()).toHaveLength(1)
+  })
+
+  // ⛔ Both belong to the collector: applied here they are frozen at the speed of
+  // a framework release, applied at write time they change when the host deploys.
+  it('applies NO floor and NO clamp — the scalar is raw', async () => {
+    const browser = makeBrowser()
+    const tracker = await freshTracker({ endpoint: ENDPOINT }, browser)
+    tracker.trackPageView('/a')
+    wait(12) // far under the collector's 500ms floor
+    tracker.trackPageView('/b')
+    wait(9 * 60 * 60 * 1000) // far over its 30-minute clamp
+    browser.listeners.pagehide.forEach((fn) => fn())
+
+    expect(dwell().map((e) => e.durationMs)).toEqual([12, 32_400_000])
+  })
+
+  it('carries nothing beyond the closed payload plus the envelope', async () => {
+    // A campaign arrival on purpose: acquisition fields exist on this document,
+    // so their ABSENCE below is a real exclusion rather than nothing to exclude.
+    const tracker = await freshTracker(
+      { endpoint: ENDPOINT },
+      makeBrowser({
+        url: 'https://site.test/a?utm_source=news&utm_medium=email&utm_campaign=spring',
+        referrer: 'https://elsewhere.test/post'
+      })
+    )
+    tracker.trackPageView('/a')
+    wait(1000)
+    tracker.trackPageView('/b')
+
+    // Control: the page view DID carry them, so the gate below discriminates.
+    expect(pageViews()[0].utm_source).toBe('news')
+
+    // ⛔ Adding a key here is a DELIBERATE act and this line is the gate.
+    // Acquisition fields and `continues` ride `page_view` ONLY — they answer a
+    // question about arrival, and repeating them on a duration would invite a
+    // consumer to facet dwell by campaign as if it had been observed per event.
+    expect(Object.keys(dwell()[0]).sort()).toEqual(['durationMs', 'event', 'path', 'visit'])
+  })
+
+  it('is gated by arms(), so a narrowed site emits none of it', async () => {
+    const tracker = await freshTracker(
+      { endpoint: ENDPOINT, siteEmit: ['page_view'] },
+      makeBrowser()
+    )
+    tracker.trackPageView('/a')
+    wait(5000)
+    tracker.trackPageView('/b')
+
+    expect(dwell()).toHaveLength(0)
+    expect(pageViews()).toHaveLength(2) // control: the same calls DID emit
   })
 })
