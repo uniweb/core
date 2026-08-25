@@ -472,16 +472,34 @@ export default class Tracker {
    * @param {string} path
    */
   trackPageView(path) {
-    if (!this.arms('page_view') || !path) return
+    if (!path) return
     if (path === this.currentPath) return
-    // The OUTGOING path's dwell closes here, before `currentPath` moves — this
-    // is the SPA boundary an unload-only implementation misses, which would
-    // report one duration per document and silently attribute it to the last
-    // page seen.
+
+    // ⛔ **EVERYTHING DOWN TO THE `arms` CHECK IS PAGE-BOUNDARY BOOKKEEPING, NOT
+    // AN EMISSION.** It must not sit behind `arms('page_view')`, because two
+    // other things read it and neither is `page_view`:
+    //
+    //   - `currentPath` is the default `path` for EVERY event `track()` sends —
+    //     a foundation's own events and `outbound_click` among them. Gated, a
+    //     site that selects `outbound_click` without `page_view` reports every
+    //     event with `path: undefined`, silently.
+    //   - `time_on_page` is armed independently, so gating its clock behind a
+    //     different event's selection means a site that asks for it gets
+    //     nothing at all.
+    //
+    // ⚖️ Both failures are invisible: no error, no warning, a plausible payload
+    // with a field quietly missing. The bookkeeping is cheap and unconditional;
+    // only the EMISSION below is a decision.
+    //
+    // The OUTGOING path's dwell closes before `currentPath` moves — the SPA
+    // boundary an unload-only implementation misses, which would report one
+    // duration per document and silently attribute it to the last page seen.
     this.reportTimeOnPage()
     const firstOfLoad = this.currentPath === null
     this.currentPath = path
     this.startTimeOnPage()
+
+    if (!this.arms('page_view')) return
     // Promptly, rather than waiting out the batch window: a page view is the
     // event most likely to be the only one of a short visit.
     //

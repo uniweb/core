@@ -746,3 +746,61 @@ describe('time_on_page', () => {
     expect(pageViews()).toHaveLength(2) // control: the same calls DID emit
   })
 })
+
+/**
+ * ⛔ Page-boundary bookkeeping is NOT `page_view`'s to gate.
+ *
+ * `trackPageView` maintains two things every other event depends on —
+ * `currentPath`, which is the default `path` on EVERY event, and the dwell
+ * clock. Both used to sit behind `arms('page_view')`, so a site that selected
+ * other events but not that one lost them **silently**: no error, no warning,
+ * a plausible payload with a field quietly missing.
+ */
+describe('a narrowed site that does not select page_view', () => {
+  const emitWithout = { endpoint: ENDPOINT, siteEmit: ['outbound_click', 'time_on_page'] }
+
+  it('still attributes OTHER events to the current path', async () => {
+    const tracker = await freshTracker(emitWithout, makeBrowser())
+    tracker.trackPageView('/a')
+    tracker.trackPageView('/b')
+    tracker.track('outbound_click', { hostname: 'x.test' })
+    // ⭐ Explicit: the PROMPT flush belongs to `page_view`, so a site that
+    // narrowed it away batches normally instead. Correct, and worth stating —
+    // it is why these assertions cannot read `sentEvents()` straight away.
+    tracker.flush()
+
+    const [click] = sentEvents().filter((e) => e.event === 'outbound_click')
+    expect(click.path).toBe('/b')
+    expect(pageViews()).toHaveLength(0) // control: page_view really is narrowed away
+  })
+
+  it('still reports time_on_page, which is armed independently', async () => {
+    const clock = vi.spyOn(Date, 'now')
+    let t = 1_000_000
+    clock.mockImplementation(() => t)
+
+    const tracker = await freshTracker(emitWithout, makeBrowser())
+    tracker.trackPageView('/a')
+    t += 4000
+    tracker.trackPageView('/b')
+    tracker.flush() // see above — no page_view, so no prompt flush
+
+    expect(sentEvents().filter((e) => e.event === 'time_on_page')).toMatchObject([
+      { path: '/a', durationMs: 4000 }
+    ])
+  })
+
+  it('emits NOTHING at all when the site selects neither', async () => {
+    const tracker = await freshTracker(
+      { endpoint: ENDPOINT, siteEmit: ['outbound_click'] },
+      makeBrowser()
+    )
+    tracker.trackPageView('/a')
+    tracker.trackPageView('/b')
+
+    // Bookkeeping ran; no event was produced by it.
+    tracker.flush()
+    expect(sentEvents()).toHaveLength(0)
+    expect(tracker.currentPath).toBe('/b')
+  })
+})
