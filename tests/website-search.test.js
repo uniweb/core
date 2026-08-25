@@ -86,3 +86,53 @@ describe('getSearchConfig — provider declaration', () => {
     expect(w.getSearchConfig().provider).toBe('algolia')
   })
 })
+
+describe('isSearchEnabled — the boolean `search:` form', () => {
+  // Regression, measured on a live hosted payload 2026-08-25: the served
+  // config carried `search: true` — a bare boolean, not the documented
+  // object. The predicate was `config?.search?.enabled !== false`, and
+  // optional chaining short-circuits on null/undefined ONLY, so
+  // `false?.enabled` evaluated `false.enabled` to `undefined` and
+  // `undefined !== false` was true.
+  //
+  // ⇒ `search: false` — the natural shorthand for "off" — left search ON,
+  // and `search: true` worked only by the same accident. The pair below is
+  // the point: asserting only the `true` case would have passed against the
+  // broken predicate.
+  it('honours `search: false` as disabled', () => {
+    const w = new Website({ content: content({ config: { search: false } }) })
+
+    expect(w.isSearchEnabled()).toBe(false)
+  })
+
+  it('honours `search: true` as enabled', () => {
+    const w = new Website({ content: content({ config: { search: true } }) })
+
+    expect(w.isSearchEnabled()).toBe(true)
+  })
+
+  it('still honours the documented object form in both directions', () => {
+    const off = new Website({ content: content({ config: { search: { enabled: false } } }) })
+    const on = new Website({ content: content({ config: { search: { enabled: true } } }) })
+
+    expect(off.isSearchEnabled()).toBe(false)
+    expect(on.isSearchEnabled()).toBe(true)
+  })
+
+  it('defaults to enabled when nothing is declared', () => {
+    const w = new Website({ content: content() })
+
+    expect(w.isSearchEnabled()).toBe(true)
+  })
+
+  it('normalizes a boolean away so option reads land on an object', () => {
+    // `true || {}` yields `true`, so every option read below would otherwise
+    // dereference a boolean and silently return undefined.
+    const w = new Website({ content: content({ config: { search: true } }) })
+    const cfg = w.getSearchConfig()
+
+    expect(cfg.provider).toBe('index')
+    expect(cfg.include.pages).toBe(true)
+    expect(cfg.exclude.routes).toEqual([])
+  })
+})

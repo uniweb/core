@@ -1016,12 +1016,34 @@ export default class Website {
   // ─────────────────────────────────────────────────────────────────
 
   /**
-   * Check if search is enabled for this site
+   * Check if search is enabled for this site.
+   *
+   * ⛔ `search: false` USED TO LEAVE SEARCH ON. The predicate was
+   * `config?.search?.enabled !== false`, and optional chaining short-circuits
+   * on `null`/`undefined` only — so `false?.enabled` evaluates `false.enabled`
+   * to `undefined`, and `undefined !== false` is `true`. An author writing the
+   * natural shorthand for "off" got search **on**, silently.
+   *
+   * ⚠️ Measured on a live hosted payload 2026-08-25: the boolean form is what
+   * actually arrives — that site carried `config.search === true`, which
+   * worked only by
+   * the same accident. Only the object form is documented, so the boolean is
+   * either authored or synthesized upstream; either way it reaches here.
+   *
+   * ⭐ Why this mattered more than its size: on a backend-hosted site the
+   * search index is not emitted (see `getSearchIndexUrl` below), so an operator
+   * whose search box is failing reaches for exactly this switch — and it was
+   * the one input that did nothing.
+   *
+   * Both forms now work, and absent still means enabled.
+   *
    * @returns {boolean}
    */
   isSearchEnabled() {
-    // Search is enabled by default unless explicitly disabled
-    return this.config?.search?.enabled !== false
+    const search = this.config?.search
+    if (typeof search === 'boolean') return search
+    // Enabled by default unless explicitly disabled.
+    return search?.enabled !== false
   }
 
   /**
@@ -1029,7 +1051,12 @@ export default class Website {
    * @returns {Object} Search configuration
    */
   getSearchConfig() {
-    const config = this.config?.search || {}
+    // A boolean `search:` carries no options — normalize it away so every
+    // read below (`config.provider`, `config.include?.…`) sees an object.
+    // `true || {}` would otherwise yield `true` and every option read would
+    // land on a boolean.
+    const raw = this.config?.search
+    const config = (raw && typeof raw === 'object') ? raw : {}
 
     return {
       enabled: this.isSearchEnabled(),
