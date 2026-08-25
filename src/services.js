@@ -175,7 +175,32 @@ export function resolveService(website, name) {
   // no stake in it. See the entitlement note above.
   if (hostDeclaration !== undefined) return { url: null, source: 'host' }
 
-  // 3 — nobody supplied one.
+  // ⭐ A HOST THAT EMITTED A SERVICES BLOCK IS ANSWERING — for every service,
+  // not only the ones it named. The block is the host's statement of what it
+  // offers, so a name ABSENT from it carries the same answer as a name present
+  // with no address: this host does not offer that service.
+  //
+  // Without this, "the host offers tracking and not search" and "there is no
+  // host at all" are the same value, and a caller with a fallback takes it. A
+  // caller with no fallback cannot tell the difference and never could, which
+  // is why this was invisible until search — the one service with a legacy
+  // zero-config default to fall through to — started 404ing on hosted sites.
+  //
+  // ⇒ The rule this implements: **a control for a service the site does not
+  // have must not be drawn** — uniformly, for every service, and without any
+  // explanation offered to a visitor. Not-provisioned is not an error and not a
+  // thing to apologise for; it is simply a feature the site does not have, the
+  // same way it has no contact form when `submit` is absent.
+  //
+  // ⚠️ This deliberately reads the SITE CONFIG the runtime already holds rather
+  // than asking a host for a new signal. The payload states what is on and what
+  // is off; the renderer's job is to not draw what cannot be used.
+  if (config?.services && typeof config.services === 'object' && !Array.isArray(config.services)) {
+    return { url: null, source: 'host' }
+  }
+
+  // 3 — nobody supplied one. No host is speaking, so a caller's own default
+  // (search's local index, say) is still correct — that is the static-host path.
   return { url: null, source: null }
 }
 
