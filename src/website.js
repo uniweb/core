@@ -12,6 +12,7 @@ import ObservableState from './observable-state.js'
 import { normalizeSeo } from './seo.js'
 import { resolveDefaultLocale, localeLabel } from './locale-config.js'
 import { matchDynamicRoute, decodeRouteValue } from './route-match.js'
+import { resolveService } from './services.js'
 
 /**
  * Website — orchestration root for a single site instance.
@@ -1041,9 +1042,38 @@ export default class Website {
    */
   isSearchEnabled() {
     const search = this.config?.search
-    if (typeof search === 'boolean') return search
-    // Enabled by default unless explicitly disabled.
-    return search?.enabled !== false
+    if (typeof search === 'boolean') {
+      if (!search) return false
+    } else if (search?.enabled === false) {
+      return false
+    }
+
+    // ⭐ THE HOST GETS A SAY, and this is the half that reaches an already-
+    // published foundation. A foundation bundles its own frozen copy of
+    // `@uniweb/kit`, so a fix made in kit never reaches one built before it.
+    // `@uniweb/core` is different: the runtime carries it and re-exports it
+    // through the import map, so a foundation of any age calls THIS method.
+    //
+    // A host that publishes a services block is stating what it offers. If it
+    // does not name `search`, the site has no search — and a control for a
+    // service the site does not have must not be drawn. That is the rule for
+    // every service (`submit` draws no form, `assistant` and `tracking` draw
+    // nothing); search was the outlier only because it had a legacy local
+    // index to fall through to, and on a host-served site nothing emits one.
+    //
+    // ⛔ Deliberately no reason and no message: not-provisioned is not an
+    // error, and any text a visitor reads is site content — authored and
+    // localized — never a string a service layer invents.
+    //
+    // A site's OWN `search.endpoint` still wins: `resolveService` answers from
+    // the site tier first, so self-hosted search on a host that does not sell
+    // it is untouched.
+    const { url, source } = resolveService(this, 'search')
+    if (source === 'host' && !url) return false
+
+    // Enabled by default — absent means enabled, and a host that publishes no
+    // services block at all has declined nothing (the static-host path).
+    return true
   }
 
   /**

@@ -136,3 +136,56 @@ describe('isSearchEnabled — the boolean `search:` form', () => {
     expect(cfg.exclude.routes).toEqual([])
   })
 })
+
+describe('isSearchEnabled — the host declines the service', () => {
+  // ⭐ WHY THIS LIVES IN CORE AND NOT IN KIT, which is the whole point of it.
+  // A foundation bundles its own frozen copy of `@uniweb/kit`, so a fix made
+  // there never reaches a foundation built before it. `@uniweb/core` is
+  // carried by the runtime and re-exported through the import map, so a
+  // foundation of ANY age calls this method — kit's `isEnabled()` is
+  // `website.isSearchEnabled()` and has been for every published version.
+  //
+  // Measured 2026-08-25: a host-served site whose host does not offer search
+  // drew a search box that fell through to a local index nothing on that lane
+  // emits, and 404'd. The rule is that a control for a service the site does
+  // not have must not be drawn — uniform across services, no message.
+
+  const hosted = (services, authored) =>
+    new Website({
+      content: content({ config: { ...(services !== undefined ? { services } : {}), ...(authored ?? {}) } }),
+    })
+
+  it('is false when a host publishes services and does not name search', () => {
+    // The shape entitlement gating actually produces: the key is REMOVED.
+    expect(hosted({ tracking: { endpoint: '/_a/e' } }).isSearchEnabled()).toBe(false)
+  })
+
+  it('is false when a host publishes an empty services block', () => {
+    expect(hosted({}).isSearchEnabled()).toBe(false)
+  })
+
+  it('is true when the host offers search', () => {
+    expect(hosted({ search: { endpoint: '/_search' } }).isSearchEnabled()).toBe(true)
+  })
+
+  it('⭐ a site OWN endpoint survives a host decline', () => {
+    // The case worth re-running if this is ever edited: an operator running
+    // self-hosted search on a host that does not sell it must keep working.
+    // `resolveService` answers from the site tier first.
+    const w = hosted({ tracking: {} }, { search: { endpoint: '/my-own-search' } })
+
+    expect(w.isSearchEnabled()).toBe(true)
+  })
+
+  it('CONTROL: a static host — no services block at all — is unaffected', () => {
+    // Declining nothing is not declining. This is the path where the build
+    // really does emit a local index, so the old default is correct.
+    expect(new Website({ content: content() }).isSearchEnabled()).toBe(true)
+  })
+
+  it('an explicit site-level disable still wins over a host that offers it', () => {
+    expect(
+      hosted({ search: { endpoint: '/_search' } }, { search: false }).isSearchEnabled(),
+    ).toBe(false)
+  })
+})
