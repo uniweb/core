@@ -1,6 +1,6 @@
 /**
  * Shared locale-config helpers — the one home for the language rules
- * (contract: kb/framework/build/uwx-format.md → "Per-locale publish readiness").
+ * (the "Per-locale publish readiness" contract).
  */
 import {
   normalizeLanguageList,

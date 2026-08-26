@@ -7,7 +7,7 @@
  * the tier semantics of the options reader, which is where the two readers used
  * to disagree.
  *
- * Design: `kb/framework/plans/tracking-vendor-tags.md` §10.
+ * Design settled with the backend and hosting lanes, 2026-08.
  */
 
 import { describe, it, expect } from 'vitest'

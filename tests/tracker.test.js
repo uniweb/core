@@ -5,7 +5,7 @@
  * installs its globals and then imports a fresh copy (`vi.resetModules()` +
  * dynamic import). Setting globals after the import would test nothing.
  *
- * Design: `kb/framework/plans/tracking.md`.
+ * Design settled with the backend and hosting lanes, 2026-08.
  */
 
 const ENDPOINT = 'https://collector.test/e'
