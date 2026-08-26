@@ -25,12 +25,35 @@
 import { substitutePlaceholders } from './substitute-placeholders.js'
 
 /**
+ * The substitution context for a detail pattern: the route's own param name,
+ * plus a generic `param` alias bound to the same value.
+ *
+ * ⭐ Why the alias exists. An AUTHOR writing a detail pattern knows their route
+ * and writes `{slug}` or `{id}` — that convention is unchanged and must stay,
+ * because it is what every existing site and the auto-injected per-record
+ * pattern use. A HOST declaring a record address cannot know it: `param_name`
+ * is the site's routing choice, and the host is publishing one pattern for
+ * every site it serves. So the host writes `{param}`.
+ *
+ * Binding both names to one value is what lets the two conventions coexist
+ * without a translation step between them — and a translation step is exactly
+ * where the framework has twice grown a second copy of a rule that then drifted
+ * (`route-match`, `data-paths`). `substitutePlaceholders` only resolves keys
+ * present in the context, so an unrelated `{name}` still passes through
+ * literally, as it always has.
+ */
+function paramContext(paramName, paramValue) {
+  return { [paramName]: paramValue, param: paramValue }
+}
+
+/**
  * Build a detail-URL fetch config from a collection config + dynamic context.
  *
  * Four forms of `detail:`:
  *   - `'rest'`                — append paramValue as a path segment.
  *   - `'query'`               — append `?paramName=paramValue`.
- *   - `'/articles/{slug}'`    — custom URL pattern with {paramName} placeholders.
+ *   - `'/articles/{slug}'`    — custom URL pattern with {paramName} placeholders,
+ *                               or the generic `{param}` alias (see below).
  *   - `{ body, envelope }`    — object form. Reuses the collection's url /
  *                               method / headers / auth; adds per-detail
  *                               body (with placeholder substitution) and
@@ -53,24 +76,32 @@ export function buildDetailConfig(collectionConfig, dynamicContext) {
   const { paramName, paramValue } = dynamicContext
   if (!paramName || paramValue === undefined) return null
 
-  const baseUrl = collectionConfig.url || collectionConfig.path
+  // Three address kinds now, and the detail request must come back as the SAME
+  // kind: an `endpoint` carries remote semantics the fetcher decides on, so
+  // returning a detail as `path` would silently drop operator pushdown and the
+  // site's static headers for exactly the request that is one record.
+  const baseUrl = collectionConfig.endpoint || collectionConfig.url || collectionConfig.path
   if (!baseUrl) return null
-  const isLocalPath = !!collectionConfig.path && !collectionConfig.url
+  const addressKey = collectionConfig.endpoint
+    ? 'endpoint'
+    : collectionConfig.url
+      ? 'url'
+      : 'path'
 
   // Object form: `detail: { body, envelope }`. Reuses collection's URL +
   // method + headers + auth. The body is placeholder-substituted against
   // the dynamic context so `body: { variables: { slug: "{slug}" } }` works.
   if (detail && typeof detail === 'object') {
     const out = {
-      ...(isLocalPath ? { path: baseUrl } : { url: baseUrl }),
+      [addressKey]: baseUrl,
       schema: collectionConfig.schema,
       transform: collectionConfig.transform,
     }
     if (collectionConfig.method) out.method = collectionConfig.method
     if (detail.body !== undefined) {
-      out.body = substitutePlaceholders(detail.body, { [paramName]: paramValue }, { encode: false })
+      out.body = substitutePlaceholders(detail.body, paramContext(paramName, paramValue), { encode: false })
     } else if (collectionConfig.body !== undefined) {
-      out.body = substitutePlaceholders(collectionConfig.body, { [paramName]: paramValue }, { encode: false })
+      out.body = substitutePlaceholders(collectionConfig.body, paramContext(paramName, paramValue), { encode: false })
     }
     if (detail.envelope) out.envelope = detail.envelope
     return out
@@ -91,11 +122,11 @@ export function buildDetailConfig(collectionConfig, dynamicContext) {
     // Custom pattern like '/articles/{slug}' — substitute placeholders
     // from the dynamic-route context. Only placeholders matching the
     // active paramName resolve; others pass through as literal `{name}`.
-    detailUrl = substitutePlaceholders(detail, { [paramName]: paramValue })
+    detailUrl = substitutePlaceholders(detail, paramContext(paramName, paramValue))
   }
 
   return {
-    ...(isLocalPath ? { path: detailUrl } : { url: detailUrl }),
+    [addressKey]: detailUrl,
     schema: collectionConfig.schema,
     transform: collectionConfig.transform,
   }

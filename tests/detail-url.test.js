@@ -114,3 +114,74 @@ describe('the leaf property consumers rely on', () => {
     expect(out).toMatchObject({ schema: 'articles', transform: 'unwrap' })
   })
 })
+
+describe('the generic {param} alias', () => {
+  const ctx = { paramName: 'slug', paramValue: 'my-post' }
+
+  // An AUTHOR knows their route and writes {slug} or {id}. A HOST publishing one
+  // record pattern for every site it serves cannot know the site's param_name,
+  // so it writes {param}. Binding both names to one value lets the two
+  // conventions coexist without a translation step between them — and a
+  // translation step is where this codebase has twice grown a second copy of a
+  // rule that then drifted.
+  it('resolves a host-written {param}', () => {
+    const out = buildDetailConfig({ endpoint: '/_d/articles', detail: '/_d/articles/{param}' }, ctx)
+    expect(out.endpoint).toBe('/_d/articles/my-post')
+  })
+
+  it('still resolves an author-written {paramName} — the convention is unchanged', () => {
+    const out = buildDetailConfig({ path: '/data/a.json', detail: '/data/a/{slug}.json' }, ctx)
+    expect(out.path).toBe('/data/a/my-post.json')
+  })
+
+  it('resolves {param} whatever the route calls its param', () => {
+    const out = buildDetailConfig(
+      { endpoint: '/_d/x', detail: '/_d/x/{param}' },
+      { paramName: 'id', paramValue: '42' }
+    )
+    expect(out.endpoint).toBe('/_d/x/42')
+  })
+
+  it('leaves an unrelated placeholder literal, as it always has', () => {
+    const out = buildDetailConfig({ path: '/a.json', detail: '/a/{other}/{slug}' }, ctx)
+    expect(out.path).toBe('/a/{other}/my-post')
+  })
+
+  it('substitutes into an object-form body too', () => {
+    const out = buildDetailConfig(
+      { url: 'https://x.example/gql', detail: { body: { vars: { s: '{param}' } } } },
+      ctx
+    )
+    expect(out.body).toEqual({ vars: { s: 'my-post' } })
+  })
+})
+
+describe('the detail request keeps the collection\'s address kind', () => {
+  const ctx = { paramName: 'slug', paramValue: 'p' }
+
+  // An `endpoint` carries remote semantics the fetcher decides on. Returning a
+  // detail as `path` would silently drop operator pushdown and the site's
+  // static headers for exactly the request that is one record.
+  it('endpoint → endpoint', () => {
+    const out = buildDetailConfig({ endpoint: '/_d/a', detail: 'rest', schema: 'a' }, ctx)
+    expect(out).toMatchObject({ endpoint: '/_d/a/p' })
+    expect(out.path).toBeUndefined()
+    expect(out.url).toBeUndefined()
+  })
+
+  it('path → path, url → url', () => {
+    // `rest` appends the param as a segment, so the assertion is about WHICH
+    // key carries the result, not about the URL shape that form produces.
+    const local = buildDetailConfig({ path: '/d/a', detail: 'rest' }, ctx)
+    expect(local.path).toBe('/d/a/p')
+    expect(local.endpoint).toBeUndefined()
+
+    const remote = buildDetailConfig({ url: 'https://x.example/a', detail: 'rest' }, ctx)
+    expect(remote.url).toBe('https://x.example/a/p')
+    expect(remote.endpoint).toBeUndefined()
+  })
+
+  it('returns null when the collection has no address at all', () => {
+    expect(buildDetailConfig({ detail: 'rest', schema: 'a' }, ctx)).toBeNull()
+  })
+})

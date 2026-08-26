@@ -204,3 +204,34 @@ describe('resolving a collection reference to an address', () => {
     })
   })
 })
+
+describe('a lane\'s record address becomes the detail source', () => {
+  const decl = [{ collection: 'articles', schema: 'articles' }]
+  const lane = { list: '/_data/{collection}', record: '/_data/{collection}/{param}' }
+
+  it('injects the record pattern when the lane declares one', () => {
+    // Not gated on `deferred:`. A live lane answers a list at brief depth, so a
+    // detail page filtering the list would render the brief and miss the body.
+    const cfg = resolveFetchConfigs(decl, { records: lane }).get('articles')
+    expect(cfg.detail).toBe('/_data/articles/{param}')
+  })
+
+  it('injects nothing when the lane declares only a list', () => {
+    const cfg = resolveFetchConfigs(decl, { records: { list: lane.list } }).get('articles')
+    expect(cfg.detail).toBeUndefined()
+  })
+
+  it('never overrides an author-declared detail', () => {
+    const authored = [{ collection: 'articles', schema: 'articles', detail: 'rest' }]
+    expect(resolveFetchConfigs(authored, { records: lane }).get('articles').detail).toBe('rest')
+  })
+
+  it('leaves the artifact lane on its own rules — the control', () => {
+    // Without a lane, `deferred:` still drives detail injection exactly as
+    // before, and a collection without it still gets none.
+    const withDeferred = { articles: { deferred: ['body'] } }
+    expect(resolveFetchConfigs(decl, { collections: withDeferred }).get('articles').detail)
+      .toBe('/data/articles/{slug}.json')
+    expect(resolveFetchConfigs(decl, {}).get('articles').detail).toBeUndefined()
+  })
+})

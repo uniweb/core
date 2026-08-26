@@ -28,7 +28,7 @@
  */
 
 import { collectionDataUrl, isDataUrl, recordDataUrl } from './data-paths.js'
-import { resolveCollectionAddress } from './collection-address.js'
+import { resolveCollectionAddress, resolveRecordAddressPattern } from './collection-address.js'
 
 /**
  * Is this fetch declaration a per-instance *refinement* of an ancestor's
@@ -96,8 +96,23 @@ function localizeConfig(cfg, locale, defaultLocale) {
  * @param {Object|null} collections - the site's `config.collections` map
  * @returns {Object} the original config, or a copy carrying `detail`
  */
-function applyDeferredDetail(cfg, collections) {
+function applyDeferredDetail(cfg, collections, records) {
   if (cfg.detail !== undefined) return cfg
+
+  // ⭐ A lane's record address is injected whenever the lane declares one —
+  // NOT only for a `deferred:` collection, and the difference is load-bearing.
+  //
+  // A live lane answers a list request at brief depth and a record request in
+  // full, so a detail page that filtered the list would render the brief and
+  // silently miss the body. And it cannot fall back to the rule below: the
+  // `deferred:` declaration lives in `config.collections`, which a host's
+  // projection is not obliged to carry — so on such a host that rule can never
+  // fire, and this is the only way a detail page reaches a whole record.
+  if (cfg.endpoint) {
+    const recordPattern = resolveRecordAddressPattern(cfg.collection ?? cfg.schema, records)
+    if (recordPattern) return { ...cfg, detail: recordPattern }
+  }
+
   const schema = cfg.schema
   if (!schema || !collections) return cfg
   const collConfig = collections[schema]
@@ -193,7 +208,7 @@ export function resolveFetchConfigs(sources, options = {}) {
       // which a `collection:` ref does not have until this runs.
       const sourced = resolveCollectionSource(cfg, records)
       const localized = localizeConfig(sourced, locale, defaultLocale)
-      configs.set(cfg.schema, applyDeferredDetail(localized, collections))
+      configs.set(cfg.schema, applyDeferredDetail(localized, collections, records))
     }
   }
 
