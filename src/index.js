@@ -24,6 +24,8 @@ export {
   resolveCollectionAddress,
   resolveRecordAddressPattern,
 } from './collection-address.js'
+export { resolveFetchConfigs } from './fetch-config.js'
+export { buildDetailConfig } from './detail-url.js'
 export {
   normalizeLanguageList,
   isWildcardLanguages,
