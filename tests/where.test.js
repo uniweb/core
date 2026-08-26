@@ -237,3 +237,58 @@ describe('match — filter records by where-object', () => {
     expect(match(professorsOnly, records).map((r) => r.slug)).toEqual(['darwin', 'lyell', 'humboldt'])
   })
 })
+
+describe('under — path containment at segment boundaries', () => {
+  const pages = [
+    { slug: 'index',   path: '' },
+    { slug: 'spring',  path: '2024' },
+    { slug: 'may',     path: '2024/spring' },
+    { slug: 'sibling', path: '2024b' },
+    { slug: 'older',   path: '2023' },
+  ]
+
+  it('matches the named level and everything below it', () => {
+    expect(match({ path: { under: '2024' } }, pages).map((r) => r.slug))
+      .toEqual(['spring', 'may'])
+  })
+
+  it('does NOT match a sibling sharing a string prefix', () => {
+    // The classic prefix bug: a bare startsWith would return `2024b` here,
+    // silently delivering records from a branch the author never named.
+    expect(evaluate({ path: { under: '2024' } }, { path: '2024b' })).toBe(false)
+  })
+
+  it('treats an empty ancestor as the root — it contains everything', () => {
+    expect(match({ path: { under: '' } }, pages).map((r) => r.slug))
+      .toEqual(['index', 'spring', 'may', 'sibling', 'older'])
+  })
+
+  it('is the recursive counterpart of plain equality', () => {
+    // Equality selects one level; `under` selects that level and its descendants.
+    // This pair is what replaces a separate `recursive:` flag.
+    expect(match({ path: '2024' }, pages).map((r) => r.slug)).toEqual(['spring'])
+    expect(match({ path: { under: '2024' } }, pages).map((r) => r.slug)).toEqual(['spring', 'may'])
+  })
+
+  it('selects only the top level via equality with the empty string', () => {
+    expect(match({ path: '' }, pages).map((r) => r.slug)).toEqual(['index'])
+  })
+
+  it('tolerates leading and trailing slashes on either side', () => {
+    expect(evaluate({ path: { under: '/2024/' } }, { path: '2024/spring' })).toBe(true)
+    expect(evaluate({ path: { under: '2024' } }, { path: '/2024/spring/' })).toBe(true)
+  })
+
+  it('returns false for non-string operands rather than throwing', () => {
+    expect(evaluate({ path: { under: '2024' } }, { path: 42 })).toBe(false)
+    expect(evaluate({ path: { under: 42 } }, { path: '2024' })).toBe(false)
+    expect(evaluate({ path: { under: '2024' } }, {})).toBe(false)
+  })
+
+  it('composes with the other operators and with and/or/not', () => {
+    expect(match({ and: [{ path: { under: '2024' } }, { slug: 'may' }] }, pages).map((r) => r.slug))
+      .toEqual(['may'])
+    expect(match({ not: { path: { under: '2024' } } }, pages).map((r) => r.slug))
+      .toEqual(['index', 'sibling', 'older'])
+  })
+})
