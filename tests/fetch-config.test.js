@@ -153,3 +153,54 @@ describe('resolveFetchConfigs — deferred detail', () => {
     expect(configs.get('articles')).toEqual(cfg)
   })
 })
+
+describe('resolving a collection reference to an address', () => {
+  const decl = [{ collection: 'articles', schema: 'articles' }]
+  const lane = { list: '/_data/{collection}' }
+  const get = (options) => resolveFetchConfigs(decl, options).get('articles')
+
+  it('falls through to the compiled artifact when no lane is declared', () => {
+    // Not a degraded mode — this is the answer for every site with no backend,
+    // which is the framework's default rather than a special case.
+    expect(get({})).toMatchObject({ path: '/data/articles.json', schema: 'articles' })
+    expect(get({}).endpoint).toBeUndefined()
+  })
+
+  it('uses the host lane when one is declared', () => {
+    expect(get({ records: lane })).toMatchObject({ endpoint: '/_data/articles' })
+    expect(get({ records: lane }).path).toBeUndefined()
+  })
+
+  it('locale-prefixes the artifact but not the lane', () => {
+    // The artifact is a file the build emitted per locale, so the locale is
+    // part of its path. A lane answers a query and the host locale-projects,
+    // so the locale travels as a request parameter instead.
+    const opts = { locale: 'fr', defaultLocale: 'en' }
+    expect(get(opts).path).toBe('/fr/data/articles.json')
+    expect(get({ ...opts, records: lane }).endpoint).toBe('/_data/articles')
+  })
+
+  it('outranks a `path` sitting beside it, and drops it', () => {
+    // The sync producer emits both during the transition — `collection` for a
+    // consumer that resolves it, `path` for one not taught to yet. Two
+    // addresses on one request would leave the fetcher to break the tie by
+    // field order. This also matches the build-time parser, which has always
+    // returned early on `collection` and ignored any `path` beside it.
+    const both = [{ collection: 'articles', path: '/data/articles.json', schema: 'articles' }]
+    const out = resolveFetchConfigs(both, { records: lane }).get('articles')
+    expect(out.endpoint).toBe('/_data/articles')
+    expect(out.path).toBeUndefined()
+  })
+
+  it('still resolves to the artifact when both are present and no lane exists', () => {
+    const both = [{ collection: 'articles', path: '/data/articles.json', schema: 'articles' }]
+    expect(resolveFetchConfigs(both, {}).get('articles').path).toBe('/data/articles.json')
+  })
+
+  it('leaves a config carrying no collection untouched', () => {
+    const plain = [{ path: '/data/team.json', schema: 'team' }]
+    expect(resolveFetchConfigs(plain, { records: lane }).get('team')).toMatchObject({
+      path: '/data/team.json',
+    })
+  })
+})

@@ -128,6 +128,10 @@ export default class EntityStore {
         locale: website?.getActiveLocale?.() ?? null,
         defaultLocale: website?.getDefaultLocale?.() ?? null,
         collections: website?.config?.collections ?? null,
+        // A host's live-collection lane. Absent on every static site and on
+        // local dev, which is why `resolveCollectionSource` treats absence as
+        // the ordinary case and reads the compiled artifact without comment.
+        records: website?.config?.records ?? null,
       },
     )
   }

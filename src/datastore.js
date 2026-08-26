@@ -35,12 +35,12 @@
  * @returns {string} A stable JSON string usable as a cache-Map key
  */
 export function deriveCacheKey(request) {
-  const { path, url, schema, transform } = request || {}
+  const { path, url, endpoint, schema, transform } = request || {}
   const method = request?.method && request.method.toUpperCase() !== 'GET'
     ? request.method.toUpperCase()
     : undefined
   const body = method === 'POST' ? request?.body : undefined
-  return JSON.stringify({ path, url, schema, transform, method, body })
+  return JSON.stringify({ path, url, endpoint, schema, transform, method, body })
 }
 
 export default class DataStore {

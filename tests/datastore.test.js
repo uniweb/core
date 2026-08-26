@@ -141,3 +141,19 @@ describe('DataStore', () => {
     })
   })
 })
+
+describe('deriveCacheKey — endpoint is part of the identity', () => {
+  it('separates two collections resolved through a lane', () => {
+    // Without `endpoint` in the key these collapse to one entry and the second
+    // collection reads the first one's records out of the cache.
+    const a = deriveCacheKey({ endpoint: '/_data/articles', schema: 'articles' })
+    const b = deriveCacheKey({ endpoint: '/_data/news', schema: 'news' })
+    expect(a).not.toBe(b)
+  })
+
+  it('separates the lane address from the artifact for one collection', () => {
+    const lane = deriveCacheKey({ endpoint: '/_data/articles', schema: 'articles' })
+    const file = deriveCacheKey({ path: '/data/articles.json', schema: 'articles' })
+    expect(lane).not.toBe(file)
+  })
+})

@@ -27,7 +27,8 @@
  * `resolveFetchConfigs`. That difference is real and stays with the caller.
  */
 
-import { isDataUrl, recordDataUrl } from './data-paths.js'
+import { collectionDataUrl, isDataUrl, recordDataUrl } from './data-paths.js'
+import { resolveCollectionAddress } from './collection-address.js'
 
 /**
  * Is this fetch declaration a per-instance *refinement* of an ancestor's
@@ -110,6 +111,40 @@ function applyDeferredDetail(cfg, collections) {
 }
 
 /**
+ * Resolve a `collection:` reference to something the fetcher can call.
+ *
+ * The author names a collection; this decides where that collection lives, and
+ * there are exactly two answers:
+ *
+ *   - a host declared a live lane (`config.records`) → an `endpoint`, final on
+ *     arrival, which the fetcher calls without composing anything further;
+ *   - nobody did → the `path` of the artifact the build emitted.
+ *
+ * ⭐ The second is not a fallback in the apologetic sense. It is the answer for
+ * every site with no backend, which is the framework's default rather than a
+ * degraded mode — so an absent lane is silent, not warned.
+ *
+ * ⭐ `collection` OUTRANKS a `path` sitting beside it, which matters because the
+ * sync producer emits both during the transition — `collection` for a consumer
+ * that resolves it, `path` for one that has not been taught to yet. Resolving
+ * whenever `collection` is present is also what the build-time parser has always
+ * done (`parseFetchConfig` returns early on `collection`, ignoring any `path`),
+ * so the two agree rather than disagreeing on a shape nobody hand-writes.
+ */
+function resolveCollectionSource(cfg, records) {
+  if (typeof cfg.collection !== 'string' || cfg.collection.length === 0) return cfg
+
+  const endpoint = resolveCollectionAddress(cfg.collection, records)
+  if (endpoint) {
+    // Drop the transitional `path`: two addresses on one request is an
+    // ambiguity the fetcher would have to break by accident of field order.
+    const { path, url, ...rest } = cfg
+    return { ...rest, endpoint }
+  }
+  return { ...cfg, path: collectionDataUrl(cfg.collection) }
+}
+
+/**
  * Resolve the applicable fetch configs from an ordered list of sources.
  *
  * The rule: walk the sources in precedence order and take the FIRST match per
@@ -130,6 +165,9 @@ function applyDeferredDetail(cfg, collections) {
  * @param {string|null} [options.locale] - the locale being rendered
  * @param {string|null} [options.defaultLocale] - the site's default locale
  * @param {Object|null} [options.collections] - the site's `config.collections`
+ * @param {Object|null} [options.records] - the site's `config.records`, a host's
+ *   live-collection lane. Absent means the compiled artifact answers, which is
+ *   the whole of what a site with no backend needs.
  * @returns {Map<string, Object>} schema name → resolved config
  */
 export function resolveFetchConfigs(sources, options = {}) {
@@ -138,6 +176,7 @@ export function resolveFetchConfigs(sources, options = {}) {
     locale = null,
     defaultLocale = null,
     collections = null,
+    records = null,
   } = options
 
   const configs = new Map()
@@ -150,7 +189,10 @@ export function resolveFetchConfigs(sources, options = {}) {
       if (!cfg?.schema) continue
       if (configs.has(cfg.schema)) continue
       if (!collectAll && !schemas.includes(cfg.schema)) continue
-      const localized = localizeConfig(cfg, locale, defaultLocale)
+      // Address first: localization and deferred-detail both key on `path`,
+      // which a `collection:` ref does not have until this runs.
+      const sourced = resolveCollectionSource(cfg, records)
+      const localized = localizeConfig(sourced, locale, defaultLocale)
       configs.set(cfg.schema, applyDeferredDetail(localized, collections))
     }
   }
