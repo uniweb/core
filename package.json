@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.js",
     "./base-path": "./src/base-path.js",
+    "./collection-address": "./src/collection-address.js",
     "./data-paths": "./src/data-paths.js",
     "./detail-url": "./src/detail-url.js",
     "./fetch-config": "./src/fetch-config.js",

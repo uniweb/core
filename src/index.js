@@ -21,6 +21,10 @@ export { default as ObservableState } from './observable-state.js'
 // Utilities
 export { substitutePlaceholders } from './substitute-placeholders.js'
 export {
+  resolveCollectionAddress,
+  resolveRecordAddressPattern,
+} from './collection-address.js'
+export {
   normalizeLanguageList,
   isWildcardLanguages,
   resolveDefaultLocale,
