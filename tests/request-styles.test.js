@@ -385,3 +385,76 @@ describe('strapi style', () => {
     expect(out.pushed.size).toBe(0)
   })
 })
+
+describe('a new where-operator must never be MIS-encoded', () => {
+  // Adding an operator to `@uniweb/core/where` widens the predicate language
+  // for every style at once. The safe outcome for a style that cannot express
+  // it is to push NOTHING — the default fetcher then applies the whole
+  // predicate as a runtime fallback and the caller gets correct records.
+  //
+  // ⛔ The unsafe outcome is a style that emits a wire operator the backend
+  // does not implement: the request succeeds, the backend ignores or misreads
+  // the clause, and the caller receives a WRONG set with a 200. This test is
+  // the guard on that, using `under` as the worked example.
+  const request = { where: { path: { under: '2024' } } }
+  const ctx = { method: 'GET', pushCandidates: new Set(['where']), rename: null }
+
+  it('json-body carries an unknown-to-it operator verbatim — the predicate is opaque JSON', () => {
+    const out = jsonBody.encode(request, ctx)
+    expect(out.pushed.has('where')).toBe(true)
+    expect(out.queryParams).toEqual([['_where', JSON.stringify(request.where)]])
+  })
+
+  it('flat-query fails CLOSED — nothing pushed, so the runtime evaluates', () => {
+    const out = flatQuery.encode(request, ctx)
+    expect(out.pushed.has('where')).toBe(false)
+    expect(out.queryParams).toEqual([])
+  })
+
+  it('strapi fails CLOSED rather than inventing a $under filter', () => {
+    const out = strapi.encode(request, ctx)
+    expect(out.pushed.has('where')).toBe(false)
+    expect(out.queryParams).toEqual([])
+  })
+
+  it('failing closed is per-request, not per-style — a mappable predicate still pushes', () => {
+    // Guards the guard: if the two styles above returned nothing for every
+    // input, the three assertions above would pass while proving nothing.
+    const mappable = { where: { department: 'biology' } }
+    expect(strapi.encode(mappable, ctx).pushed.has('where')).toBe(true)
+    expect(flatQuery.encode(mappable, ctx).pushed.has('where')).toBe(true)
+  })
+})
+
+describe('strapi — `like` must not be pushed as a substring test', () => {
+  const enc = (where) =>
+    strapi.encode({ where }, { method: 'GET', pushCandidates: new Set(['where']), rename: null })
+
+  // Regression: `like` used to map to `[$containsi]`, which is wrong in BOTH
+  // directions and silently so. Our `like` is an anchored glob; `$containsi`
+  // is an unanchored substring with no wildcard syntax, and the pattern was
+  // forwarded verbatim — so `like: 'Dr. *'` asked the backend for the literal
+  // text "Dr. *". The request succeeded and returned the wrong set.
+  it('does not push a glob pattern', () => {
+    expect(enc({ name: { like: 'Dr. *' } }).pushed.has('where')).toBe(false)
+  })
+
+  it('does not push a wildcard-free pattern either — anchored ≠ substring', () => {
+    // The subtle half: even with no wildcards our `like: 'abc'` means EXACTLY
+    // 'abc', while `$containsi=abc` also matches 'xabcx'.
+    expect(enc({ name: { like: 'abc' } }).pushed.has('where')).toBe(false)
+  })
+
+  it('does not poison the rest of a composite predicate silently', () => {
+    // A predicate mixing a mappable clause with `like` must push NOTHING
+    // rather than pushing half of it — half a predicate is a wrong set.
+    const out = enc({ and: [{ dept: 'biology' }, { name: { like: 'Dr. *' } }] })
+    expect(out.pushed.has('where')).toBe(false)
+    expect(out.queryParams).toEqual([])
+  })
+
+  it('still pushes what it can express', () => {
+    expect(enc({ dept: 'biology' }).pushed.has('where')).toBe(true)
+    expect(enc({ age: { gte: 18 } }).pushed.has('where')).toBe(true)
+  })
+})

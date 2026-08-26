@@ -33,8 +33,25 @@
  * via `envelope:` at the site or per-fetch level.
  *
  * Operators mapped (where-object → Strapi `$op`):
- *   eq, ne, gt, gte, lt, lte, in, nin → notIn, like → containsi,
+ *   eq, ne, gt, gte, lt, lte, in, nin → notIn,
  *   exists → notNull, and → $and, or → $or, not → $not.
+ *
+ * ⛔ `like` is deliberately NOT mapped, and the mapping it used to have was a
+ * correctness bug rather than an approximation. Our `like` is an ANCHORED glob
+ * (`^…$`, `*` = any run, `?` = one char); `$containsi` is an UNANCHORED
+ * substring test with no wildcard syntax. The two disagree in both directions
+ * and the pattern was forwarded verbatim, asterisks included:
+ *
+ *   like: 'Dr. *'  → filters[name][$containsi]=Dr. *   asks for the LITERAL
+ *                                                      text "Dr. *"
+ *   like: 'abc'    → matches 'xabcx' at the source, which our own evaluator
+ *                    would reject — anchored means exactly 'abc'
+ *
+ * Either way the request succeeds and the caller gets a WRONG set with a 200,
+ * which is the failure this style's fail-closed default exists to prevent.
+ * Unmapped, a predicate containing `like` is unencodable, nothing is pushed,
+ * and the default fetcher applies the whole predicate as a runtime fallback —
+ * correct records, at the cost of fetching more of them.
  *
  * For operators the where-object supports but Strapi doesn't have a
  * clean equivalent for, the style leaves them untouched (the default
@@ -95,7 +112,6 @@ const OPERATOR_MAP = {
   lte: '[$lte]',
   in: '[$in]',
   nin: '[$notIn]',
-  like: '[$containsi]',    // case-insensitive substring — closest Strapi analog
   exists: '[$notNull]',    // overridden below for exists:false → [$null]
 }
 
