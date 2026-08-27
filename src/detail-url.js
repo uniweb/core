@@ -108,6 +108,24 @@ export function buildDetailConfig(collectionConfig, dynamicContext) {
   }
 
   // String-form: URL-based conventions.
+  //
+  // ⭐ `rest` and `query` BUILD FROM THE LIST URL, so its query string survives onto
+  // the detail request. That is deliberate and it is the safe default: the params
+  // that matter most to a single-record read are exactly the ones a list carries —
+  // `?lang=`, an API key, a tenancy id. Dropping them would 401 the detail request
+  // or return the wrong language, on every detail page.
+  //
+  // ⚠️ The cost is real and lands on ONE category: a PROJECTION param (`?fields=`,
+  // `?select=`) asks the API for a summary, and carrying it truncates the very
+  // record the detail fetch exists to get in full. The request still succeeds and
+  // only some fields are missing, so it reads as a component or API fault rather
+  // than a URL one.
+  //
+  // ⛔ Framework cannot tell the categories apart — they are the host's vocabulary,
+  // not ours. So the default keeps everything and the CUSTOM PATTERN form is the
+  // way out: it is used verbatim, so nothing carries over unless the author writes
+  // it. Documented for authors in `docs/reference/dynamic-routes.md` § *The list's
+  // query string carries over*.
   let detailUrl
   if (detail === 'rest') {
     const [basePath, queryString] = baseUrl.split('?')

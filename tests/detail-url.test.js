@@ -24,6 +24,13 @@ describe('the four detail: forms', () => {
       .toMatchObject({ url: 'https://api.test/articles/my-post' })
   })
 
+  // ⭐ DELIBERATE, and the example is the reason: a locale (or an API key, or a
+  // tenancy id) is exactly what a single-record read still needs. Dropping the
+  // query would 401 the detail request or return the wrong language.
+  // ⚠️ The cost lands on projection params — `?fields=summary` carried onto a
+  // detail request truncates the record it exists to fetch in full. Framework
+  // cannot tell the categories apart, so the custom-pattern form is the way out.
+  // Do not "fix" this by dropping the query; see src/detail-url.js.
   it("'rest' keeps an existing query string after the appended segment", () => {
     expect(buildDetailConfig({ url: 'https://api.test/articles?lang=en', detail: 'rest' }, ctx))
       .toMatchObject({ url: 'https://api.test/articles/my-post?lang=en' })
