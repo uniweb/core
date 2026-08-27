@@ -156,7 +156,7 @@ describe('resolveFetchConfigs — deferred detail', () => {
 
 describe('resolving a collection reference to an address', () => {
   const decl = [{ collection: 'articles', schema: 'articles' }]
-  const lane = { list: '/_data/{collection}' }
+  const lane = { list: '/_data/{path}' }
   const get = (options) => resolveFetchConfigs(decl, options).get('articles')
 
   it('falls through to the compiled artifact when no lane is declared', () => {
@@ -207,7 +207,7 @@ describe('resolving a collection reference to an address', () => {
 
 describe('a lane\'s record address becomes the detail source', () => {
   const decl = [{ collection: 'articles', schema: 'articles' }]
-  const lane = { list: '/_data/{collection}', record: '/_data/{collection}/{param}' }
+  const lane = { list: '/_data/{path}', record: '/_data/{path}/{param}' }
 
   it('injects the record pattern when the lane declares one', () => {
     // Not gated on `deferred:`. A live lane answers a list at brief depth, so a

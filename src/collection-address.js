@@ -34,7 +34,7 @@
  * our own here would rebuild exactly that coupling, on a lane where the wrong
  * answer is *stale or missing content* rather than a visible 404.
  *
- * ⇒ Substituting `{collection}` and `{param}` is the WHOLE of what this does.
+ * ⇒ Substituting `{path}` and `{param}` is the WHOLE of what this does.
  *
  * Zero-dependency beyond two sibling leaves, so the SSR pipeline and a Worker
  * isolate can both import it.
@@ -42,8 +42,17 @@
 
 import { substitutePlaceholders } from './substitute-placeholders.js'
 
-/** The placeholder a list pattern must carry to address a specific collection. */
-const COLLECTION_SLOT = '{collection}'
+/**
+ * The placeholder a list pattern must carry.
+ *
+ * ⛔ IT IS `{path}`, NOT `{collection}`, AND THAT IS NOT COSMETIC. A *collection* is
+ * framework's own build concept — a named set our build compiles to one file. A host
+ * serving records has no such thing: it has content organised somewhere, and what we
+ * substitute is a **path** to it. Naming the slot for our file vocabulary put that
+ * vocabulary into a string a HOST writes, which makes them reason in our shape.
+ * See `kb/framework/architecture/backend-boundary.md` §2.
+ */
+const PATH_SLOT = '{path}'
 /** The placeholder a record pattern must carry to address a specific record. */
 const PARAM_SLOT = '{param}'
 
@@ -76,7 +85,7 @@ function readPattern(lane, key) {
 /**
  * The address for a whole collection, or `null` to fall through to the artifact.
  *
- * ⚠️ A pattern that does not carry `{collection}` is REFUSED rather than used.
+ * ⚠️ A pattern that does not carry `{path}` is REFUSED rather than used.
  * Substituting nothing would yield one identical URL for every collection on the
  * site — every schema reading the same records, with a 200 on each request. That
  * is the failure this check exists for; an unusable pattern must degrade to the
@@ -90,16 +99,16 @@ export function resolveCollectionAddress(collection, lane) {
   if (typeof collection !== 'string' || collection.length === 0) return null
   const pattern = readPattern(lane, 'list')
   if (!pattern) return null
-  if (!pattern.includes(COLLECTION_SLOT)) {
+  if (!pattern.includes(PATH_SLOT)) {
     warnOnce(
       `list:${pattern}`,
-      `config.records.list carries no ${COLLECTION_SLOT} placeholder, so every ` +
+      `config.records.list carries no ${PATH_SLOT} placeholder, so every ` +
         `collection would resolve to the same address. Ignoring it and reading the ` +
         `compiled collection file instead.`
     )
     return null
   }
-  return substitutePlaceholders(pattern, { collection })
+  return substitutePlaceholders(pattern, { path: collection })
 }
 
 /**
@@ -128,7 +137,7 @@ export function resolveRecordAddressPattern(collection, lane) {
     )
     return null
   }
-  // Only `{collection}` is substituted here — `{param}` survives for the
+  // Only `{path}` is substituted here — `{param}` survives for the
   // dynamic-route resolution that owns it.
-  return substitutePlaceholders(pattern, { collection })
+  return substitutePlaceholders(pattern, { path: collection })
 }

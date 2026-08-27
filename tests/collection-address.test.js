@@ -5,7 +5,7 @@ import {
   _resetCollectionAddressWarnings,
 } from '../src/collection-address.js'
 
-const lane = { list: '/_data/{collection}', record: '/_data/{collection}/{param}' }
+const lane = { list: '/_data/{path}', record: '/_data/{path}/{param}' }
 
 describe('resolving a collection to an address', () => {
   it('substitutes the collection name into the declared pattern', () => {
@@ -22,7 +22,7 @@ describe('resolving a collection to an address', () => {
     // The point of a pattern over a base: a site id, a different root for
     // records, an absolute origin — none of it is the framework's business.
     expect(
-      resolveCollectionAddress('news', { list: 'https://h.example/s/abc123/c/{collection}.json' })
+      resolveCollectionAddress('news', { list: 'https://h.example/s/abc123/c/{path}.json' })
     ).toBe('https://h.example/s/abc123/c/news.json')
   })
 
@@ -42,7 +42,7 @@ describe('falling through to the artifact', () => {
 
   it('returns null when the lane declares the other half only', () => {
     expect(resolveCollectionAddress('articles', { record: '/x/{param}' })).toBeNull()
-    expect(resolveRecordAddressPattern('articles', { list: '/x/{collection}' })).toBeNull()
+    expect(resolveRecordAddressPattern('articles', { list: '/x/{path}' })).toBeNull()
   })
 
   it('returns null for a malformed declaration rather than throwing', () => {
@@ -68,13 +68,13 @@ describe('a pattern that would collapse every collection onto one address', () =
   // Without the placeholder check this substitutes nothing and returns the SAME
   // url for every collection — every schema reading the same records, 200 on
   // each request. Degrading to the artifact is at least correct.
-  it('refuses a list pattern with no {collection}', () => {
+  it('refuses a list pattern with no {path}', () => {
     expect(resolveCollectionAddress('articles', { list: '/_data/all' })).toBeNull()
-    expect(warn.mock.calls.map((c) => String(c[0])).join()).toContain('{collection}')
+    expect(warn.mock.calls.map((c) => String(c[0])).join()).toContain('{path}')
   })
 
   it('refuses a record pattern with no {param}', () => {
-    expect(resolveRecordAddressPattern('articles', { record: '/_data/{collection}' })).toBeNull()
+    expect(resolveRecordAddressPattern('articles', { record: '/_data/{path}' })).toBeNull()
     expect(warn.mock.calls.map((c) => String(c[0])).join()).toContain('{param}')
   })
 
