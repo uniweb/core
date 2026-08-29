@@ -83,20 +83,20 @@ function localizeConfig(cfg, locale, defaultLocale) {
  *     route's paramName is `slug` (the documented convention); a route using
  *     another param name needs an explicit author-written `detail:`.
  *   - Per-record files are not currently localized. A site needing localized
- *     deferred collections writes its own `detail:` URL.
+ *     a deferred query writes its own `detail:` URL.
  *
  * An author-supplied `cfg.detail` always wins; this only fills the default.
- * With no `collections` map available the config passes through untouched —
+ * With no `queries` map available the config passes through untouched —
  * deferred-detail injection is an enhancement, never a correctness
  * requirement, so a caller that does not have collection metadata still gets
  * a usable config. That matters for hosts whose content projection may not
  * carry collection metadata at all.
  *
  * @param {Object} cfg
- * @param {Object|null} collections - the site's `config.collections` map
+ * @param {Object|null} queries - the site's `config.queries` map
  * @returns {Object} the original config, or a copy carrying `detail`
  */
-function applyDeferredDetail(cfg, collections, records) {
+function applyDeferredDetail(cfg, queries, records) {
   if (cfg.detail !== undefined) return cfg
 
   // ⭐ A lane's record address is injected whenever the lane declares one —
@@ -105,17 +105,17 @@ function applyDeferredDetail(cfg, collections, records) {
   // A live lane answers a list request at brief depth and a record request in
   // full, so a detail page that filtered the list would render the brief and
   // silently miss the body. And it cannot fall back to the rule below: the
-  // `deferred:` declaration lives in `config.collections`, which a host's
+  // `deferred:` declaration lives in `config.queries`, which a host's
   // projection is not obliged to carry — so on such a host that rule can never
   // fire, and this is the only way a detail page reaches a whole record.
   if (cfg.endpoint) {
-    const recordPattern = resolveRecordAddressPattern(cfg.collection ?? cfg.schema, records)
+    const recordPattern = resolveRecordAddressPattern(cfg.query ?? cfg.schema, records)
     if (recordPattern) return { ...cfg, detail: recordPattern }
   }
 
   const schema = cfg.schema
-  if (!schema || !collections) return cfg
-  const collConfig = collections[schema]
+  if (!schema || !queries) return cfg
+  const collConfig = queries[schema]
   if (!collConfig || typeof collConfig !== 'object') return cfg
   const deferred = Array.isArray(collConfig.deferred) ? collConfig.deferred : null
   if (!deferred || deferred.length === 0) return cfg
@@ -152,16 +152,16 @@ function applyDeferredDetail(cfg, collections, records) {
  * so the two agree rather than disagreeing on a shape nobody hand-writes.
  */
 function resolveCollectionSource(cfg, records) {
-  if (typeof cfg.collection !== 'string' || cfg.collection.length === 0) return cfg
+  if (typeof cfg.query !== 'string' || cfg.query.length === 0) return cfg
 
-  const endpoint = resolveCollectionAddress(cfg.collection, records)
+  const endpoint = resolveCollectionAddress(cfg.query, records)
   if (endpoint) {
     // Drop the transitional `path`: two addresses on one request is an
     // ambiguity the fetcher would have to break by accident of field order.
     const { path, url, ...rest } = cfg
     return { ...rest, endpoint }
   }
-  return { ...cfg, path: collectionDataUrl(cfg.collection) }
+  return { ...cfg, path: collectionDataUrl(cfg.query) }
 }
 
 /**
@@ -184,7 +184,7 @@ function resolveCollectionSource(cfg, records) {
  *   Empty (the default) collects every schema found.
  * @param {string|null} [options.locale] - the locale being rendered
  * @param {string|null} [options.defaultLocale] - the site's default locale
- * @param {Object|null} [options.collections] - the site's `config.collections`
+ * @param {Object|null} [options.queries] - the site's `config.queries`
  * @param {Object|null} [options.records] - the site's `config.records`, a host's
  *   live-collection lane. Absent means the compiled artifact answers, which is
  *   the whole of what a site with no backend needs.
@@ -195,7 +195,7 @@ export function resolveFetchConfigs(sources, options = {}) {
     schemas = [],
     locale = null,
     defaultLocale = null,
-    collections = null,
+    queries = null,
     records = null,
   } = options
 
@@ -213,7 +213,7 @@ export function resolveFetchConfigs(sources, options = {}) {
       // which a query ref does not have until this runs.
       const sourced = resolveCollectionSource(cfg, records)
       const localized = localizeConfig(sourced, locale, defaultLocale)
-      configs.set(cfg.schema, applyDeferredDetail(localized, collections, records))
+      configs.set(cfg.schema, applyDeferredDetail(localized, queries, records))
     }
   }
 

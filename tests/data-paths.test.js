@@ -110,7 +110,7 @@ describe('fetch-config uses the shared convention', () => {
   it('injects the per-record default for a deferred collection', () => {
     const configs = resolveFetchConfigs(
       [{ schema: 'articles', path: collectionDataUrl('articles') }],
-      { collections: { articles: { deferred: ['body'] } } }
+      { queries: { articles: { deferred: ['body'] } } }
     )
     expect(configs.get('articles').detail).toBe(recordDataUrl('articles', '{slug}'))
   })
@@ -119,7 +119,7 @@ describe('fetch-config uses the shared convention', () => {
     const configs = resolveFetchConfigs(
       [{ schema: 'articles', path: collectionDataUrl('articles') }],
       {
-        collections: {
+        queries: {
           articles: { deferred: ['body'], detailUrl: '/api/articles/{slug}' }
         }
       }

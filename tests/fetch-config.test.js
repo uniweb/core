@@ -118,14 +118,14 @@ describe('resolveFetchConfigs — deferred detail', () => {
 
   it('injects the per-record file pattern for a deferred file-backed collection', () => {
     const configs = resolveFetchConfigs([cfg], {
-      collections: { articles: { deferred: ['body'] } },
+      queries: { articles: { deferred: ['body'] } },
     })
     expect(configs.get('articles').detail).toBe(recordDataUrl('articles', '{slug}'))
   })
 
   it('prefers the collection-declared detailUrl for a remote source', () => {
     const configs = resolveFetchConfigs([cfg], {
-      collections: { articles: { deferred: ['body'], detailUrl: '/api/articles/{slug}' } },
+      queries: { articles: { deferred: ['body'], detailUrl: '/api/articles/{slug}' } },
     })
     expect(configs.get('articles').detail).toBe('/api/articles/{slug}')
   })
@@ -133,14 +133,14 @@ describe('resolveFetchConfigs — deferred detail', () => {
   it('leaves an author-supplied detail alone', () => {
     const authored = { schema: 'articles', path: '/data/articles.json', detail: 'rest' }
     const configs = resolveFetchConfigs([authored], {
-      collections: { articles: { deferred: ['body'] } },
+      queries: { articles: { deferred: ['body'] } },
     })
     expect(configs.get('articles').detail).toBe('rest')
   })
 
   it('injects nothing when the collection declares no deferred fields', () => {
     const configs = resolveFetchConfigs([cfg], {
-      collections: { articles: { path: 'collections/articles' } },
+      queries: { articles: { path: 'collections/articles' } },
     })
     expect(configs.get('articles').detail).toBeUndefined()
   })
@@ -155,7 +155,7 @@ describe('resolveFetchConfigs — deferred detail', () => {
 })
 
 describe('resolving a collection reference to an address', () => {
-  const decl = [{ collection: 'articles', schema: 'articles' }]
+  const decl = [{ query: 'articles', schema: 'articles' }]
   const lane = { list: '/_data/{path}' }
   const get = (options) => resolveFetchConfigs(decl, options).get('articles')
 
@@ -186,14 +186,14 @@ describe('resolving a collection reference to an address', () => {
     // addresses on one request would leave the fetcher to break the tie by
     // field order. This also matches the build-time parser, which has always
     // returned early on `collection` and ignored any `path` beside it.
-    const both = [{ collection: 'articles', path: '/data/articles.json', schema: 'articles' }]
+    const both = [{ query: 'articles', path: '/data/articles.json', schema: 'articles' }]
     const out = resolveFetchConfigs(both, { records: lane }).get('articles')
     expect(out.endpoint).toBe('/_data/articles')
     expect(out.path).toBeUndefined()
   })
 
   it('still resolves to the artifact when both are present and no lane exists', () => {
-    const both = [{ collection: 'articles', path: '/data/articles.json', schema: 'articles' }]
+    const both = [{ query: 'articles', path: '/data/articles.json', schema: 'articles' }]
     expect(resolveFetchConfigs(both, {}).get('articles').path).toBe('/data/articles.json')
   })
 
@@ -206,7 +206,7 @@ describe('resolving a collection reference to an address', () => {
 })
 
 describe('a lane\'s record address becomes the detail source', () => {
-  const decl = [{ collection: 'articles', schema: 'articles' }]
+  const decl = [{ query: 'articles', schema: 'articles' }]
   const lane = { list: '/_data/{path}', record: '/_data/{path}/{param}' }
 
   it('injects the record pattern when the lane declares one', () => {
@@ -222,15 +222,15 @@ describe('a lane\'s record address becomes the detail source', () => {
   })
 
   it('never overrides an author-declared detail', () => {
-    const authored = [{ collection: 'articles', schema: 'articles', detail: 'rest' }]
+    const authored = [{ query: 'articles', schema: 'articles', detail: 'rest' }]
     expect(resolveFetchConfigs(authored, { records: lane }).get('articles').detail).toBe('rest')
   })
 
   it('leaves the artifact lane on its own rules — the control', () => {
     // Without a lane, `deferred:` still drives detail injection exactly as
-    // before, and a collection without it still gets none.
+    // before, and a query without it still gets none.
     const withDeferred = { articles: { deferred: ['body'] } }
-    expect(resolveFetchConfigs(decl, { collections: withDeferred }).get('articles').detail)
+    expect(resolveFetchConfigs(decl, { queries: withDeferred }).get('articles').detail)
       .toBe('/data/articles/{slug}.json')
     expect(resolveFetchConfigs(decl, {}).get('articles').detail).toBeUndefined()
   })
