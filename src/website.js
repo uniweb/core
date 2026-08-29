@@ -506,11 +506,11 @@ export default class Website {
         // Create a dynamic page instance with the concrete route and params
         const result = this._createDynamicPage(page, normalizedRoute, match.params)
         if (result) {
-          const { page: dynamicPage, collectionLoaded } = result
-          // Only cache when collection data was available at creation time.
+          const { page: dynamicPage, recordsLoaded } = result
+          // Only cache when the records were available at creation time.
           // If DataStore was empty, skip caching so the next render recreates
           // the page with fresh data (correct title, not-found state, etc.).
-          if (collectionLoaded) {
+          if (recordsLoaded) {
             this._dynamicPageCache.set(normalizedRoute, dynamicPage)
           }
           return dynamicPage
@@ -584,7 +584,7 @@ export default class Website {
     const parentPage = this.pages.find(p => p.route === parentRoute || p.getNavRoute() === parentRoute)
 
     if (parentPage && pluralSchema) {
-      // Find collection data from parent's fetch config via the dispatcher's
+      // Find the records from the parent's fetch config via the dispatcher's
       // peek (sync cache probe). Used to populate the page title / notFound
       // flag on dynamic pages before the page instance is constructed.
       const parentFetch = parentPage.fetch
@@ -608,18 +608,18 @@ export default class Website {
           pageData.description = currentItem.description || currentItem.excerpt
         }
       } else if (items.length > 0) {
-        // Collection is loaded but this ID isn't in it — definitive not found
+        // The records are loaded but this ID isn't among them — definitive not found
         pageData.title = 'Not found'
         pageData.notFound = true
       }
 
-      // Track whether collection data was available at creation time.
+      // Track whether the records were available at creation time.
       // Note: the matched record and the sibling list are intentionally NOT
       // stored on dynamicContext — nothing reads them (documented shape is
       // { paramName, paramValue, schema }; the record reaches components via
       // content.data, siblings via `fetch: { refine: true, detail: false }`).
       // The local `currentItem`/`items` above drive title/description/notFound.
-      pageData._collectionLoaded = items.length > 0
+      pageData._recordsLoaded = items.length > 0
     }
 
     // Create the page instance
@@ -628,7 +628,7 @@ export default class Website {
     // Copy parent reference from template
     dynamicPage.parent = templatePage.parent
 
-    return { page: dynamicPage, collectionLoaded: pageData._collectionLoaded ?? true }
+    return { page: dynamicPage, recordsLoaded: pageData._recordsLoaded ?? true }
   }
 
   /**
@@ -813,7 +813,7 @@ export default class Website {
    * Resolve a `page:<stable_id>` detail-page reference (from a fetch config's
    * `detailPage`) to a locale-specific route TEMPLATE, e.g. '/blog/:slug'. The
    * entity store interpolates each record's field into the `:param` slot to build
-   * a card's href — so a dynamic-list preview links to the collection's canonical
+   * a card's href — so a dynamic-list preview links to the query's canonical
    * detail page regardless of which page it sits on.
    *
    * O(1): a `_pageIdMap` lookup (keyed on stable_id, same map makeHref uses), NOT

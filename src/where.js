@@ -45,7 +45,7 @@
  *   not     Single sub-predicate; must not match.
  *
  * `under` is for fields holding a slash-separated location — a record's
- * position inside its collection, a category path, a docs section. It matches
+ * position inside the folder, a category path, a docs section. It matches
  * the value itself and anything below it, and it respects segment boundaries so
  * a sibling with a shared prefix does not match:
  *
@@ -143,7 +143,7 @@ function evaluateClause(key, value, record) {
  *
  * Both sides are compared with leading and trailing `/` trimmed, so an author
  * who writes `'/2024'` or `'2024/'` gets what they meant. An empty ancestor is
- * the root and contains everything — which is what makes "the whole collection"
+ * the root and contains everything — which is what makes "the whole pool"
  * expressible as a predicate rather than as the absence of one.
  *
  * ⛔ The `+ '/'` is the whole point: a plain `startsWith` would match `2024b`

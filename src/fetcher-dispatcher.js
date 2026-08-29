@@ -122,7 +122,7 @@ export default class FetcherDispatcher {
         })
       } catch (err) {
         if (this._dev) {
-          console.warn('[FetcherDispatcher] extension transports collection threw:', err)
+          console.warn('[FetcherDispatcher] extension transports list threw:', err)
         }
         continue
       }

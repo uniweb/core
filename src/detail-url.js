@@ -1,5 +1,5 @@
 /**
- * Detail-record resolution — the ONE home for turning a collection's `detail:`
+ * Detail-record resolution — the ONE home for turning a query's `detail:`
  * declaration plus a dynamic route's params into a fetch config.
  *
  * Why this is a subpath rather than an EntityStore internal. A host that
@@ -47,31 +47,31 @@ function paramContext(paramName, paramValue) {
 }
 
 /**
- * Build a detail-URL fetch config from a collection config + dynamic context.
+ * Build a detail-URL fetch config from a query config + dynamic context.
  *
  * Four forms of `detail:`:
  *   - `'rest'`                — append paramValue as a path segment.
  *   - `'query'`               — append `?paramName=paramValue`.
  *   - `'/articles/{slug}'`    — custom URL pattern with {paramName} placeholders,
  *                               or the generic `{param}` alias (see below).
- *   - `{ body, envelope }`    — object form. Reuses the collection's url /
+ *   - `{ body, envelope }`    — object form. Reuses the query's url /
  *                               method / headers / auth; adds per-detail
  *                               body (with placeholder substitution) and
  *                               per-detail envelope.
  *
- * Returns `null` — never throws — when the collection declares no `detail:`,
- * when the dynamic context carries no param, or when the collection has
+ * Returns `null` — never throws — when the query declares no `detail:`,
+ * when the dynamic context carries no param, or when the query has
  * neither `url:` nor `path:` to build from. A caller treats `null` as "this
- * collection has no separate detail fetch", which is the common case.
+ * query has no separate detail fetch", which is the common case.
  *
- * @param {Object} collectionConfig - A resolved fetch config for the collection
+ * @param {Object} queryConfig - A resolved fetch config for the query
  *   (post-`resolveFetchConfigs`, so `detail` may have been auto-injected for a
- *   `deferred:` collection — see `./fetch-config.js`).
+ *   `deferred:` query — see `./fetch-config.js`).
  * @param {{ paramName: string, paramValue: string }} dynamicContext
  * @returns {Object|null} A fetch config carrying `url` or `path`, or null.
  */
-export function buildDetailConfig(collectionConfig, dynamicContext) {
-  const { detail } = collectionConfig
+export function buildDetailConfig(queryConfig, dynamicContext) {
+  const { detail } = queryConfig
   if (!detail) return null
   const { paramName, paramValue } = dynamicContext
   if (!paramName || paramValue === undefined) return null
@@ -80,28 +80,28 @@ export function buildDetailConfig(collectionConfig, dynamicContext) {
   // kind: an `endpoint` carries remote semantics the fetcher decides on, so
   // returning a detail as `path` would silently drop operator pushdown and the
   // site's static headers for exactly the request that is one record.
-  const baseUrl = collectionConfig.endpoint || collectionConfig.url || collectionConfig.path
+  const baseUrl = queryConfig.endpoint || queryConfig.url || queryConfig.path
   if (!baseUrl) return null
-  const addressKey = collectionConfig.endpoint
+  const addressKey = queryConfig.endpoint
     ? 'endpoint'
-    : collectionConfig.url
+    : queryConfig.url
       ? 'url'
       : 'path'
 
-  // Object form: `detail: { body, envelope }`. Reuses collection's URL +
+  // Object form: `detail: { body, envelope }`. Reuses the query's URL +
   // method + headers + auth. The body is placeholder-substituted against
   // the dynamic context so `body: { variables: { slug: "{slug}" } }` works.
   if (detail && typeof detail === 'object') {
     const out = {
       [addressKey]: baseUrl,
-      schema: collectionConfig.schema,
-      transform: collectionConfig.transform,
+      schema: queryConfig.schema,
+      transform: queryConfig.transform,
     }
-    if (collectionConfig.method) out.method = collectionConfig.method
+    if (queryConfig.method) out.method = queryConfig.method
     if (detail.body !== undefined) {
       out.body = substitutePlaceholders(detail.body, paramContext(paramName, paramValue), { encode: false })
-    } else if (collectionConfig.body !== undefined) {
-      out.body = substitutePlaceholders(collectionConfig.body, paramContext(paramName, paramValue), { encode: false })
+    } else if (queryConfig.body !== undefined) {
+      out.body = substitutePlaceholders(queryConfig.body, paramContext(paramName, paramValue), { encode: false })
     }
     if (detail.envelope) out.envelope = detail.envelope
     return out
@@ -145,7 +145,7 @@ export function buildDetailConfig(collectionConfig, dynamicContext) {
 
   return {
     [addressKey]: detailUrl,
-    schema: collectionConfig.schema,
-    transform: collectionConfig.transform,
+    schema: queryConfig.schema,
+    transform: queryConfig.transform,
   }
 }

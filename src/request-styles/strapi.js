@@ -28,7 +28,7 @@
  *   sort: 'date desc, title asc'
  *     → sort[0]=date:desc & sort[1]=title:asc
  *
- * Response envelope defaults to `{ collection: 'data', item: 'data' }` —
+ * Response envelope defaults to `{ list: 'data', item: 'data' }` —
  * Strapi v4 wraps every response in `{ data, meta }`. Sites can override
  * via `envelope:` at the site or per-fetch level.
  *
@@ -61,7 +61,7 @@
 export const strapi = {
   name: 'strapi',
   canPush: new Set(['where', 'limit', 'sort']),
-  defaultEnvelope: { collection: 'data', item: 'data' },
+  defaultEnvelope: { list: 'data', item: 'data' },
 
   encode(request, { method, pushCandidates, rename }) {
     const pushed = new Set()

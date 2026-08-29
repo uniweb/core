@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { isFetchRefinement, resolveFetchConfigs } from '../src/fetch-config.js'
 // Derived, never re-spelled: the convention is pinned once, in
 // `tests/data-paths.test.js`. See the note there before pinning it again.
-import { collectionDataUrl, recordDataUrl } from '../src/data-paths.js'
+import { queryDataUrl, recordDataUrl } from '../src/data-paths.js'
 
 /**
  * Direct tests for the shared fetch-config rule.
@@ -81,16 +81,16 @@ describe('resolveFetchConfigs — precedence', () => {
 })
 
 describe('resolveFetchConfigs — localization', () => {
-  const cfg = { schema: 'articles', path: collectionDataUrl('articles') }
+  const cfg = { schema: 'articles', path: queryDataUrl('articles') }
 
   it('prefixes compiled-collection paths for a non-default locale', () => {
     const configs = resolveFetchConfigs([cfg], { locale: 'fr', defaultLocale: 'en' })
-    expect(configs.get('articles').path).toBe(`/fr${collectionDataUrl('articles')}`)
+    expect(configs.get('articles').path).toBe(`/fr${queryDataUrl('articles')}`)
   })
 
   it('leaves the default locale untouched', () => {
     const configs = resolveFetchConfigs([cfg], { locale: 'en', defaultLocale: 'en' })
-    expect(configs.get('articles').path).toBe(collectionDataUrl('articles'))
+    expect(configs.get('articles').path).toBe(queryDataUrl('articles'))
   })
 
   it('does not localize remote urls', () => {
@@ -107,14 +107,14 @@ describe('resolveFetchConfigs — localization', () => {
   })
 
   it('does not mutate the source config', () => {
-    const source = { schema: 'articles', path: collectionDataUrl('articles') }
+    const source = { schema: 'articles', path: queryDataUrl('articles') }
     resolveFetchConfigs([source], { locale: 'fr', defaultLocale: 'en' })
-    expect(source.path).toBe(collectionDataUrl('articles'))
+    expect(source.path).toBe(queryDataUrl('articles'))
   })
 })
 
 describe('resolveFetchConfigs — deferred detail', () => {
-  const cfg = { schema: 'articles', path: collectionDataUrl('articles') }
+  const cfg = { schema: 'articles', path: queryDataUrl('articles') }
 
   it('injects the per-record file pattern for a deferred file-backed collection', () => {
     const configs = resolveFetchConfigs([cfg], {

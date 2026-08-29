@@ -87,7 +87,7 @@ export default class Block {
 
     // Content structure
     // The content can be:
-    // 1. Raw ProseMirror content (from content collection)
+    // 1. Raw ProseMirror content (from a record)
     // 2. Pre-parsed content with main/items structure
     // For now, store raw and parse on demand
     //
@@ -358,7 +358,7 @@ export default class Block {
    *
    * Supports multiple input shapes:
    * 1. Pre-parsed groups structure (from the editor)
-   * 2. ProseMirror document (from markdown collection)
+   * 2. ProseMirror document (from a markdown record)
    * 3. Wrapped ProseMirror document (content-API format)
    * 4. Plain object (passed through directly)
    *

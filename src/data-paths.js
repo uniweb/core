@@ -9,7 +9,7 @@
  *
  * Why this module exists. The path `/data/<name>.json` was a bare string
  * literal in six places across three packages: the build wrote it
- * (`collection-processor.js`), the build resolved the query shorthand to it
+ * (the query processor), the build resolved the query shorthand to it
  * (`data-fetcher.js`), core injected the per-record default
  * (`fetch-config.js applyDeferredDetail`), core gated locale-prefixing on it
  * (`fetch-config.js localizeConfig`), the dev server matched it with a regex
@@ -32,11 +32,11 @@
  * inconsistency invites a rename. It has been proposed and declined. Those
  * are machinery: an endpoint and bundler artifacts, which no visitor should
  * land on and which an underscore correctly marks as internal. Compiled
- * collection JSON is the opposite — it is the site's own content, the same
+ * this JSON is the opposite — it is the site's own content, the same
  * records an agent that found the site through `llms.txt` may reasonably
  * fetch directly. `/data/articles.json` is a legitimate public address, and
  * `data` is a legitimate page route; neither collides with the other, since
- * pages emit `.html` and collections emit `.json`. Prefixing it would say
+ * pages emit `.html` and queries emit `.json`. Prefixing it would say
  * "internal" about something that is not.
  *
  * Zero-dependency leaf, like `./locale-config.js`, so a consumer that must
@@ -52,26 +52,26 @@
 export const DATA_DIR = 'data'
 
 /**
- * The URL prefix every compiled-collection request carries. Note the
+ * The URL prefix every compiled-query request carries. Note the
  * trailing slash: `isDataUrl` is a prefix test, and without it `/database`
  * would match.
  */
 export const DATA_URL_PREFIX = `/${DATA_DIR}/`
 
 /**
- * URL of a collection's cascade payload — the whole collection, with
- * `deferred:` fields stripped when the collection declares them.
+ * URL of a query's cascade payload — every record it returns, with
+ * `deferred:` fields stripped when the query declares them.
  *
- * @param {string} name - The collection name.
+ * @param {string} name - The query name.
  * @returns {string} e.g. `/data/articles.json`
  */
-export function collectionDataUrl(name) {
+export function queryDataUrl(name) {
   return `${DATA_URL_PREFIX}${name}.json`
 }
 
 /**
  * URL of one record's full payload — every field, including deferred ones.
- * Emitted per item only when the collection declares `deferred:`.
+ * Emitted per record only when the query declares `deferred:`.
  *
  * Takes either a concrete slug (kit's `useEntityDetail`, which holds a
  * record) or the literal placeholder `{slug}` (core's `applyDeferredDetail`,
@@ -80,21 +80,21 @@ export function collectionDataUrl(name) {
  * function does not encode, matching the behavior of the call sites it
  * replaced.
  *
- * @param {string} collection - The collection name.
+ * @param {string} query - The query name.
  * @param {string} slug - A record slug, or a `{param}` placeholder.
  * @returns {string} e.g. `/data/articles/design-tips.json`
  */
-export function recordDataUrl(collection, slug) {
-  return `${DATA_URL_PREFIX}${collection}/${slug}.json`
+export function recordDataUrl(query, slug) {
+  return `${DATA_URL_PREFIX}${query}/${slug}.json`
 }
 
 /**
- * The inverse of `collectionDataUrl` — recover a collection name from a fetch
- * path so a caller can look it up among the declared collections.
+ * The inverse of `queryDataUrl` — recover a query name from a fetch
+ * path so a caller can look it up among the declared queries.
  *
  * Best-effort by design, and the caller decides what a miss means: a path
- * outside the compiled-collection tree is returned with only its `.json`
- * suffix removed, which simply will not match any declared collection and
+ * outside the compiled tree is returned with only its `.json`
+ * suffix removed, which simply will not match any declared query and
  * lets the caller fall through to reading the file. Nested names round-trip
  * (`/data/archive/2024/posts.json` → `archive/2024/posts`).
  *
@@ -103,16 +103,16 @@ export function recordDataUrl(collection, slug) {
  * how `validate-data.js` came to hold a sixth copy of it.
  *
  * @param {string} path - A fetch config's `path`.
- * @returns {string} The derived collection name.
+ * @returns {string} The derived query name.
  */
-export function collectionNameFromUrl(path) {
+export function queryNameFromUrl(path) {
   if (typeof path !== 'string') return ''
   // DATA_DIR is a plain identifier segment, so it needs no regex escaping.
   return path.replace(new RegExp(`^/?${DATA_DIR}/`), '').replace(/\.json$/i, '')
 }
 
 /**
- * Whether a fetch config's `path` addresses compiled collection data.
+ * Whether a fetch config's `path` addresses compiled query data.
  *
  * Used to scope behavior that only makes sense for build-emitted files —
  * locale prefixing in particular, which must not touch a remote `url:`

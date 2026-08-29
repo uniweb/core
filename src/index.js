@@ -21,9 +21,9 @@ export { default as ObservableState } from './observable-state.js'
 // Utilities
 export { substitutePlaceholders } from './substitute-placeholders.js'
 export {
-  resolveCollectionAddress,
+  resolveQueryAddress,
   resolveRecordAddressPattern,
-} from './collection-address.js'
+} from './query-address.js'
 export { resolveFetchConfigs } from './fetch-config.js'
 export { buildDetailConfig } from './detail-url.js'
 export {
@@ -36,9 +36,9 @@ export {
 export {
   DATA_DIR,
   DATA_URL_PREFIX,
-  collectionDataUrl,
+  queryDataUrl,
   recordDataUrl,
-  collectionNameFromUrl,
+  queryNameFromUrl,
   isDataUrl
 } from './data-paths.js'
 export { evaluate as evaluateWhere, match as matchWhere } from './where.js'

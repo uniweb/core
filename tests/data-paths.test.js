@@ -14,9 +14,9 @@
 import {
   DATA_DIR,
   DATA_URL_PREFIX,
-  collectionDataUrl,
+  queryDataUrl,
   recordDataUrl,
-  collectionNameFromUrl,
+  queryNameFromUrl,
   isDataUrl
 } from '../src/data-paths.js'
 import { resolveFetchConfigs } from '../src/fetch-config.js'
@@ -48,11 +48,11 @@ describe('data-paths helpers', () => {
   })
 
   it('builds cascade and per-record URLs under the same prefix', () => {
-    expect(collectionDataUrl('articles')).toBe(`${DATA_URL_PREFIX}articles.json`)
+    expect(queryDataUrl('articles')).toBe(`${DATA_URL_PREFIX}articles.json`)
     expect(recordDataUrl('articles', 'design-tips')).toBe(
       `${DATA_URL_PREFIX}articles/design-tips.json`
     )
-    expect(isDataUrl(collectionDataUrl('articles'))).toBe(true)
+    expect(isDataUrl(queryDataUrl('articles'))).toBe(true)
     expect(isDataUrl(recordDataUrl('articles', 'x'))).toBe(true)
   })
 
@@ -66,18 +66,18 @@ describe('data-paths helpers', () => {
   })
 
   it('round-trips a collection name through the URL and back', () => {
-    expect(collectionNameFromUrl(collectionDataUrl('articles'))).toBe('articles')
+    expect(queryNameFromUrl(queryDataUrl('articles'))).toBe('articles')
     // Nested names survive, and a leading slash is optional on the way back.
-    expect(collectionNameFromUrl('/data/archive/2024/posts.json'.replace('/data/', DATA_URL_PREFIX)))
+    expect(queryNameFromUrl('/data/archive/2024/posts.json'.replace('/data/', DATA_URL_PREFIX)))
       .toBe('archive/2024/posts')
   })
 
   it('leaves a non-collection path unmatched rather than mangling it', () => {
     // The caller (validate-data) relies on this: a miss must not collide with
     // a declared collection name, so it can fall through to reading the file.
-    expect(collectionNameFromUrl('/api/config.json')).toBe('/api/config')
-    expect(collectionNameFromUrl('')).toBe('')
-    expect(collectionNameFromUrl(null)).toBe('')
+    expect(queryNameFromUrl('/api/config.json')).toBe('/api/config')
+    expect(queryNameFromUrl('')).toBe('')
+    expect(queryNameFromUrl(null)).toBe('')
   })
 
   it('rejects non-strings rather than throwing', () => {
@@ -90,10 +90,10 @@ describe('data-paths helpers', () => {
 describe('fetch-config uses the shared convention', () => {
   it('locale-prefixes a compiled-collection path', () => {
     const configs = resolveFetchConfigs(
-      [{ schema: 'articles', path: collectionDataUrl('articles') }],
+      [{ schema: 'articles', path: queryDataUrl('articles') }],
       { locale: 'fr', defaultLocale: 'en' }
     )
-    expect(configs.get('articles').path).toBe(`/fr${collectionDataUrl('articles')}`)
+    expect(configs.get('articles').path).toBe(`/fr${queryDataUrl('articles')}`)
   })
 
   it('leaves a non-collection path alone', () => {
@@ -109,7 +109,7 @@ describe('fetch-config uses the shared convention', () => {
 
   it('injects the per-record default for a deferred collection', () => {
     const configs = resolveFetchConfigs(
-      [{ schema: 'articles', path: collectionDataUrl('articles') }],
+      [{ schema: 'articles', path: queryDataUrl('articles') }],
       { queries: { articles: { deferred: ['body'] } } }
     )
     expect(configs.get('articles').detail).toBe(recordDataUrl('articles', '{slug}'))
@@ -117,7 +117,7 @@ describe('fetch-config uses the shared convention', () => {
 
   it('prefers an author-declared detailUrl over the per-record default', () => {
     const configs = resolveFetchConfigs(
-      [{ schema: 'articles', path: collectionDataUrl('articles') }],
+      [{ schema: 'articles', path: queryDataUrl('articles') }],
       {
         queries: {
           articles: { deferred: ['body'], detailUrl: '/api/articles/{slug}' }

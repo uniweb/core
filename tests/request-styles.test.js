@@ -373,7 +373,7 @@ describe('strapi style', () => {
   })
 
   it('declares the Strapi response envelope by default', () => {
-    expect(strapi.defaultEnvelope).toEqual({ collection: 'data', item: 'data' })
+    expect(strapi.defaultEnvelope).toEqual({ list: 'data', item: 'data' })
   })
 
   it('POST is a no-op (Strapi REST reads are GET-only)', () => {

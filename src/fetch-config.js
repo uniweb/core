@@ -4,7 +4,7 @@
  * "Which fetch configs apply here?" is a framework concept. Authors declare
  * `fetch:` at the section, page, folder and site levels; the framework decides
  * which declaration wins per schema, how a local data path is localized, and
- * when a collection with deferred fields gets a detail pattern injected.
+ * when a query with deferred fields gets a detail pattern injected.
  *
  * Every host that renders a page needs that answer — the browser runtime, the
  * build-time prerenderer, and any server-side renderer. The rule had grown
@@ -27,8 +27,8 @@
  * `resolveFetchConfigs`. That difference is real and stays with the caller.
  */
 
-import { collectionDataUrl, isDataUrl, recordDataUrl } from './data-paths.js'
-import { resolveCollectionAddress, resolveRecordAddressPattern } from './collection-address.js'
+import { queryDataUrl, isDataUrl, recordDataUrl } from './data-paths.js'
+import { resolveQueryAddress, resolveRecordAddressPattern } from './query-address.js'
 
 /**
  * Is this fetch declaration a per-instance *refinement* of an ancestor's
@@ -66,14 +66,14 @@ function localizeConfig(cfg, locale, defaultLocale) {
 }
 
 /**
- * Auto-inject `detail:` on a collection ref whose collection declares
+ * Auto-inject `detail:` on a query ref whose query declares
  * `deferred:` fields.
  *
- * A deferred collection ships a lean list payload, so the full record has to
- * come from somewhere else. Two patterns, picked by what the collection
+ * A deferred query ships a lean list payload, so the full record has to
+ * come from somewhere else. Two patterns, picked by what the query
  * declares:
  *
- *   - the collection has `detailUrl:` → use it verbatim (a remote source);
+ *   - the query has `detailUrl:` → use it verbatim (a remote source);
  *   - otherwise → `/data/<schema>/{slug}.json`, the per-record file emitted
  *     alongside the lean list.
  *
@@ -88,9 +88,9 @@ function localizeConfig(cfg, locale, defaultLocale) {
  * An author-supplied `cfg.detail` always wins; this only fills the default.
  * With no `queries` map available the config passes through untouched —
  * deferred-detail injection is an enhancement, never a correctness
- * requirement, so a caller that does not have collection metadata still gets
+ * requirement, so a caller that does not have query metadata still gets
  * a usable config. That matters for hosts whose content projection may not
- * carry collection metadata at all.
+ * carry query metadata at all.
  *
  * @param {Object} cfg
  * @param {Object|null} queries - the site's `config.queries` map
@@ -100,7 +100,7 @@ function applyDeferredDetail(cfg, queries, records) {
   if (cfg.detail !== undefined) return cfg
 
   // ⭐ A lane's record address is injected whenever the lane declares one —
-  // NOT only for a `deferred:` collection, and the difference is load-bearing.
+  // NOT only for a `deferred:` query, and the difference is load-bearing.
   //
   // A live lane answers a list request at brief depth and a record request in
   // full, so a detail page that filtered the list would render the brief and
@@ -128,10 +128,10 @@ function applyDeferredDetail(cfg, queries, records) {
 /**
  * Resolve a query reference to something the fetcher can call.
  *
- * ⚠️ THE FIELD IS `collection` ON THE WIRE, and stays so — it is on the backend's
- * Model and not framework's to rename. The AUTHORING name is `query:`
- * (queries.yml); the build crosses the two, the way it crosses `detailUrl` and
- * `detail_url`.
+ * ⭐ ONE NAME END TO END. The author writes `query:` in queries.yml, the wire
+ * carries `query`, and this reads `query`. It said `collection` on the wire for
+ * a while, on the belief that the field was the backend's to name — measured
+ * otherwise: `fetch` is a blob they carry, not one they model.
  *
  * The author names a query; this decides where its records live, and there are
  * exactly two answers:
@@ -144,24 +144,24 @@ function applyDeferredDetail(cfg, queries, records) {
  * every site with no backend, which is the framework's default rather than a
  * degraded mode — so an absent lane is silent, not warned.
  *
- * ⭐ `collection` OUTRANKS a `path` sitting beside it, which matters because the
- * sync producer emits both during the transition — `collection` for a consumer
- * that resolves it, `path` for one that has not been taught to yet. Resolving
- * whenever `collection` is present is also what the build-time parser has always
- * done (`parseFetchConfig` returns early on `collection`, ignoring any `path`),
- * so the two agree rather than disagreeing on a shape nobody hand-writes.
+ * ⭐ `query` OUTRANKS a `path` sitting beside it, which matters because the sync
+ * producer emits both — `query` for a consumer that resolves it, `path` as the
+ * artifact address for one that cannot. Resolving whenever `query` is present is
+ * also what the build-time parser does (`parseFetchConfig` returns early on
+ * `query`, ignoring any `path`), so the two agree rather than disagreeing on a
+ * shape nobody hand-writes.
  */
-function resolveCollectionSource(cfg, records) {
+function resolveQuerySource(cfg, records) {
   if (typeof cfg.query !== 'string' || cfg.query.length === 0) return cfg
 
-  const endpoint = resolveCollectionAddress(cfg.query, records)
+  const endpoint = resolveQueryAddress(cfg.query, records)
   if (endpoint) {
     // Drop the transitional `path`: two addresses on one request is an
     // ambiguity the fetcher would have to break by accident of field order.
     const { path, url, ...rest } = cfg
     return { ...rest, endpoint }
   }
-  return { ...cfg, path: collectionDataUrl(cfg.query) }
+  return { ...cfg, path: queryDataUrl(cfg.query) }
 }
 
 /**
@@ -186,7 +186,7 @@ function resolveCollectionSource(cfg, records) {
  * @param {string|null} [options.defaultLocale] - the site's default locale
  * @param {Object|null} [options.queries] - the site's `config.queries`
  * @param {Object|null} [options.records] - the site's `config.records`, a host's
- *   live-collection lane. Absent means the compiled artifact answers, which is
+ *   live-records lane. Absent means the compiled artifact answers, which is
  *   the whole of what a site with no backend needs.
  * @returns {Map<string, Object>} schema name → resolved config
  */
@@ -211,7 +211,7 @@ export function resolveFetchConfigs(sources, options = {}) {
       if (!collectAll && !schemas.includes(cfg.schema)) continue
       // Address first: localization and deferred-detail both key on `path`,
       // which a query ref does not have until this runs.
-      const sourced = resolveCollectionSource(cfg, records)
+      const sourced = resolveQuerySource(cfg, records)
       const localized = localizeConfig(sourced, locale, defaultLocale)
       configs.set(cfg.schema, applyDeferredDetail(localized, queries, records))
     }

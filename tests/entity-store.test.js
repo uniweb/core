@@ -5,7 +5,7 @@ import FetcherDispatcher from '../src/fetcher-dispatcher.js'
 import Website from '../src/website.js'
 // Derived, never re-spelled: the convention is pinned once, in
 // `tests/data-paths.test.js`. See the note there before pinning it again.
-import { collectionDataUrl } from '../src/data-paths.js'
+import { queryDataUrl } from '../src/data-paths.js'
 
 /**
  * Build a minimal Website-shaped stub with a real FetcherDispatcher and
@@ -344,14 +344,14 @@ describe('EntityStore.fetch', () => {
     })
     website.getActiveLocale = () => 'fr'
 
-    const fetchConfig = { path: collectionDataUrl('articles'), schema: 'articles' }
+    const fetchConfig = { path: queryDataUrl('articles'), schema: 'articles' }
     const page = makePage({ fetch: fetchConfig })
     const block = makeBlock({ page }, website)
 
     await entityStore.fetch(block, {})
     expect(fetcherSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        path: `/fr${collectionDataUrl('articles')}`,
+        path: `/fr${queryDataUrl('articles')}`,
         schema: 'articles',
       }),
       expect.anything(),
@@ -392,11 +392,11 @@ describe('EntityStore.fetch', () => {
 
     const articles = [{ slug: 'a', title: 'Bonjour' }]
     dataStore.set(
-      deriveCacheKey({ path: `/fr${collectionDataUrl('articles')}`, schema: 'articles' }),
+      deriveCacheKey({ path: `/fr${queryDataUrl('articles')}`, schema: 'articles' }),
       { data: articles },
     )
 
-    const fetchConfig = { path: collectionDataUrl('articles'), schema: 'articles' }
+    const fetchConfig = { path: queryDataUrl('articles'), schema: 'articles' }
     const page = makePage({ fetch: fetchConfig })
     const block = makeBlock({ page }, website)
 

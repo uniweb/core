@@ -5,7 +5,7 @@
  * asks the Website's FetcherDispatcher to execute them, and assembles the
  * data payload passed to `prepare-props`.
  *
- * The cascade, localization, detail-query handling, and collection-first
+ * The cascade, localization, detail-query handling, and list-first
  * content-gate logic all live here — unchanged from the pre-refactor model.
  * What changed: EntityStore no longer talks to DataStore directly. It calls
  * `website.fetcher.peek(request, ctx)` for the sync path (resolve) and
@@ -131,8 +131,8 @@ export default class EntityStore {
         // after the payload key was renamed — a dead option name, silently: the
         // resolver simply saw no queries and stopped injecting `detail:`.
         queries: website?.config?.queries ?? null,
-        // A host's live-collection lane. Absent on every static site and on
-        // local dev, which is why `resolveCollectionSource` treats absence as
+        // A host's live-records lane. Absent on every static site and on
+        // local dev, which is why `resolveQuerySource` treats absence as
         // the ordinary case and reads the compiled artifact without comment.
         records: website?.config?.records ?? null,
       },
@@ -140,12 +140,12 @@ export default class EntityStore {
   }
 
   /**
-   * Post-process assembled collection data: for each fetch config that declares a
+   * Post-process assembled records: for each fetch config that declares a
    * `detailPage` page-ref, resolve it to a locale route template (O(1), via the
    * Website's `_pageIdMap`) and inject a `route` on each record — so a dynamic-list
-   * card links to the collection's canonical detail page regardless of which page
+   * card links to the query's canonical detail page regardless of which page
    * the list sits on. Runs after `data` is fully assembled, in BOTH the sync (peek)
-   * and async (fetch) paths. Replaces the old runtime `getCollectionDetailRoute`
+   * and async (fetch) paths. Replaces the old runtime `getQueryDetailRoute`
    * page-tree scan. A dangling `detailPage` (unresolvable ref) is a no-op — the
    * component degrades gracefully; records with a baked `route` (file lane) are kept.
    */
@@ -162,14 +162,14 @@ export default class EntityStore {
   }
 
   /**
-   * Build a detail-URL fetch config from a collection config + dynamic context.
+   * Build a detail-URL fetch config from a query config + dynamic context.
    *
    * Delegates to the exported resolver so a host fetching this record
    * server-side reaches the identical rule — see `./detail-url.js` for why the
    * four `detail:` forms are a contract rather than an implementation detail.
    */
-  _buildDetailConfig(collectionConfig, dynamicContext) {
-    return buildDetailConfig(collectionConfig, dynamicContext)
+  _buildDetailConfig(queryConfig, dynamicContext) {
+    return buildDetailConfig(queryConfig, dynamicContext)
   }
 
   /**
@@ -222,9 +222,9 @@ export default class EntityStore {
     const routeSchema = dynamicContext?.schema
 
     for (const [schema, cfg] of configs) {
-      const isRouteCollection = dynamicContext && schema === routeSchema
-      if (isRouteCollection && !inheritDetail) {
-        // refine detail:false — the collection minus the active item (related items).
+      const isRouteQuery = dynamicContext && schema === routeSchema
+      if (isRouteQuery && !inheritDetail) {
+        // refine detail:false — the records minus the active one (related items).
         const cached = dispatcher?.peek(cfg, ctx)
         if (cached) {
           const { paramName, paramValue } = dynamicContext
@@ -237,10 +237,10 @@ export default class EntityStore {
         } else {
           allCached = false
         }
-      } else if (isRouteCollection) {
+      } else if (isRouteQuery) {
         // Detail page: deliver the focused record as a length-1 array under the
-        // collection key. Deferred/API collections fetch the full per-record;
-        // others use the matched item from the collection. Not found → [].
+        // query key. A deferred/remote query fetches the full per-record;
+        // others use the matched record. Not found → [].
         const cached = dispatcher?.peek(cfg, ctx)
         if (cached) {
           const { paramName, paramValue } = dynamicContext
@@ -286,7 +286,7 @@ export default class EntityStore {
 
   /**
    * Async fetch — dispatches missing configs through the FetcherDispatcher
-   * and assembles the result. Collection-first detail ordering preserved.
+   * and assembles the result. List-first detail ordering preserved.
    *
    * @param {Object} [options]
    * @param {AbortSignal} [options.signal] - Forwarded to the dispatcher.
@@ -319,31 +319,31 @@ export default class EntityStore {
     const routeSchema = dynamicContext?.schema
 
     for (const [schema, cfg] of configs) {
-      const isRouteCollection = dynamicContext && schema === routeSchema
-      if (isRouteCollection && !inheritDetail) {
-        // refine detail:false — the collection minus the active item.
-        let collectionItems = peekArray(dispatcher, cfg, ctx)
-        if (collectionItems === null) {
+      const isRouteQuery = dynamicContext && schema === routeSchema
+      if (isRouteQuery && !inheritDetail) {
+        // refine detail:false — the records minus the active one.
+        let records = peekArray(dispatcher, cfg, ctx)
+        if (records === null) {
           const result = await dispatcher.dispatch(cfg, ctx)
-          collectionItems = Array.isArray(result?.data) ? result.data : null
+          records = Array.isArray(result?.data) ? result.data : null
         }
         const { paramName, paramValue } = dynamicContext
-        let filtered = Array.isArray(collectionItems)
-          ? collectionItems.filter((item) => String(item[paramName]) !== String(paramValue))
-          : (collectionItems ?? [])
+        let filtered = Array.isArray(records)
+          ? records.filter((item) => String(item[paramName]) !== String(paramValue))
+          : (records ?? [])
         if (order) filtered = this._sortItems(filtered, order)
         data[schema] = limit && Array.isArray(filtered) ? filtered.slice(0, limit) : filtered
-      } else if (isRouteCollection) {
-        // Detail page: focused record as a length-1 array under the collection key.
+      } else if (isRouteQuery) {
+        // Detail page: focused record as a length-1 array under the query key.
         const { paramName, paramValue } = dynamicContext
 
-        let collectionItems = peekArray(dispatcher, cfg, ctx)
-        if (collectionItems === null) {
+        let records = peekArray(dispatcher, cfg, ctx)
+        if (records === null) {
           const result = await dispatcher.dispatch(cfg, ctx)
-          collectionItems = Array.isArray(result?.data) ? result.data : null
+          records = Array.isArray(result?.data) ? result.data : null
         }
 
-        const match = collectionItems?.find(
+        const match = records?.find(
           (item) => String(item[paramName]) === String(paramValue)
         ) ?? null
 
@@ -399,9 +399,9 @@ function peekArray(dispatcher, cfg, ctx) {
  * Interpolate a record's fields into a detail-page route template to build its
  * `route` (the canonical href for a card). `/blog/:slug` + `{ slug: 'a-post' }`
  * → `/blog/a-post`. Returns a SHALLOW COPY with `route` added — never mutates the
- * cached record (the same collection may back several sections with different
+ * cached record (the same query may back several sections with different
  * detail pages). Idempotent + back-compat: a record that already carries a `route`
- * (the file lane bakes one via collection-processor) is returned untouched. A
+ * (the file lane bakes one via the query processor) is returned untouched. A
  * `:param` with no matching record field → no `route` (graceful; degrades to the
  * component's own fallback rather than emitting a broken href).
  */

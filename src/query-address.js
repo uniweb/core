@@ -1,9 +1,9 @@
 /**
- * Resolve a collection request to an address the fetcher can call.
+ * Resolve a query request to an address the fetcher can call.
  *
  * ## The one idea
  *
- * A site names a collection; it never names where the collection lives. Where
+ * A site names a query; it never names where its records live. Where
  * it lives is a **deployment** fact, and the two possible answers have different
  * owners:
  *
@@ -24,7 +24,7 @@
  *
  * A base assumes the layout is "root plus one segment". A pattern assumes
  * nothing, so a host can carry a site id, a locale segment, a different root
- * for records than for the collection, or none of those, and move any of it
+ * for records than for the list, or none of those, and move any of it
  * without a framework release.
  *
  * This is the `config.assets.url` rule applied to records. That pattern exists
@@ -45,7 +45,7 @@ import { substitutePlaceholders } from './substitute-placeholders.js'
 /**
  * The placeholder a list pattern must carry.
  *
- * ⛔ IT IS `{path}`, NOT `{collection}`, AND THAT IS NOT COSMETIC. A *collection* is
+ * ⛔ IT IS `{path}`, NOT `{query}`, AND THAT IS NOT COSMETIC. A *query* is
  * framework's own build concept — a named set our build compiles to one file. A host
  * serving records has no such thing: it has content organised somewhere, and what we
  * substitute is a **path** to it. Naming the slot for our file vocabulary put that
@@ -61,11 +61,11 @@ const warnedPatterns = new Set()
 function warnOnce(key, message) {
   if (warnedPatterns.has(key)) return
   warnedPatterns.add(key)
-  console.warn(`[collection-address] ${message}`)
+  console.warn(`[query-address] ${message}`)
 }
 
 /** Test seam — reset the once-per-pattern memo so suites do not leak. */
-export function _resetCollectionAddressWarnings() {
+export function _resetQueryAddressWarnings() {
   warnedPatterns.clear()
 }
 
@@ -83,36 +83,36 @@ function readPattern(lane, key) {
 }
 
 /**
- * The address for a whole collection, or `null` to fall through to the artifact.
+ * The address for a whole query's records, or `null` to fall through to the artifact.
  *
  * ⚠️ A pattern that does not carry `{path}` is REFUSED rather than used.
- * Substituting nothing would yield one identical URL for every collection on the
+ * Substituting nothing would yield one identical URL for every query on the
  * site — every schema reading the same records, with a 200 on each request. That
  * is the failure this check exists for; an unusable pattern must degrade to the
  * artifact, which is at least correct.
  *
- * @param {string} collection - the collection's authored name (the wiring key).
+ * @param {string} query - the query's authored name (the wiring key).
  * @param {Object|null} lane - `config.records`.
  * @returns {string|null} the address, or null when nothing usable is declared.
  */
-export function resolveCollectionAddress(collection, lane) {
-  if (typeof collection !== 'string' || collection.length === 0) return null
+export function resolveQueryAddress(query, lane) {
+  if (typeof query !== 'string' || query.length === 0) return null
   const pattern = readPattern(lane, 'list')
   if (!pattern) return null
   if (!pattern.includes(PATH_SLOT)) {
     warnOnce(
       `list:${pattern}`,
       `config.records.list carries no ${PATH_SLOT} placeholder, so every ` +
-        `collection would resolve to the same address. Ignoring it and reading the ` +
-        `compiled collection file instead.`
+        `query would resolve to the same address. Ignoring it and reading the ` +
+        `compiled file instead.`
     )
     return null
   }
-  return substitutePlaceholders(pattern, { path: collection })
+  return substitutePlaceholders(pattern, { path: query })
 }
 
 /**
- * The address pattern for ONE record of a collection, with `{param}` left in
+ * The address pattern for ONE record of a query, with `{param}` left in
  * place for the dynamic-route substitution that happens later.
  *
  * Returning a pattern rather than a finished URL is deliberate: the route param
@@ -120,12 +120,12 @@ export function resolveCollectionAddress(collection, lane) {
  * (`buildDetailConfig` / `substitutePlaceholders` at fetch time). Resolving it
  * twice, in two places, is how the two copies drift.
  *
- * @param {string} collection
+ * @param {string} query
  * @param {Object|null} lane - `config.records`.
  * @returns {string|null} a pattern still containing `{param}`, or null.
  */
-export function resolveRecordAddressPattern(collection, lane) {
-  if (typeof collection !== 'string' || collection.length === 0) return null
+export function resolveRecordAddressPattern(query, lane) {
+  if (typeof query !== 'string' || query.length === 0) return null
   const pattern = readPattern(lane, 'record')
   if (!pattern) return null
   if (!pattern.includes(PARAM_SLOT)) {
@@ -139,5 +139,5 @@ export function resolveRecordAddressPattern(collection, lane) {
   }
   // Only `{path}` is substituted here — `{param}` survives for the
   // dynamic-route resolution that owns it.
-  return substitutePlaceholders(pattern, { path: collection })
+  return substitutePlaceholders(pattern, { path: query })
 }
