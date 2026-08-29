@@ -127,7 +127,10 @@ export default class EntityStore {
         schemas: requested,
         locale: website?.getActiveLocale?.() ?? null,
         defaultLocale: website?.getDefaultLocale?.() ?? null,
-        collections: website?.config?.collections ?? null,
+        // ⚠️ `queries`, matching `resolveFetchConfigs`. This passed `collections`
+        // after the payload key was renamed — a dead option name, silently: the
+        // resolver simply saw no queries and stopped injecting `detail:`.
+        queries: website?.config?.queries ?? null,
         // A host's live-collection lane. Absent on every static site and on
         // local dev, which is why `resolveCollectionSource` treats absence as
         // the ordinary case and reads the compiled artifact without comment.
