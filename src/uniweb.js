@@ -88,6 +88,15 @@ export default class Uniweb {
     // `defaultInsets` above.
     this.tracking = new Tracker()
 
+    // Reserved for `@uniweb/api` — the one client instance per page. That
+    // package is bundled into each foundation, so a page with a primary
+    // foundation and extensions holds several copies of its code; the first to
+    // need a client creates one and parks it here, and every other copy adopts
+    // it instead of creating another. Core implements nothing on it: declared
+    // null so the seal permits the assignment, nothing more. Same pattern as
+    // `defaultInsets` above.
+    this.api = null
+
     Object.seal(this)
   }
 

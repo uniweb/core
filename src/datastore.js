@@ -62,7 +62,7 @@ export default class DataStore {
    *
    * Two forms:
    *   - `subscribe(fn)`      — fires after every successful `set()` (all keys).
-   *   - `subscribe(key, fn)` — fires only when `set(key, ...)` is called.
+   *   - `subscribe(key, fn)` — fires only when `set(key, ...)` or `delete(key)` is called.
    *
    * The global form is useful for debugging / blanket observers. The keyed
    * form is what Layer-3 kit hooks (`useFetched`, `useCacheEntry`) use so
@@ -129,6 +129,29 @@ export default class DataStore {
     if (keyed) {
       for (const fn of keyed) fn()
     }
+  }
+
+  /**
+   * Drop one entry, and any in-flight record for the same key.
+   *
+   * Fires the key's subscribers (and the global ones) so an observer re-reads
+   * and sees the absence, exactly as it would see a write. Exists for the case
+   * `clear()` is too blunt for: one consumer's entries must leave memory — a
+   * viewer's records at sign-out — while everything else stays warm.
+   *
+   * @param {string} key
+   * @returns {boolean} true if an entry was removed
+   */
+  delete(key) {
+    const had = this._cache.delete(key)
+    this._inflight.delete(key)
+    if (!had) return false
+    for (const fn of this._listeners) fn()
+    const keyed = this._keyedListeners.get(key)
+    if (keyed) {
+      for (const fn of keyed) fn()
+    }
+    return true
   }
 
   /**
