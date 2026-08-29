@@ -1,10 +1,15 @@
 /**
- * Compiled-collection paths — the ONE home for the URL and directory
- * convention that the build emits and every fetcher requests.
+ * Compiled-query paths — the ONE home for the URL and directory convention that
+ * the build emits and every fetcher requests.
+ *
+ * ⚠️ `<name>` IS A QUERY'S NAME. `/data/<name>.json` is a named query's
+ * MATERIALIZATION — the answer when no host declares a live lane — and never the
+ * definition of anything. The records themselves live in `entities/{schema}/`,
+ * and `records.yml` decides which of them are published.
  *
  * Why this module exists. The path `/data/<name>.json` was a bare string
  * literal in six places across three packages: the build wrote it
- * (`collection-processor.js`), the build resolved `collection:` to it
+ * (`collection-processor.js`), the build resolved the query shorthand to it
  * (`data-fetcher.js`), core injected the per-record default
  * (`fetch-config.js applyDeferredDetail`), core gated locale-prefixing on it
  * (`fetch-config.js localizeConfig`), the dev server matched it with a regex

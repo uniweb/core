@@ -126,10 +126,15 @@ function applyDeferredDetail(cfg, collections, records) {
 }
 
 /**
- * Resolve a `collection:` reference to something the fetcher can call.
+ * Resolve a query reference to something the fetcher can call.
  *
- * The author names a collection; this decides where that collection lives, and
- * there are exactly two answers:
+ * ⚠️ THE FIELD IS `collection` ON THE WIRE, and stays so — it is on the backend's
+ * Model and not framework's to rename. The AUTHORING name is `query:`
+ * (queries.yml); the build crosses the two, the way it crosses `detailUrl` and
+ * `detail_url`.
+ *
+ * The author names a query; this decides where its records live, and there are
+ * exactly two answers:
  *
  *   - a host declared a live lane (`config.records`) → an `endpoint`, final on
  *     arrival, which the fetcher calls without composing anything further;
@@ -205,7 +210,7 @@ export function resolveFetchConfigs(sources, options = {}) {
       if (configs.has(cfg.schema)) continue
       if (!collectAll && !schemas.includes(cfg.schema)) continue
       // Address first: localization and deferred-detail both key on `path`,
-      // which a `collection:` ref does not have until this runs.
+      // which a query ref does not have until this runs.
       const sourced = resolveCollectionSource(cfg, records)
       const localized = localizeConfig(sourced, locale, defaultLocale)
       configs.set(cfg.schema, applyDeferredDetail(localized, collections, records))
