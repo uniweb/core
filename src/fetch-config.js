@@ -197,6 +197,20 @@ function resolveQuerySource(cfg, records) {
  * stored payloads we cannot rewrite — unlike the one deleted from
  * `applyDeferredDetail`, which spanned two producers we control.
  *
+ * ⛔ **AND IT IS NOT ONLY ABOUT OLD PAYLOADS — a live producer still writes
+ * `schema`, on purpose.** `frontend`'s editor authors `{ query, path, schema }`
+ * for every page it creates, deliberately, and will keep doing so until it can
+ * observe that a site resolves to a runtime carrying this function. A published
+ * site renders at its OWN pinned runtime, so an `as`-only payload met by an older
+ * one is skipped entirely (`if (!key) continue`) — no data, no error, and on a
+ * host's SSR path that reaches a visitor.
+ *
+ * ⇒ **So "every pre-2026-09-02 payload is gone by now" will one day be true and
+ * will still not license deleting this.** The condition is not a date; it is that
+ * no producer writes `schema` and no site resolves to a runtime that needs it.
+ * Ask frontend before touching it. *(Recorded at their request, from channel
+ * `frontend-framework-8d78`, so the next reader does not have to reconstruct it.)*
+ *
  * @param {Object} cfg
  * @returns {string|undefined}
  */
