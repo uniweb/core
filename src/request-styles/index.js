@@ -9,7 +9,7 @@
  * foundation, or by an extension the site selects per schema in
  * `site.yml fetcher.transports` — never through a second built-in style.
  * Two vendor dialects, `flat-query` and `strapi`, shipped here from
- * `@uniweb/core` 0.7.0 and were removed: a third party's wire is not a
+ * `@uniweb/core` 0.7.1 and were removed: a third party's wire is not a
  * framework concern, and core is loaded by every site and never
  * tree-shaken.
  *
