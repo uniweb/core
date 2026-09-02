@@ -15,6 +15,13 @@
  */
 
 import { isFetchRefinement, resolveFetchConfigs } from './fetch-config.js'
+
+/**
+ * A fetch config's binding key — the `content.data.<key>` a component reads.
+ * `as` is the name; `schema` is what it was called until 2026-09-02 and still
+ * arrives on any payload published before then. See `fetch-config.js`.
+ */
+const bindingKeyOf = (cfg) => cfg?.as ?? cfg?.schema
 import { buildDetailConfig } from './detail-url.js'
 
 /**
@@ -201,7 +208,7 @@ export default class EntityStore {
     // collecting all cascade matches.
     if (requested === null && block.fetch) {
       const blockFetchList = Array.isArray(block.fetch) ? block.fetch : [block.fetch]
-      const schemas = blockFetchList.filter((cfg) => cfg.schema).map((cfg) => cfg.schema)
+      const schemas = blockFetchList.filter(bindingKeyOf).map(bindingKeyOf)
       if (schemas.length > 0) requested = schemas
     }
 
@@ -299,7 +306,7 @@ export default class EntityStore {
     let requested = this._getRequestedSchemas(meta)
     if (requested === null && block.fetch) {
       const blockFetchList = Array.isArray(block.fetch) ? block.fetch : [block.fetch]
-      const schemas = blockFetchList.filter((cfg) => cfg.schema).map((cfg) => cfg.schema)
+      const schemas = blockFetchList.filter(bindingKeyOf).map(bindingKeyOf)
       if (schemas.length > 0) requested = schemas
     }
     if (requested === null) return { data: null }

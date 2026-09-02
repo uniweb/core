@@ -131,7 +131,7 @@ function applyDeferredDetail(cfg, queries, records) {
   // (`{ path: … }`) has no query at all, and its schema — inferred from the path —
   // is the only key there is. Two shapes, two answers; the deleted one had one
   // shape and pretended otherwise.
-  const queryName = cfg.query || cfg.schema
+  const queryName = cfg.query || bindingKey(cfg)
   if (!queryName || !queries) return cfg
   const collConfig = queries[queryName]
   if (!collConfig || typeof collConfig !== 'object') return cfg
@@ -183,6 +183,28 @@ function resolveQuerySource(cfg, records) {
 }
 
 /**
+ * The binding key of a fetch config — the `content.data.<key>` a component reads.
+ *
+ * ⭐ **`as` is the name; `schema` is what it was called until 2026-09-02.** The old
+ * spelling still arrives on every payload published before then and on any seed
+ * built against an older release, so this is not a deprecation window — it is a
+ * permanent reader of stored data. *(Renaming it was not cosmetic: `schema`
+ * already means the MODEL REF one record over, on a `queries` declaration, and
+ * one word for two things is what let a binding-key override silently break
+ * detail resolution.)*
+ *
+ * ⛔ Do not "simplify" this to `cfg.as`. The `??` here is earned — it spans
+ * stored payloads we cannot rewrite — unlike the one deleted from
+ * `applyDeferredDetail`, which spanned two producers we control.
+ *
+ * @param {Object} cfg
+ * @returns {string|undefined}
+ */
+function bindingKey(cfg) {
+  return cfg?.as ?? cfg?.schema
+}
+
+/**
  * Resolve the applicable fetch configs from an ordered list of sources.
  *
  * The rule: walk the sources in precedence order and take the FIRST match per
@@ -224,14 +246,15 @@ export function resolveFetchConfigs(sources, options = {}) {
     if (!source) continue
     const configList = Array.isArray(source) ? source : [source]
     for (const cfg of configList) {
-      if (!cfg?.schema) continue
-      if (configs.has(cfg.schema)) continue
-      if (!collectAll && !schemas.includes(cfg.schema)) continue
+      const key = bindingKey(cfg)
+      if (!key) continue
+      if (configs.has(key)) continue
+      if (!collectAll && !schemas.includes(key)) continue
       // Address first: localization and deferred-detail both key on `path`,
       // which a query ref does not have until this runs.
       const sourced = resolveQuerySource(cfg, records)
       const localized = localizeConfig(sourced, locale, defaultLocale)
-      configs.set(cfg.schema, applyDeferredDetail(localized, queries, records))
+      configs.set(key, applyDeferredDetail(localized, queries, records))
     }
   }
 

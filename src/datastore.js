@@ -35,12 +35,21 @@
  * @returns {string} A stable JSON string usable as a cache-Map key
  */
 export function deriveCacheKey(request) {
-  const { path, url, endpoint, schema, transform } = request || {}
+  // ⭐ `as` is the binding key; `schema` is the name it had until 2026-09-02 and
+  // still arrives on every payload published before then. Normalised HERE so one
+  // logical request hashes to one key whichever spelling reached us — a consumer
+  // deriving a key must not get two entries for the same fetch.
+  const { path, url, endpoint, transform } = request || {}
+  const as = request?.as ?? request?.schema
   const method = request?.method && request.method.toUpperCase() !== 'GET'
     ? request.method.toUpperCase()
     : undefined
   const body = method === 'POST' ? request?.body : undefined
-  return JSON.stringify({ path, url, endpoint, schema, transform, method, body })
+  // ⚠️ The field NAME is part of the hash, so renaming it moves every key ONCE.
+  // In-memory stores repopulate; a consumer with a persistent cache takes one
+  // cold pass. Chosen over hashing under the old name, which would have hidden
+  // the rename inside the one function whose job is to be canonical.
+  return JSON.stringify({ path, url, endpoint, as, transform, method, body })
 }
 
 export default class DataStore {
