@@ -197,19 +197,24 @@ function resolveQuerySource(cfg, records) {
  * stored payloads we cannot rewrite — unlike the one deleted from
  * `applyDeferredDetail`, which spanned two producers we control.
  *
- * ⛔ **AND IT IS NOT ONLY ABOUT OLD PAYLOADS — a live producer still writes
- * `schema`, on purpose.** `frontend`'s editor authors `{ query, path, schema }`
- * for every page it creates, deliberately, and will keep doing so until it can
- * observe that a site resolves to a runtime carrying this function. A published
+ * ⛔ **RETIREMENT IS COORDINATED — three producers emit the pair, and dropping
+ * one unilaterally re-creates the asymmetry.** As of 2026-09-02 the build lane,
+ * the sync lane and `frontend`'s editor all write `{ …, as, schema }`, each with
+ * a note at its emit site saying it is a compatibility duplicate. Frontend's says
+ * *"two producers retire it together or not at all"* and points at this decision.
+ *
+ * ⇒ **The condition for removal is not a date.** It is that no producer writes
+ * `schema` AND no site resolves to a runtime older than this function. A published
  * site renders at its OWN pinned runtime, so an `as`-only payload met by an older
  * one is skipped entirely (`if (!key) continue`) — no data, no error, and on a
- * host's SSR path that reaches a visitor.
+ * host's SSR path that reaches a visitor rather than a build log.
  *
- * ⇒ **So "every pre-2026-09-02 payload is gone by now" will one day be true and
- * will still not license deleting this.** The condition is not a date; it is that
- * no producer writes `schema` and no site resolves to a runtime that needs it.
- * Ask frontend before touching it. *(Recorded at their request, from channel
- * `frontend-framework-8d78`, so the next reader does not have to reconstruct it.)*
+ * ⚠️ **Nobody in the framework lane can observe the second half.** What the
+ * delivery channel serves, and which runtime a given site resolves to, are not
+ * ours to see. ⇒ **Do not drop this on the reasoning that "enough time has
+ * passed."** Ask the lanes that emit the pair, and the lane that serves it.
+ * *(From channel `frontend-framework-8d78`, recorded here because a channel is
+ * gitignored and this constraint is not.)*
  *
  * @param {Object} cfg
  * @returns {string|undefined}
