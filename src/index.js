@@ -49,7 +49,12 @@ export {
 } from './data-paths.js'
 export { evaluate as evaluateWhere, match as matchWhere } from './where.js'
 export { isRichSchema, normalizeSchema } from './schemas.js'
-export { default as Tracker } from './tracker.js'
+// ⛔ `Tracker` is NOT on the package entry. It is a FEATURE, not part of the
+// object graph this package exists to define, and putting it here made every
+// consumer of core carry 1,576 gzip of it -- press, unipress, `@uniweb/api`
+// and every SSR isolate included -- for a class only the browser runtime ever
+// wires. Its one importer already reaches it correctly, through the
+// `@uniweb/core/tracker` subpath (`runtime/src/wire-foundation.js`).
 // Also available as the zero-dependency leaves `@uniweb/core/services` and
 // `@uniweb/core/base-path` — which is how `@uniweb/runtime` reaches them,
 // since it must not pull the package root into an SSR/Worker bundle.

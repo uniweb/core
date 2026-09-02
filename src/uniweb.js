@@ -12,7 +12,6 @@
  */
 
 import Website from './website.js'
-import Tracker from './tracker.js'
 
 export default class Uniweb {
   /**
@@ -72,21 +71,31 @@ export default class Uniweb {
     // Populated by prerender before rendering, read synchronously by Icon.
     this.iconCache = new Map()
 
-    // Site tracking — one event stream.
+    // Site tracking — one event stream. The runtime installs it in L2
+    // (`wire-foundation.js` → `wireTracker`), and only for a site that declares
+    // a destination. It cannot be configured here even though `activeWebsite`
+    // already exists two lines up, because the address is resolved against
+    // `website.basePath` and **that is still `''` at this point** —
+    // `setBasePath()` runs later, from the runtime. Resolving here would
+    // silently drop the base prefix on every subdirectory deployment.
     //
-    // ⛔ Deliberately constructed DISABLED, and the runtime replaces it in L2
-    // (`wire-foundation.js` → `wireTracker`). It cannot be configured here even
-    // though `activeWebsite` already exists two lines up, because the address is
-    // resolved against `website.basePath` and **that is still `''` at this
-    // point** — `setBasePath()` runs later, from the runtime. Resolving here
-    // would silently drop the base prefix on every subdirectory deployment.
+    // ⛔ **Core does not construct a Tracker, and must not start.** Until
+    // 2026-09-01 this line was `new Tracker()` — a working no-op, justified as
+    // letting `uniweb.tracking.track(…)` run unguarded in every lane. Two
+    // things were wrong with that. It put a *feature* in the object graph,
+    // which is not what this class is for; and the guard it bought was never
+    // taken up — every reader in the workspace already optional-chains
+    // (`block.js`'s `track()`, and the runtime's `usePageView`,
+    // `useSectionViews`, `useOutboundClicks`, `useSectionClicks`), so the
+    // invariant lived only in the comment. Cost of carrying it: 1,576 gzip in
+    // core's chunk, which press, unipress, `@uniweb/api` and every SSR isolate
+    // paid for a class they never wire.
     //
-    // The disabled instance is not a placeholder to null-check: it is a working
-    // no-op, so `uniweb.tracking.track(…)` is safe in every lane — press,
-    // unipress, an SSR isolate, or before wiring — with no guard at the call
-    // site. Same slot-declared-here-so-seal-permits-assignment pattern as
+    // ⇒ **Read it as nullable.** `globalThis.uniweb?.tracking?.track(…)` is
+    // the call shape, and it is what every existing caller already writes.
+    // Same slot-declared-here-so-seal-permits-assignment pattern as
     // `defaultInsets` above.
-    this.tracking = new Tracker()
+    this.tracking = null
 
     // Reserved for `@uniweb/api` — the one client instance per page. That
     // package is bundled into each foundation, so a page with a primary
