@@ -1,4 +1,4 @@
-import { isRichSchema, normalizeSchema } from '../src/schemas.js'
+import { isRichSchema } from '../src/schemas.js'
 
 describe('isRichSchema', () => {
   it('returns false for non-objects and plain values', () => {
@@ -44,99 +44,27 @@ describe('isRichSchema', () => {
   })
 })
 
-describe('normalizeSchema', () => {
-  // `isRichSchema` answers "is this already rich?", which is right for dispatch
-  // and wrong for "can this be edited". Three authored shapes exist and it
-  // accepts one — including rejecting a RESOLVED NAMED REF, which is the first
-  // authoring form the docs show.
-  it('converts a resolved named ref, whose fields are a MAP not an array', () => {
-    const resolved = {
-      name: 'P',
-      fields: { title: { type: 'string' }, count: { type: 'int' } }
-    }
-    expect(isRichSchema(resolved)).toBe(false) // the gap this closes
-    const norm = normalizeSchema(resolved)
-    expect(norm.fields.map((f) => f.id)).toEqual(['title', 'count'])
-    expect(norm.name).toBe('P') // siblings survive
-  })
-
-  it('preserves authored order, because a form shows fields in order', () => {
-    const norm = normalizeSchema({
-      fields: {
-        z: { type: 'string' },
-        a: { type: 'string' },
-        m: { type: 'string' }
-      }
-    })
-    expect(norm.fields.map((f) => f.id)).toEqual(['z', 'a', 'm'])
-  })
-
-  it('converts an inline field map', () => {
-    expect(
-      normalizeSchema({
-        cpu: { type: 'string' },
-        ram: { type: 'int' }
-      }).fields.map((f) => f.id)
-    ).toEqual(['cpu', 'ram'])
-  })
-
-  it('hands an already-rich schema back untouched', () => {
-    const rich = { fields: [{ id: 'a', type: 'string' }] }
-    expect(normalizeSchema(rich)).toBe(rich)
-  })
-
-  it('returns null for a sectioned Model — it is not one form', () => {
-    // Flattening would invent a layout the author never expressed.
-    expect(
-      normalizeSchema({
-        sections: { brief: { fields: { a: { type: 'string' } } } }
-      })
-    ).toBeNull()
-  })
-
-  it('does NOT invent a form out of an ordinary object', () => {
-    // An earlier cut accepted the bare-type string shorthand in the no-`fields`
-    // case, which made `{name, description}` a two-field form: without a `fields`
-    // key there is nothing to distinguish `{cpu:'string'}` from `{name:'Acme'}`.
-    expect(normalizeSchema({ name: 'X', description: 'Y' })).toBeNull()
-    expect(normalizeSchema({ cpu: 'string' })).toBeNull()
-    expect(normalizeSchema({})).toBeNull()
-    expect(normalizeSchema(null)).toBeNull()
-    expect(normalizeSchema([])).toBeNull()
-  })
-
-  it('still accepts the shorthand when `fields` says they ARE fields', () => {
-    expect(normalizeSchema({ fields: { cpu: 'string' } }).fields).toEqual([
-      { id: 'cpu', type: 'string' }
-    ])
-  })
-})
-
 describe('public surface', () => {
-  // My original tests imported '../src/schemas.js' DIRECTLY, so they passed while
+  // These tests once imported '../src/schemas.js' DIRECTLY, so they passed while
   // the barrel exported only `isRichSchema` and `import { normalizeSchema } from
-  // "@uniweb/core"` returned undefined. The frontend was blocked by it, and found
-  // it by RUNNING the import rather than reading the file — the same lesson their
-  // promotion bug taught: a test that never goes through the path a consumer uses
-  // is testing a shape no consumer sees.
+  // "@uniweb/core"` returned undefined. The frontend was blocked by it and found
+  // it by RUNNING the import rather than reading the file: a test that never goes
+  // through the path a consumer uses is testing a shape no consumer sees.
   //
-  // So this suite asserts the ENTRY, not the module. It is the only assertion here
-  // that could have caught it.
-  it('exports both schema helpers from the package entry', async () => {
+  // So this suite asserts the ENTRY, not the module — and now asserts the
+  // absence too, because "we removed it" is the claim a consumer feels.
+  it('exports isRichSchema from the package entry', async () => {
     const entry = await import('../src/index.js')
     expect(typeof entry.isRichSchema).toBe('function')
-    expect(typeof entry.normalizeSchema).toBe('function')
   })
 
-  it('normalizeSchema behaves identically through the entry', async () => {
+  it('⛔ no longer exports normalizeSchema — it moved to @uniweb/schemas', async () => {
+    // Editor-only, and this package ships to every site in every lane. Its home
+    // is `@uniweb/schemas/editor-form`; `framework/schemas/tests/editor-form.test.js`
+    // carries the behaviour. Removed 2026-09-01, after frontend migrated its
+    // import — a `workspace:*` consumer, so the removal was live for them at
+    // commit time and could not wait on a release.
     const entry = await import('../src/index.js')
-    const resolvedNamedRef = {
-      name: 'P',
-      fields: { title: { type: 'string' } }
-    }
-    expect(entry.normalizeSchema(resolvedNamedRef).fields).toEqual([
-      { id: 'title', type: 'string' }
-    ])
-    expect(entry.normalizeSchema({ sections: {} })).toBeNull()
+    expect(entry.normalizeSchema).toBeUndefined()
   })
 })

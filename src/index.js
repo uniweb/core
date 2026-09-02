@@ -49,11 +49,6 @@ export {
 } from './data-paths.js'
 export { evaluate as evaluateWhere, match as matchWhere } from './where.js'
 export { isRichSchema } from './schemas.js'
-// ⛔ `normalizeSchema` MOVED to `@uniweb/schemas/editor-form` (2026-09-01) —
-// it is editor-only and never called `isRichSchema`. Still exported here for
-// ONE more release so `frontend` (a `workspace:*` pin, so a removal is live
-// at commit time) can migrate its single import. Delete both lines then.
-export { normalizeSchema } from './schemas.js'
 // ⛔ `Tracker` is NOT on the package entry. It is a FEATURE, not part of the
 // object graph this package exists to define, and putting it here made every
 // consumer of core carry 1,576 gzip of it -- press, unipress, `@uniweb/api`
