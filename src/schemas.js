@@ -37,6 +37,18 @@ export function isRichSchema(schema) {
 }
 
 /**
+ * ⛔ **DEPRECATED — MOVED to `@uniweb/schemas/editor-form` (2026-09-01).**
+ * This copy stays only so `frontend`, which pins core as `workspace:*` and
+ * would break at commit time, can migrate its one import. Delete it once that
+ * lands; nothing else in any repo reads it.
+ *
+ * ⭐ **It never belonged here.** It does not call `isRichSchema` and never did
+ * — it re-inlines the same three checks — so nothing but adjacency held it in
+ * this file. The two answer different questions for different audiences:
+ * `isRichSchema` is a render-time dispatch predicate (`prepare-props.js`,
+ * `runtime-schema.js`) and stays; this is read only by an editor, while core
+ * ships to every site in every lane and is not tree-shaken on the hosted one.
+ *
  * Normalize any authored `data:` schema shape to the rich form the editor
  * renders, or null when it is not a single form at all.
  *
@@ -48,8 +60,11 @@ export function isRichSchema(schema) {
  *   { fields: { name: spec } }     a RESOLVED NAMED REF          → FALSE
  *   { name: spec }                 meta.js inline field map      → false
  *
- * The middle row is the important one and the reason this helper is in `core`
- * rather than in the editor. A named ref (`'@/article'`, `'@std/person'`) is the
+ * The middle row is the important one and the reason this helper exists at all
+ * (it once read "the reason it is in `core` rather than in the editor" — that
+ * was the wrong conclusion from a right observation: the gap is real, closing
+ * it in one shared place is right, and `@uniweb/schemas` is that place).
+ * A named ref (`'@/article'`, `'@std/person'`) is the
  * FIRST authoring form the docs show, and `validateAndNormalizeSchema` in the
  * build resolves it to `{ fields: <MAP> }` — a map, not an array. So filtering
  * with `isRichSchema` discards not merely "simple" schemas but the primary
