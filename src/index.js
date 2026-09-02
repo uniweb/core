@@ -20,15 +20,21 @@ export { default as ObservableState } from './observable-state.js'
 
 // Utilities
 export { substitutePlaceholders } from './substitute-placeholders.js'
-export {
-  resolveQueryAddress,
-  resolveRecordAddressPattern,
-} from './query-address.js'
+// ⛔ `resolveQueryAddress` / `resolveRecordAddressPattern` are NOT re-exported
+// here. They are read by `./fetch-config.js` and by nothing else in any repo
+// (measured 2026-09-01 over every .js/.jsx/.mjs/.ts/.tsx file in the
+// workspace). A consumer that needs them imports `@uniweb/core/query-address`,
+// which is a declared subpath and a zero-dependency leaf — the same reach
+// `route-match` and `section-id` already have. Re-exporting an internal from
+// the package entry is not free: the import-map bridge enumerates this file's
+// surface and emits a live named re-export for every one, so nothing here can
+// ever be tree-shaken on the hosted lane.
 export { resolveFetchConfigs } from './fetch-config.js'
 export { buildDetailConfig } from './detail-url.js'
+// `isWildcardLanguages` is likewise internal — `./locale-config.js` reads it
+// and nothing else does. Same subpath escape hatch: `@uniweb/core/locale-config`.
 export {
   normalizeLanguageList,
-  isWildcardLanguages,
   resolveDefaultLocale,
   resolvePublishableLocales,
   validateLanguageConfig
