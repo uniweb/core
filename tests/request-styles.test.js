@@ -1,40 +1,40 @@
 import { describe, it, expect, vi } from 'vitest'
-import { resolveRequestStyle, listRequestStyleNames } from '../src/index.js'
-import { jsonBody, flatQuery, strapi } from '../src/request-styles/index.js'
+import { resolveRequestStyle } from '../src/index.js'
+import { jsonBody } from '../src/request-styles/index.js'
 
-describe('request-style registry', () => {
-  it('lists the shipped styles', () => {
-    const names = listRequestStyleNames()
-    expect(names).toContain('json-body')
-    expect(names).toContain('flat-query')
-    expect(names).toContain('strapi')
-  })
-
-  it('resolves by name', () => {
+describe('request style — one shipped wire', () => {
+  it('resolves json-body by name', () => {
     expect(resolveRequestStyle('json-body')).toBe(jsonBody)
-    expect(resolveRequestStyle('flat-query')).toBe(flatQuery)
-    expect(resolveRequestStyle('strapi')).toBe(strapi)
   })
 
-  it('falls back to json-body when name is missing', () => {
+  it('resolves json-body when the name is missing', () => {
     expect(resolveRequestStyle(null)).toBe(jsonBody)
     expect(resolveRequestStyle(undefined)).toBe(jsonBody)
   })
 
-  it('warns in dev and falls back on unknown name', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const style = resolveRequestStyle('nonexistent-style', { dev: true })
-    expect(style).toBe(jsonBody)
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining('unknown request style "nonexistent-style"'),
+  // A site naming a style the framework does not ship must not be served
+  // the default wire silently: json-body's `_where=<JSON>` against a
+  // backend that expects another dialect returns the wrong set with a 200.
+  // Dev throws so the site does not boot on the wrong wire; production
+  // logs once and falls back so the site still renders.
+  it('throws in dev on an unknown name, naming transports as the way out', () => {
+    expect(() => resolveRequestStyle('strapi', { dev: true })).toThrow(
+      /unknown request style "strapi"/,
     )
-    warn.mockRestore()
+    expect(() => resolveRequestStyle('strapi', { dev: true })).toThrow(/fetcher\.transports/)
   })
 
-  it('does not warn in production on unknown name', () => {
+  it('logs an error once and falls back to json-body in production', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    resolveRequestStyle('another-bogus-style') // dev default false
+    expect(resolveRequestStyle('flat-query')).toBe(jsonBody)
+    expect(resolveRequestStyle('flat-query')).toBe(jsonBody)
+    expect(error).toHaveBeenCalledTimes(1)
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining('unknown request style "flat-query"'),
+    )
     expect(warn).not.toHaveBeenCalled()
+    error.mockRestore()
     warn.mockRestore()
   })
 })
@@ -153,249 +153,17 @@ describe('json-body style', () => {
   })
 })
 
-describe('flat-query style', () => {
-  const pushAll = new Set(['where', 'limit', 'sort'])
-
-  describe('where — flat AND of equalities only', () => {
-    it('pushes a flat object of string/number/boolean values', () => {
-      const out = flatQuery.encode(
-        { where: { dept: 'biology', year: 2015, tenured: true } },
-        { method: 'GET', pushCandidates: pushAll, rename: null },
-      )
-      expect(out.queryParams).toEqual([
-        ['dept', 'biology'],
-        ['year', '2015'],
-        ['tenured', 'true'],
-      ])
-      expect(out.pushed.has('where')).toBe(true)
-    })
-
-    it('pushes { eq: value } operator shorthand', () => {
-      const out = flatQuery.encode(
-        { where: { dept: { eq: 'biology' } } },
-        { method: 'GET', pushCandidates: pushAll, rename: null },
-      )
-      expect(out.queryParams).toEqual([['dept', 'biology']])
-      expect(out.pushed.has('where')).toBe(true)
-    })
-
-    it('skips pushdown on nested operators (runtime fallback)', () => {
-      const out = flatQuery.encode(
-        { where: { age: { gte: 18 } } },
-        { method: 'GET', pushCandidates: pushAll, rename: null },
-      )
-      expect(out.queryParams).toEqual([])
-      expect(out.pushed.has('where')).toBe(false)
-    })
-
-    it('skips pushdown on composition (and/or/not)', () => {
-      const out = flatQuery.encode(
-        { where: { or: [{ a: 1 }, { b: 2 }] } },
-        { method: 'GET', pushCandidates: pushAll, rename: null },
-      )
-      expect(out.pushed.has('where')).toBe(false)
-    })
-
-    it('skips pushdown on dotted field paths', () => {
-      const out = flatQuery.encode(
-        { where: { 'tenure.start': 2015 } },
-        { method: 'GET', pushCandidates: pushAll, rename: null },
-      )
-      expect(out.pushed.has('where')).toBe(false)
-    })
-  })
-
-  describe('limit + sort', () => {
-    it('encodes limit and single-key sort', () => {
-      const out = flatQuery.encode(
-        { limit: 10, sort: 'date desc' },
-        { method: 'GET', pushCandidates: pushAll, rename: null },
-      )
-      expect(out.queryParams).toEqual([
-        ['limit', '10'],
-        ['sort', '-date'],
-      ])
-    })
-
-    it('encodes multi-key sort with comma separator', () => {
-      const out = flatQuery.encode(
-        { sort: 'date desc, title asc' },
-        { method: 'GET', pushCandidates: pushAll, rename: null },
-      )
-      expect(out.queryParams).toEqual([['sort', '-date,title']])
-    })
-
-    it('honors rename for limit/sort wire names', () => {
-      const out = flatQuery.encode(
-        { limit: 10, sort: 'date' },
-        {
-          method: 'GET',
-          pushCandidates: pushAll,
-          rename: { limit: 'pageSize', sort: 'orderBy' },
-        },
-      )
-      expect(out.queryParams).toEqual([
-        ['pageSize', '10'],
-        ['orderBy', 'date'],
-      ])
-    })
-  })
-
-  describe('method handling', () => {
-    it('POST is a no-op (empty pushed)', () => {
-      const out = flatQuery.encode(
-        { where: { a: 1 }, limit: 10 },
-        { method: 'POST', pushCandidates: pushAll, rename: null },
-      )
-      expect(out.queryParams).toEqual([])
-      expect(out.bodyMerge).toBeNull()
-      expect(out.pushed.size).toBe(0)
-    })
-  })
-})
-
-describe('strapi style', () => {
-  const pushAll = new Set(['where', 'limit', 'sort'])
-
-  describe('where — full where-object coverage', () => {
-    it('implicit equality', () => {
-      const out = strapi.encode(
-        { where: { dept: 'biology' } },
-        { method: 'GET', pushCandidates: pushAll, rename: null },
-      )
-      expect(out.queryParams).toEqual([['filters[dept][$eq]', 'biology']])
-    })
-
-    it('explicit operator', () => {
-      const out = strapi.encode(
-        { where: { age: { gte: 18 } } },
-        { method: 'GET', pushCandidates: pushAll, rename: null },
-      )
-      expect(out.queryParams).toEqual([['filters[age][$gte]', '18']])
-    })
-
-    it('dotted field path maps to nested brackets', () => {
-      const out = strapi.encode(
-        { where: { 'tenure.start': { gte: 2015 } } },
-        { method: 'GET', pushCandidates: pushAll, rename: null },
-      )
-      expect(out.queryParams).toEqual([['filters[tenure][start][$gte]', '2015']])
-    })
-
-    it('in and nin emit indexed array entries', () => {
-      const out = strapi.encode(
-        { where: { rank: { in: ['associate', 'full'] } } },
-        { method: 'GET', pushCandidates: pushAll, rename: null },
-      )
-      expect(out.queryParams).toEqual([
-        ['filters[rank][$in][0]', 'associate'],
-        ['filters[rank][$in][1]', 'full'],
-      ])
-    })
-
-    it('nin becomes $notIn', () => {
-      const out = strapi.encode(
-        { where: { status: { nin: ['draft'] } } },
-        { method: 'GET', pushCandidates: pushAll, rename: null },
-      )
-      expect(out.queryParams).toEqual([['filters[status][$notIn][0]', 'draft']])
-    })
-
-    it('exists true → $notNull, exists false → $null', () => {
-      const t = strapi.encode(
-        { where: { bio: { exists: true } } },
-        { method: 'GET', pushCandidates: pushAll, rename: null },
-      )
-      expect(t.queryParams).toEqual([['filters[bio][$notNull]', 'true']])
-      const f = strapi.encode(
-        { where: { bio: { exists: false } } },
-        { method: 'GET', pushCandidates: pushAll, rename: null },
-      )
-      expect(f.queryParams).toEqual([['filters[bio][$null]', 'true']])
-    })
-
-    it('or composition', () => {
-      const out = strapi.encode(
-        { where: { or: [{ dept: 'biology' }, { dept: 'physics' }] } },
-        { method: 'GET', pushCandidates: pushAll, rename: null },
-      )
-      expect(out.queryParams).toEqual([
-        ['filters[$or][0][dept][$eq]', 'biology'],
-        ['filters[$or][1][dept][$eq]', 'physics'],
-      ])
-    })
-
-    it('not composition', () => {
-      const out = strapi.encode(
-        { where: { not: { dept: 'emeritus' } } },
-        { method: 'GET', pushCandidates: pushAll, rename: null },
-      )
-      expect(out.queryParams).toEqual([['filters[$not][dept][$eq]', 'emeritus']])
-    })
-
-    it('skips pushdown (runtime fallback) on unknown operator', () => {
-      const out = strapi.encode(
-        { where: { custom: { between: [1, 10] } } },
-        { method: 'GET', pushCandidates: pushAll, rename: null },
-      )
-      expect(out.queryParams).toEqual([])
-      expect(out.pushed.has('where')).toBe(false)
-    })
-  })
-
-  describe('limit + sort', () => {
-    it('limit maps to pagination[limit]', () => {
-      const out = strapi.encode(
-        { limit: 10 },
-        { method: 'GET', pushCandidates: pushAll, rename: null },
-      )
-      expect(out.queryParams).toEqual([['pagination[limit]', '10']])
-    })
-
-    it('single-key sort uses bare sort=', () => {
-      const out = strapi.encode(
-        { sort: 'date desc' },
-        { method: 'GET', pushCandidates: pushAll, rename: null },
-      )
-      expect(out.queryParams).toEqual([['sort', 'date:desc']])
-    })
-
-    it('multi-key sort uses indexed sort[i]=', () => {
-      const out = strapi.encode(
-        { sort: 'date desc, title asc' },
-        { method: 'GET', pushCandidates: pushAll, rename: null },
-      )
-      expect(out.queryParams).toEqual([
-        ['sort[0]', 'date:desc'],
-        ['sort[1]', 'title:asc'],
-      ])
-    })
-  })
-
-  it('declares the Strapi response envelope by default', () => {
-    expect(strapi.defaultEnvelope).toEqual({ list: 'data', item: 'data' })
-  })
-
-  it('POST is a no-op (Strapi REST reads are GET-only)', () => {
-    const out = strapi.encode(
-      { where: { a: 1 }, limit: 10 },
-      { method: 'POST', pushCandidates: pushAll, rename: null },
-    )
-    expect(out.queryParams).toEqual([])
-    expect(out.pushed.size).toBe(0)
-  })
-})
-
 describe('a new where-operator must never be MIS-encoded', () => {
-  // Adding an operator to `@uniweb/core/where` widens the predicate language
-  // for every style at once. The safe outcome for a style that cannot express
-  // it is to push NOTHING — the default fetcher then applies the whole
-  // predicate as a runtime fallback and the caller gets correct records.
+  // Adding an operator to `@uniweb/core/where` widens the predicate
+  // language. json-body carries the predicate as opaque JSON, so a new
+  // operator rides verbatim to the backend and nothing here has to know
+  // it exists.
   //
-  // ⛔ The unsafe outcome is a style that emits a wire operator the backend
-  // does not implement: the request succeeds, the backend ignores or misreads
-  // the clause, and the caller receives a WRONG set with a 200. This test is
-  // the guard on that, using `under` as the worked example.
+  // ⛔ The unsafe outcome is an encoder that emits a wire operator the
+  // backend does not implement: the request succeeds, the backend ignores
+  // or misreads the clause, and the caller receives a WRONG set with a
+  // 200. That is why a vendor dialect is a named transport and not a
+  // second built-in style. `under` is the worked example.
   const request = { where: { path: { under: '2024' } } }
   const ctx = { method: 'GET', pushCandidates: new Set(['where']), rename: null }
 
@@ -403,58 +171,5 @@ describe('a new where-operator must never be MIS-encoded', () => {
     const out = jsonBody.encode(request, ctx)
     expect(out.pushed.has('where')).toBe(true)
     expect(out.queryParams).toEqual([['_where', JSON.stringify(request.where)]])
-  })
-
-  it('flat-query fails CLOSED — nothing pushed, so the runtime evaluates', () => {
-    const out = flatQuery.encode(request, ctx)
-    expect(out.pushed.has('where')).toBe(false)
-    expect(out.queryParams).toEqual([])
-  })
-
-  it('strapi fails CLOSED rather than inventing a $under filter', () => {
-    const out = strapi.encode(request, ctx)
-    expect(out.pushed.has('where')).toBe(false)
-    expect(out.queryParams).toEqual([])
-  })
-
-  it('failing closed is per-request, not per-style — a mappable predicate still pushes', () => {
-    // Guards the guard: if the two styles above returned nothing for every
-    // input, the three assertions above would pass while proving nothing.
-    const mappable = { where: { department: 'biology' } }
-    expect(strapi.encode(mappable, ctx).pushed.has('where')).toBe(true)
-    expect(flatQuery.encode(mappable, ctx).pushed.has('where')).toBe(true)
-  })
-})
-
-describe('strapi — `like` must not be pushed as a substring test', () => {
-  const enc = (where) =>
-    strapi.encode({ where }, { method: 'GET', pushCandidates: new Set(['where']), rename: null })
-
-  // Regression: `like` used to map to `[$containsi]`, which is wrong in BOTH
-  // directions and silently so. Our `like` is an anchored glob; `$containsi`
-  // is an unanchored substring with no wildcard syntax, and the pattern was
-  // forwarded verbatim — so `like: 'Dr. *'` asked the backend for the literal
-  // text "Dr. *". The request succeeded and returned the wrong set.
-  it('does not push a glob pattern', () => {
-    expect(enc({ name: { like: 'Dr. *' } }).pushed.has('where')).toBe(false)
-  })
-
-  it('does not push a wildcard-free pattern either — anchored ≠ substring', () => {
-    // The subtle half: even with no wildcards our `like: 'abc'` means EXACTLY
-    // 'abc', while `$containsi=abc` also matches 'xabcx'.
-    expect(enc({ name: { like: 'abc' } }).pushed.has('where')).toBe(false)
-  })
-
-  it('does not poison the rest of a composite predicate silently', () => {
-    // A predicate mixing a mappable clause with `like` must push NOTHING
-    // rather than pushing half of it — half a predicate is a wrong set.
-    const out = enc({ and: [{ dept: 'biology' }, { name: { like: 'Dr. *' } }] })
-    expect(out.pushed.has('where')).toBe(false)
-    expect(out.queryParams).toEqual([])
-  })
-
-  it('still pushes what it can express', () => {
-    expect(enc({ dept: 'biology' }).pushed.has('where')).toBe(true)
-    expect(enc({ age: { gte: 18 } }).pushed.has('where')).toBe(true)
   })
 })
