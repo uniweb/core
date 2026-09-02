@@ -197,19 +197,29 @@ function resolveQuerySource(cfg, records) {
  * stored payloads we cannot rewrite — unlike the one deleted from
  * `applyDeferredDetail`, which spanned two producers we control.
  *
- * ⛔ **RETIREMENT IS COORDINATED — three producers emit the pair, and dropping
- * one unilaterally re-creates the asymmetry.** As of 2026-09-02 the build lane,
- * the sync lane and `frontend`'s editor all write `{ …, as, schema }`, each with
- * a note at its emit site saying it is a compatibility duplicate. Frontend's says
- * *"two producers retire it together or not at all"* and points at this decision.
+ * ⛔ **RETIREMENT IS COORDINATED, and a producer stopping is NOT the signal.**
+ * As of 2026-09-02 the build lane and the sync lane write `{ …, as, schema }`,
+ * each with a note at its emit site saying it is a compatibility duplicate.
  *
- * ⇒ **The condition for removal is not a date.** It is that no producer writes
- * `schema` AND no site resolves to a runtime older than this function. A published
+ * ⭐ **`frontend`'s editor was a third and has stopped** (frontend@f04d1d26,
+ * reported by that lane on 2026-09-02). ⚠️ **That changes nothing here**, and the
+ * reason is the whole point of this reader: **it spans STORED PAYLOADS, not live
+ * producers.** Every page their editor wrote before that commit still carries
+ * `schema` and is still on disk, as are our own pre-rename payloads. A producer
+ * can stop in an afternoon; what it already wrote does not.
+ *
+ * *(Their reasoning does not transfer: they judged the hazard absent because
+ * every site they can reach is a dev seed. Ours is a producer whose output
+ * reaches sites pinned to runtimes we do not control — so we keep emitting both.)*
+ *
+ * ⇒ **The condition for removal is not a date, and not a producer census.** It is
+ * that no STORED payload carries `schema` AND no site resolves to a runtime older
+ * than this function. A published
  * site renders at its OWN pinned runtime, so an `as`-only payload met by an older
  * one is skipped entirely (`if (!key) continue`) — no data, no error, and on a
  * host's SSR path that reaches a visitor rather than a build log.
  *
- * ⚠️ **Nobody in the framework lane can observe the second half.** What the
+ * ⚠️ **Nobody in the framework lane can observe either half.** What the
  * delivery channel serves, and which runtime a given site resolves to, are not
  * ours to see. ⇒ **Do not drop this on the reasoning that "enough time has
  * passed."** Ask the lanes that emit the pair, and the lane that serves it.
