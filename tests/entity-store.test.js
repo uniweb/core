@@ -60,7 +60,7 @@ describe('EntityStore.resolve', () => {
 
   it('delivers data by default when a cascade match is cached', () => {
     const { entityStore, dataStore, website } = makeHarness()
-    const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
+    const fetchConfig = { path: '/data/articles.json', as: 'articles' }
     const articles = [{ slug: 'a', title: 'A' }]
     dataStore.set(deriveCacheKey(fetchConfig), { data: articles })
 
@@ -74,7 +74,7 @@ describe('EntityStore.resolve', () => {
 
   it('returns none when inheritData: false', () => {
     const { entityStore, dataStore, website } = makeHarness()
-    const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
+    const fetchConfig = { path: '/data/articles.json', as: 'articles' }
     dataStore.set(deriveCacheKey(fetchConfig), { data: [{ slug: 'a' }] })
 
     const page = makePage({ fetch: fetchConfig })
@@ -85,7 +85,7 @@ describe('EntityStore.resolve', () => {
 
   it('returns pending on cache miss', () => {
     const { entityStore, website } = makeHarness()
-    const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
+    const fetchConfig = { path: '/data/articles.json', as: 'articles' }
     const page = makePage({ fetch: fetchConfig })
     const block = makeBlock({ page }, website)
 
@@ -100,7 +100,7 @@ describe('EntityStore.fetch', () => {
       fetcherImpl: () => Promise.resolve({ data: articles }),
     })
 
-    const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
+    const fetchConfig = { path: '/data/articles.json', as: 'articles' }
     const parent = makePage({ fetch: fetchConfig })
     const page = makePage({ parent })
     const block = makeBlock({ page }, website)
@@ -114,7 +114,7 @@ describe('EntityStore.fetch', () => {
     const { entityStore, fetcherSpy, website } = makeHarness({
       fetcherImpl: () => Promise.resolve({ data: [] }),
     })
-    const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
+    const fetchConfig = { path: '/data/articles.json', as: 'articles' }
     const grandparent = makePage({ fetch: fetchConfig })
     const parent = makePage({ parent: grandparent })
     const page = makePage({ parent })
@@ -130,7 +130,7 @@ describe('EntityStore.fetch', () => {
     const { entityStore, website } = makeHarness({
       fetcherImpl: () => Promise.resolve({ data: teams }),
     })
-    const fetchConfig = { path: '/data/teams.json', schema: 'teams' }
+    const fetchConfig = { path: '/data/teams.json', as: 'teams' }
     website.config = { fetch: fetchConfig }
 
     const block = makeBlock({ page: makePage() }, website)
@@ -141,8 +141,8 @@ describe('EntityStore.fetch', () => {
   it('first match per schema wins (block overrides page)', async () => {
     const blockArticles = [{ from: 'block' }]
     const pageArticles = [{ from: 'page' }]
-    const blockConfig = { path: '/data/block-articles.json', schema: 'articles' }
-    const pageConfig = { path: '/data/page-articles.json', schema: 'articles' }
+    const blockConfig = { path: '/data/block-articles.json', as: 'articles' }
+    const pageConfig = { path: '/data/page-articles.json', as: 'articles' }
 
     const { entityStore, fetcherSpy, website } = makeHarness({
       fetcherImpl: (req) =>
@@ -168,7 +168,7 @@ describe('EntityStore.fetch', () => {
     const { entityStore, website } = makeHarness({
       fetcherImpl: () => Promise.resolve({ data: articles }),
     })
-    const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
+    const fetchConfig = { path: '/data/articles.json', as: 'articles' }
     const dynamicContext = { paramName: 'slug', paramValue: 'world', schema: 'articles' }
     const page = makePage({ fetch: fetchConfig })
     const block = makeBlock({ page, dynamicContext }, website)
@@ -194,7 +194,7 @@ describe('EntityStore.fetch', () => {
 
     const fetchConfig = {
       url: 'https://api.example.com/articles',
-      schema: 'articles',
+      as: 'articles',
       detail: 'rest',
     }
     const dynamicContext = { paramName: 'slug', paramValue: 'my-post', schema: 'articles' }
@@ -208,7 +208,7 @@ describe('EntityStore.fetch', () => {
     expect(fetcherSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         url: 'https://api.example.com/articles/my-post',
-        schema: 'articles',
+        as: 'articles',
       }),
       expect.anything(),
     )
@@ -219,14 +219,14 @@ describe('EntityStore.fetch', () => {
     const detailArticle = { ...collectionItem, body: 'Full' }
     const { entityStore, fetcherSpy, website } = makeHarness({
       fetcherImpl: (req) =>
-        req.schema === 'articles'
+        req.as === 'articles'
           ? Promise.resolve({ data: [collectionItem] })
           : Promise.resolve({ data: detailArticle }),
     })
 
     const fetchConfig = {
       url: 'https://api.example.com/articles',
-      schema: 'articles',
+      as: 'articles',
       detail: 'query',
     }
     const dynamicContext = { paramName: 'slug', paramValue: 'my-post', schema: 'articles' }
@@ -238,7 +238,7 @@ describe('EntityStore.fetch', () => {
     expect(fetcherSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         url: 'https://api.example.com/articles?slug=my-post',
-        schema: 'articles',
+        as: 'articles',
       }),
       expect.anything(),
     )
@@ -249,14 +249,14 @@ describe('EntityStore.fetch', () => {
     const detailArticle = { ...collectionItem, body: 'Full' }
     const { entityStore, fetcherSpy, website } = makeHarness({
       fetcherImpl: (req) =>
-        req.schema === 'articles'
+        req.as === 'articles'
           ? Promise.resolve({ data: [collectionItem] })
           : Promise.resolve({ data: detailArticle }),
     })
 
     const fetchConfig = {
       url: 'https://api.example.com/articles',
-      schema: 'articles',
+      as: 'articles',
       detail: 'https://api.example.com/article/{slug}',
     }
     const dynamicContext = { paramName: 'slug', paramValue: 'my-post', schema: 'articles' }
@@ -268,7 +268,7 @@ describe('EntityStore.fetch', () => {
     expect(fetcherSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         url: 'https://api.example.com/article/my-post',
-        schema: 'articles',
+        as: 'articles',
       }),
       expect.anything(),
     )
@@ -283,7 +283,7 @@ describe('EntityStore.fetch', () => {
     })
     const fetchConfig = {
       url: 'https://api.example.com/articles',
-      schema: 'articles',
+      as: 'articles',
       detail: 'rest',
     }
     dataStore.set(deriveCacheKey(fetchConfig), { data: articles })
@@ -309,7 +309,7 @@ describe('EntityStore.fetch', () => {
     })
     const fetchConfig = {
       url: 'https://api.example.com/articles',
-      schema: 'articles',
+      as: 'articles',
       detail: 'rest',
     }
     const page = makePage({ fetch: fetchConfig })
@@ -325,7 +325,7 @@ describe('EntityStore.fetch', () => {
     const { entityStore, fetcherSpy, website } = makeHarness({
       fetcherImpl: () => Promise.resolve({ data: articles }),
     })
-    const fetchConfig = { url: 'https://api.example.com/articles', schema: 'articles' }
+    const fetchConfig = { url: 'https://api.example.com/articles', as: 'articles' }
     const dynamicContext = { paramName: 'slug', paramValue: 'my-post', schema: 'articles' }
     const parent = makePage({ fetch: fetchConfig })
     const page = makePage({ parent, dynamicContext })
@@ -344,7 +344,7 @@ describe('EntityStore.fetch', () => {
     })
     website.getActiveLocale = () => 'fr'
 
-    const fetchConfig = { path: queryDataUrl('articles'), schema: 'articles' }
+    const fetchConfig = { path: queryDataUrl('articles'), as: 'articles' }
     const page = makePage({ fetch: fetchConfig })
     const block = makeBlock({ page }, website)
 
@@ -352,7 +352,7 @@ describe('EntityStore.fetch', () => {
     expect(fetcherSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         path: `/fr${queryDataUrl('articles')}`,
-        schema: 'articles',
+        as: 'articles',
       }),
       expect.anything(),
     )
@@ -364,7 +364,7 @@ describe('EntityStore.fetch', () => {
     })
     website.getActiveLocale = () => 'fr'
 
-    const fetchConfig = { url: 'https://api.example.com/articles', schema: 'articles' }
+    const fetchConfig = { url: 'https://api.example.com/articles', as: 'articles' }
     const page = makePage({ fetch: fetchConfig })
     const block = makeBlock({ page }, website)
 
@@ -378,7 +378,7 @@ describe('EntityStore.fetch', () => {
     })
     website.getActiveLocale = () => 'fr'
 
-    const fetchConfig = { path: '/api/config.json', schema: 'config' }
+    const fetchConfig = { path: '/api/config.json', as: 'config' }
     const page = makePage({ fetch: fetchConfig })
     const block = makeBlock({ page }, website)
 
@@ -392,11 +392,11 @@ describe('EntityStore.fetch', () => {
 
     const articles = [{ slug: 'a', title: 'Bonjour' }]
     dataStore.set(
-      deriveCacheKey({ path: `/fr${queryDataUrl('articles')}`, schema: 'articles' }),
+      deriveCacheKey({ path: `/fr${queryDataUrl('articles')}`, as: 'articles' }),
       { data: articles },
     )
 
-    const fetchConfig = { path: queryDataUrl('articles'), schema: 'articles' }
+    const fetchConfig = { path: queryDataUrl('articles'), as: 'articles' }
     const page = makePage({ fetch: fetchConfig })
     const block = makeBlock({ page }, website)
 
@@ -410,14 +410,14 @@ describe('EntityStore.fetch', () => {
     const categories = [{ name: 'Tech' }]
     const { entityStore, fetcherSpy, website } = makeHarness({
       fetcherImpl: (req) => {
-        if (req.schema === 'articles') return Promise.resolve({ data: articles })
-        if (req.schema === 'categories') return Promise.resolve({ data: categories })
+        if (req.as === 'articles') return Promise.resolve({ data: articles })
+        if (req.as === 'categories') return Promise.resolve({ data: categories })
         return Promise.resolve({ data: null })
       },
     })
     const fetchConfigs = [
-      { path: '/data/articles.json', schema: 'articles' },
-      { path: '/data/categories.json', schema: 'categories' },
+      { path: '/data/articles.json', as: 'articles' },
+      { path: '/data/categories.json', as: 'categories' },
     ]
     const page = makePage({ fetch: fetchConfigs })
     const block = makeBlock({ page }, website)
@@ -432,7 +432,7 @@ describe('EntityStore.fetch', () => {
     const { entityStore, fetcherSpy, website } = makeHarness({
       fetcherImpl: () => Promise.resolve({ data: [] }),
     })
-    const fetchConfig = { path: '/data/articles.json', schema: 'articles' }
+    const fetchConfig = { path: '/data/articles.json', as: 'articles' }
     const page = makePage({ fetch: fetchConfig })
     const block = makeBlock({ page }, website)
     const controller = new AbortController()
@@ -448,8 +448,8 @@ describe('EntityStore.fetch', () => {
       const { entityStore, fetcherSpy, website } = makeHarness({
         fetcherImpl: () => Promise.resolve({ data: articles }),
       })
-      const parentConfig = { path: '/data/articles.json', schema: 'articles' }
-      const blockConfig = { path: '/data/override.json', schema: 'articles' }
+      const parentConfig = { path: '/data/articles.json', as: 'articles' }
+      const blockConfig = { path: '/data/override.json', as: 'articles' }
       const parent = makePage({ fetch: parentConfig })
       const page = makePage({ parent })
       const block = makeBlock({ page, fetch: { ...blockConfig, refine: true } }, website)
@@ -466,8 +466,8 @@ describe('EntityStore.fetch', () => {
       const { entityStore, fetcherSpy, website } = makeHarness({
         fetcherImpl: () => Promise.resolve({ data: articles }),
       })
-      const parentConfig = { path: '/data/articles.json', schema: 'articles' }
-      const blockConfig = { path: '/data/override.json', schema: 'articles' }
+      const parentConfig = { path: '/data/articles.json', as: 'articles' }
+      const blockConfig = { path: '/data/override.json', as: 'articles' }
       const parent = makePage({ fetch: parentConfig })
       const page = makePage({ parent })
       const block = makeBlock({ page, fetch: { ...blockConfig, inherit: true } }, website)
@@ -491,7 +491,7 @@ describe('EntityStore.fetch', () => {
       })
       const parentConfig = {
         url: 'https://api.example.com/articles',
-        schema: 'articles',
+        as: 'articles',
         detail: 'rest',
       }
       const dynamicContext = { paramName: 'slug', paramValue: 'b', schema: 'articles' }
@@ -509,7 +509,7 @@ describe('EntityStore.fetch', () => {
 })
 
 describe('EntityStore detailPage → record.route injection', () => {
-  const cfg = { path: '/data/articles.json', schema: 'articles', detailPage: 'page:detail' }
+  const cfg = { path: '/data/articles.json', as: 'articles', detailPage: 'page:detail' }
 
   function seed(articles, resolver) {
     const h = makeHarness()
@@ -562,7 +562,7 @@ describe('EntityStore detailPage → record.route injection', () => {
   })
 
   it('is a no-op when the fetch config declares no detailPage', () => {
-    const plain = { path: '/data/articles.json', schema: 'articles' }
+    const plain = { path: '/data/articles.json', as: 'articles' }
     const h = makeHarness()
     h.website.resolveDetailPageTemplate = () => '/blog/:slug'
     h.dataStore.set(deriveCacheKey(plain), { data: [{ slug: 'a', title: 'A' }] })
@@ -598,7 +598,7 @@ describe('EntityStore + real Website: end-to-end detailPage resolution', () => {
 
     const cfg = {
       path: '/data/articles.json',
-      schema: 'articles',
+      as: 'articles',
       detailPage: 'page:article-detail',
     }
     w.dataStore.set(deriveCacheKey(cfg), {
@@ -622,7 +622,7 @@ describe('EntityStore + real Website: end-to-end detailPage resolution', () => {
 
 describe('EntityStore detailPage — SECTION-level (block.fetch) resolution', () => {
   it('resolves detailPage from a SECTION own fetch (block.fetch) on a page with NO page fetch', () => {
-    const cfg = { path: '/data/articles.json', schema: 'articles', detailPage: 'page:detail' }
+    const cfg = { path: '/data/articles.json', as: 'articles', detailPage: 'page:detail' }
     const h = makeHarness()
     h.website.resolveDetailPageTemplate = () => '/blog/:slug'
     h.dataStore.set(deriveCacheKey(cfg), { data: [{ slug: 'x', title: 'X' }] })
@@ -634,8 +634,8 @@ describe('EntityStore detailPage — SECTION-level (block.fetch) resolution', ()
   })
 
   it('section fetch.detailPage WINS over page fetch.detailPage for the same schema', () => {
-    const sectionCfg = { path: '/data/articles.json', schema: 'articles', detailPage: 'page:section' }
-    const pageCfg = { path: '/data/articles.json', schema: 'articles', detailPage: 'page:page' }
+    const sectionCfg = { path: '/data/articles.json', as: 'articles', detailPage: 'page:section' }
+    const pageCfg = { path: '/data/articles.json', as: 'articles', detailPage: 'page:page' }
     const h = makeHarness()
     h.website.resolveDetailPageTemplate = (ref) =>
       ref === 'page:section' ? '/section/:slug' : '/page/:slug'

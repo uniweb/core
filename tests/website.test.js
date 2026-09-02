@@ -48,7 +48,7 @@ describe('Website constructor', () => {
       foundation,
     })
     const result = await w.fetcher.dispatch(
-      { schema: 's' },
+      { as: 's' },
       { website: w },
     )
     expect(result.data).toEqual(['x'])
@@ -64,7 +64,7 @@ describe('Website constructor', () => {
       foundation,
       transport: { resolve: bridgeResolve },
     })
-    const result = await w.fetcher.dispatch({ schema: 's' }, { website: w })
+    const result = await w.fetcher.dispatch({ as: 's' }, { website: w })
     expect(result.data).toEqual(['bridge'])
     expect(foundationResolve).not.toHaveBeenCalled()
   })
@@ -81,7 +81,7 @@ describe('Website constructor', () => {
     })
 
     w.rebuild({ foundation: foundationB })
-    const result = await w.fetcher.dispatch({ schema: 's' }, { website: w })
+    const result = await w.fetcher.dispatch({ as: 's' }, { website: w })
     expect(result.data).toEqual(['bridge'])
     expect(bridgeResolve).toHaveBeenCalled()
   })
@@ -120,7 +120,7 @@ describe('Website.rebuild', () => {
     const origState = w.state
     w.state.set('mode', 'A')
 
-    await w.fetcher.dispatch({ schema: 's' }, { website: w })
+    await w.fetcher.dispatch({ as: 's' }, { website: w })
     expect(a).toHaveBeenCalledTimes(1)
 
     w.rebuild({ foundation: foundationB })
@@ -133,7 +133,7 @@ describe('Website.rebuild', () => {
     // derived from request is the same, so the cached entry wins regardless
     // of which fetcher would run. Clear cache first to force a real dispatch.
     w.dataStore.clear()
-    await w.fetcher.dispatch({ schema: 's' }, { website: w })
+    await w.fetcher.dispatch({ as: 's' }, { website: w })
     expect(b).toHaveBeenCalledTimes(1)
   })
 

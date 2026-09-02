@@ -57,7 +57,7 @@ describe('the four detail: forms', () => {
     const cfg = {
       url: 'https://api.test/graphql',
       method: 'POST',
-      schema: 'articles',
+      as: 'articles',
       detail: { body: { variables: { slug: '{slug}' } }, envelope: { item: 'data.article' } },
     }
     expect(buildDetailConfig(cfg, ctx)).toMatchObject({
@@ -115,10 +115,10 @@ describe('returns null rather than throwing — the common case is "no detail fe
 describe('the leaf property consumers rely on', () => {
   it('carries schema and transform through so the fetch lands on the right key', () => {
     const out = buildDetailConfig(
-      { url: 'https://api.test/a', detail: 'rest', schema: 'articles', transform: 'unwrap' },
+      { url: 'https://api.test/a', detail: 'rest', as: 'articles', transform: 'unwrap' },
       ctx,
     )
-    expect(out).toMatchObject({ schema: 'articles', transform: 'unwrap' })
+    expect(out).toMatchObject({ as: 'articles', transform: 'unwrap' })
   })
 })
 
@@ -170,7 +170,7 @@ describe('the detail request keeps the collection\'s address kind', () => {
   // detail as `path` would silently drop operator pushdown and the site's
   // static headers for exactly the request that is one record.
   it('endpoint → endpoint', () => {
-    const out = buildDetailConfig({ endpoint: '/_d/a', detail: 'rest', schema: 'a' }, ctx)
+    const out = buildDetailConfig({ endpoint: '/_d/a', detail: 'rest', as: 'a' }, ctx)
     expect(out).toMatchObject({ endpoint: '/_d/a/p' })
     expect(out.path).toBeUndefined()
     expect(out.url).toBeUndefined()
@@ -189,6 +189,6 @@ describe('the detail request keeps the collection\'s address kind', () => {
   })
 
   it('returns null when the collection has no address at all', () => {
-    expect(buildDetailConfig({ detail: 'rest', schema: 'a' }, ctx)).toBeNull()
+    expect(buildDetailConfig({ detail: 'rest', as: 'a' }, ctx)).toBeNull()
   })
 })

@@ -160,7 +160,12 @@ export default class FetcherDispatcher {
 
     const transportsConfig = ctx?.website?.config?.fetcher?.transports
     if (transportsConfig && typeof transportsConfig === 'object') {
-      const schema = request?.schema
+      // ⛔ `as`, the binding key. This read `request.schema` — and ONLY that —
+      // so from the 2026-09-02 rename until this line was fixed, a site's
+      // `transports:` selection silently missed on every `as`-keyed payload and
+      // fell through to the default transport. No warning: the miss is
+      // indistinguishable from "this site declared no transport for it".
+      const schema = request?.as
       const name = (schema && transportsConfig[schema]) || transportsConfig.default
       if (name) {
         const t = this._namedTransports.get(name)

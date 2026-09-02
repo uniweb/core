@@ -94,7 +94,7 @@ export function buildDetailConfig(queryConfig, dynamicContext) {
   if (detail && typeof detail === 'object') {
     const out = {
       [addressKey]: baseUrl,
-      schema: queryConfig.schema,
+      as: queryConfig.as,
       transform: queryConfig.transform,
     }
     if (queryConfig.method) out.method = queryConfig.method
@@ -145,7 +145,7 @@ export function buildDetailConfig(queryConfig, dynamicContext) {
 
   return {
     [addressKey]: detailUrl,
-    schema: queryConfig.schema,
+    as: queryConfig.as,
     transform: queryConfig.transform,
   }
 }

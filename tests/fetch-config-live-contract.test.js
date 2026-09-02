@@ -45,7 +45,7 @@ const RECORDS = {
   style: 'json-body',
 }
 
-const authored = (extra) => [{ path: '/data/members.json', schema: 'members', ...extra }]
+const authored = (extra) => [{ path: '/data/members.json', as: 'members', ...extra }]
 
 describe('resolveFetchConfigs — the live-pinned surface', () => {
   it('the OPTION is `records`, and it is what turns a query into an endpoint', () => {

@@ -21,7 +21,7 @@ import { isFetchRefinement, resolveFetchConfigs } from './fetch-config.js'
  * `as` is the name; `schema` is what it was called until 2026-09-02 and still
  * arrives on any payload published before then. See `fetch-config.js`.
  */
-const bindingKeyOf = (cfg) => cfg?.as ?? cfg?.schema
+const bindingKeyOf = (cfg) => cfg?.as
 import { buildDetailConfig } from './detail-url.js'
 
 /**

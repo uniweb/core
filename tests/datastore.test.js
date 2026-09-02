@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import DataStore, { deriveCacheKey } from '../src/datastore.js'
 
 describe('DataStore', () => {
-  const config = { path: '/data/articles.json', schema: 'articles' }
+  const config = { path: '/data/articles.json', as: 'articles' }
   const key = deriveCacheKey(config)
 
   describe('get / set / has', () => {
@@ -55,7 +55,7 @@ describe('DataStore', () => {
   })
 
   describe('subscribe(key, fn)', () => {
-    const otherConfig = { path: '/data/other.json', schema: 'other' }
+    const otherConfig = { path: '/data/other.json', as: 'other' }
     const otherKey = deriveCacheKey(otherConfig)
 
     it('fires only when the matching key is set', () => {
@@ -130,13 +130,13 @@ describe('DataStore', () => {
 
   describe('deriveCacheKey', () => {
     it('derives stable keys from path/url/schema/transform', () => {
-      expect(deriveCacheKey({ path: '/a', schema: 'x' }))
-        .toEqual(deriveCacheKey({ schema: 'x', path: '/a' }))
+      expect(deriveCacheKey({ path: '/a', as: 'x' }))
+        .toEqual(deriveCacheKey({ as: 'x', path: '/a' }))
     })
 
     it('ignores post-processing fields', () => {
-      const a = deriveCacheKey({ path: '/a', schema: 'x', limit: 3 })
-      const b = deriveCacheKey({ path: '/a', schema: 'x', limit: 99 })
+      const a = deriveCacheKey({ path: '/a', as: 'x', limit: 3 })
+      const b = deriveCacheKey({ path: '/a', as: 'x', limit: 99 })
       expect(a).toEqual(b)
     })
   })
@@ -146,14 +146,14 @@ describe('deriveCacheKey — endpoint is part of the identity', () => {
   it('separates two collections resolved through a lane', () => {
     // Without `endpoint` in the key these collapse to one entry and the second
     // collection reads the first one's records out of the cache.
-    const a = deriveCacheKey({ endpoint: '/_data/articles', schema: 'articles' })
-    const b = deriveCacheKey({ endpoint: '/_data/news', schema: 'news' })
+    const a = deriveCacheKey({ endpoint: '/_data/articles', as: 'articles' })
+    const b = deriveCacheKey({ endpoint: '/_data/news', as: 'news' })
     expect(a).not.toBe(b)
   })
 
   it('separates the lane address from the artifact for one collection', () => {
-    const lane = deriveCacheKey({ endpoint: '/_data/articles', schema: 'articles' })
-    const file = deriveCacheKey({ path: '/data/articles.json', schema: 'articles' })
+    const lane = deriveCacheKey({ endpoint: '/_data/articles', as: 'articles' })
+    const file = deriveCacheKey({ path: '/data/articles.json', as: 'articles' })
     expect(lane).not.toBe(file)
   })
 })

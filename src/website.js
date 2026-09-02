@@ -591,12 +591,11 @@ export default class Website {
       let items = []
 
       if (parentFetch && this.fetcher) {
-        // ⛔ `as ?? schema`, not `schema`. `as` is the binding key; `schema` is
-        // its pre-2026-09-02 name, still emitted for older runtimes and due to
-        // retire. Matching on the old name alone would find nothing the day it
-        // goes — `items` stays `[]`, and this page reports "Not found" for a
-        // record that exists. Silent, and on a visitor's page.
-        const keyOf = (f) => f?.as ?? f?.schema
+        // ⛔ `as` is the binding key. This matched on `schema` alone until
+        // 2026-09-02 — which, once the alias went, would have found nothing:
+        // `items` stays `[]` and the page reports "Not found" for a record that
+        // exists. Silent, and on a visitor's page.
+        const keyOf = (f) => f?.as
         const fetchConfig = Array.isArray(parentFetch)
           ? parentFetch.find((f) => keyOf(f) === pluralSchema)
           : (keyOf(parentFetch) === pluralSchema ? parentFetch : null)

@@ -35,7 +35,7 @@ const QUERIES = { articles: { deferred: ['body'] } }
 const buildLane = (over = {}) => ({
   query: 'articles',
   path: '/data/articles.json',
-  schema: 'articles',
+  as: 'articles',
   prerender: true,
   merge: false,
   ...over,
@@ -67,10 +67,10 @@ describe('a host that declares a live lane', () => {
 
 describe('the binding key and the query name are different things', () => {
   it('⭐ finds `deferred:` by QUERY NAME even when the binding key differs', () => {
-    // `fetch: { query: 'articles', schema: 'posts' }` is a supported, allow-listed,
+    // `fetch: { query: 'articles', as: 'posts' }` is a supported, allow-listed,
     // unwarned form. The lookup used to key on `schema` — the binding key — so it
     // missed, and a detail page rendered the brief without its body, silently.
-    const cfg = resolveFetchConfigs([buildLane({ schema: 'posts' })], { queries: QUERIES })
+    const cfg = resolveFetchConfigs([buildLane({ as: 'posts' })], { queries: QUERIES })
       .get('posts')
     expect(cfg.detail).toBe('/data/articles/{slug}.json')
   })
@@ -78,7 +78,7 @@ describe('the binding key and the query name are different things', () => {
   it('keys the resolved map by the BINDING key, which is what a component reads', () => {
     // The override changes `content.data.<key>` and nothing else. Both halves have
     // to be right at once, which is the whole point of separating them.
-    const configs = resolveFetchConfigs([buildLane({ schema: 'posts' })], { queries: QUERIES })
+    const configs = resolveFetchConfigs([buildLane({ as: 'posts' })], { queries: QUERIES })
     expect([...configs.keys()]).toEqual(['posts'])
   })
 
@@ -95,7 +95,7 @@ describe('a source-shape fetch, which has no query at all', () => {
     // deleted `??` sat where `query` was guaranteed present and pretended
     // otherwise.
     const cfg = resolveFetchConfigs(
-      [{ path: '/data/articles.json', schema: 'articles', prerender: true }],
+      [{ path: '/data/articles.json', as: 'articles', prerender: true }],
       { queries: QUERIES }
     ).get('articles')
     expect(cfg.detail).toBe('/data/articles/{slug}.json')
@@ -106,7 +106,7 @@ describe('a source-shape fetch, which has no query at all', () => {
     // for that artifact, and silently redirecting it would be inventing an
     // identity the author never declared.
     const cfg = resolveFetchConfigs(
-      [{ path: '/data/articles.json', schema: 'articles' }],
+      [{ path: '/data/articles.json', as: 'articles' }],
       { queries: QUERIES, records: RECORDS }
     ).get('articles')
     expect(cfg.endpoint).toBeUndefined()

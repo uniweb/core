@@ -35,12 +35,11 @@
  * @returns {string} A stable JSON string usable as a cache-Map key
  */
 export function deriveCacheKey(request) {
-  // ⭐ `as` is the binding key; `schema` is the name it had until 2026-09-02 and
-  // still arrives on every payload published before then. Normalised HERE so one
-  // logical request hashes to one key whichever spelling reached us — a consumer
-  // deriving a key must not get two entries for the same fetch.
+  // ⭐ `as` is the binding key — the name it has had since 2026-09-02, when the
+  // compatibility alias for the older `schema` spelling was removed alongside
+  // frontend's and hosting's.
   const { path, url, endpoint, transform } = request || {}
-  const as = request?.as ?? request?.schema
+  const as = request?.as
   const method = request?.method && request.method.toUpperCase() !== 'GET'
     ? request.method.toUpperCase()
     : undefined

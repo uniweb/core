@@ -90,7 +90,7 @@ describe('data-paths helpers', () => {
 describe('fetch-config uses the shared convention', () => {
   it('locale-prefixes a compiled-collection path', () => {
     const configs = resolveFetchConfigs(
-      [{ schema: 'articles', path: queryDataUrl('articles') }],
+      [{ as: 'articles', path: queryDataUrl('articles') }],
       { locale: 'fr', defaultLocale: 'en' }
     )
     expect(configs.get('articles').path).toBe(`/fr${queryDataUrl('articles')}`)
@@ -101,7 +101,7 @@ describe('fetch-config uses the shared convention', () => {
     // business to localize. This is the guard that silently serves
     // default-locale content if the prefix test stops matching.
     const configs = resolveFetchConfigs(
-      [{ schema: 'events', path: '/api/events.json' }],
+      [{ as: 'events', path: '/api/events.json' }],
       { locale: 'fr', defaultLocale: 'en' }
     )
     expect(configs.get('events').path).toBe('/api/events.json')
@@ -109,7 +109,7 @@ describe('fetch-config uses the shared convention', () => {
 
   it('injects the per-record default for a deferred collection', () => {
     const configs = resolveFetchConfigs(
-      [{ schema: 'articles', path: queryDataUrl('articles') }],
+      [{ as: 'articles', path: queryDataUrl('articles') }],
       { queries: { articles: { deferred: ['body'] } } }
     )
     expect(configs.get('articles').detail).toBe(recordDataUrl('articles', '{slug}'))
@@ -117,7 +117,7 @@ describe('fetch-config uses the shared convention', () => {
 
   it('prefers an author-declared detailUrl over the per-record default', () => {
     const configs = resolveFetchConfigs(
-      [{ schema: 'articles', path: queryDataUrl('articles') }],
+      [{ as: 'articles', path: queryDataUrl('articles') }],
       {
         queries: {
           articles: { deferred: ['body'], detailUrl: '/api/articles/{slug}' }

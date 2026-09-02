@@ -2,8 +2,8 @@ import { describe, it, expect, vi } from 'vitest'
 import DataStore, { deriveCacheKey } from '../src/datastore.js'
 
 describe('DataStore.delete', () => {
-  const key = deriveCacheKey({ endpoint: 'api:viewer-1:/records', schema: 'courses' })
-  const other = deriveCacheKey({ path: '/data/articles.json', schema: 'articles' })
+  const key = deriveCacheKey({ endpoint: 'api:viewer-1:/records', as: 'courses' })
+  const other = deriveCacheKey({ path: '/data/articles.json', as: 'articles' })
 
   it('removes one entry and leaves the rest warm', () => {
     const store = new DataStore()

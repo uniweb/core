@@ -35,7 +35,7 @@ function makeContent() {
         sections: [],
         // Page-level fetch config — the cascade lands here when a block
         // on this page asks for data.
-        fetch: { schema: 'articles', url: 'https://api.example.com/articles' },
+        fetch: { as: 'articles', url: 'https://api.example.com/articles' },
       },
     ],
   }
