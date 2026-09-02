@@ -109,19 +109,37 @@ function applyDeferredDetail(cfg, queries, records) {
   // projection is not obliged to carry — so on such a host that rule can never
   // fire, and this is the only way a detail page reaches a whole record.
   if (cfg.endpoint) {
-    const recordPattern = resolveRecordAddressPattern(cfg.query ?? cfg.schema, records)
+    // ⛔ `cfg.query`, not `cfg.query ?? cfg.schema`. The `??` was unreachable:
+    // `endpoint` is set in exactly one place (`resolveQuerySource`), which returns
+    // early unless `cfg.query` is a non-empty string — so reaching here proves it.
+    // It read as a tolerance for two producer shapes and was really a vestige of
+    // the build lane not emitting `query`, which it now does.
+    const recordPattern = resolveRecordAddressPattern(cfg.query, records)
     if (recordPattern) return { ...cfg, detail: recordPattern }
   }
 
-  const schema = cfg.schema
-  if (!schema || !queries) return cfg
-  const collConfig = queries[schema]
+  // ⛔ **`config.queries` is keyed by QUERY NAME, so look it up by the query.**
+  // This read `cfg.schema` — the BINDING KEY, which merely defaults to the query
+  // name. `fetch: { query: 'articles', schema: 'posts' }` is a supported, allow-
+  // listed, unwarned form (`RECOGNIZED_FETCH_KEYS.query`), and under it the lookup
+  // missed and a detail page silently rendered the brief without its body.
+  // Measured 2026-09-01, control passing: `{query:'articles'}` resolved
+  // `/data/articles/{slug}.json`; `{query:'articles',schema:'posts'}` resolved
+  // nothing, from the same file.
+  //
+  // ⚖️ The `|| cfg.schema` is NOT the vestige deleted above. A source-shape fetch
+  // (`{ path: … }`) has no query at all, and its schema — inferred from the path —
+  // is the only key there is. Two shapes, two answers; the deleted one had one
+  // shape and pretended otherwise.
+  const queryName = cfg.query || cfg.schema
+  if (!queryName || !queries) return cfg
+  const collConfig = queries[queryName]
   if (!collConfig || typeof collConfig !== 'object') return cfg
   const deferred = Array.isArray(collConfig.deferred) ? collConfig.deferred : null
   if (!deferred || deferred.length === 0) return cfg
   const pattern = typeof collConfig.detailUrl === 'string'
     ? collConfig.detailUrl
-    : recordDataUrl(schema, '{slug}')
+    : recordDataUrl(queryName, '{slug}')
   return { ...cfg, detail: pattern }
 }
 
