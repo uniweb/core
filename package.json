@@ -9,6 +9,7 @@
     "./collection-address": "./src/query-address.js",
     "./query-address": "./src/query-address.js",
     "./data-paths": "./src/data-paths.js",
+    "./datastore": "./src/datastore.js",
     "./detail-url": "./src/detail-url.js",
     "./fetch-config": "./src/fetch-config.js",
     "./icon-corpus": "./src/icon-corpus.js",
