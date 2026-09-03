@@ -30,7 +30,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { resolveFetchConfigs } from '../src/fetch-config.js'
+import { resolveFetchConfigs, isFetchRefinement } from '../src/fetch-config.js'
 
 const WHO =
   'A live-pinned consumer reads this name. See ' +
@@ -111,5 +111,23 @@ describe('resolveFetchConfigs — the live-pinned surface', () => {
     // `path` is dropped once an endpoint resolves — two addresses on one request is an
     // ambiguity the fetcher would break by accident of field order.
     expect(cfg.path).toBeUndefined()
+  })
+})
+
+describe('isFetchRefinement — the live-pinned predicate', () => {
+  // A live-pinned consumer reads this name through the `./fetch-config` subpath
+  // to tell a section's own source from a refinement of its ancestor's. The name
+  // and its answer are both load-bearing: a rename is a link error for them at
+  // commit time, and a widened answer would turn a section they prefetch as a
+  // source back into one they skip.
+  it('the NAME is `isFetchRefinement`, and `refine: true` is the one spelling it answers to', () => {
+    expect(isFetchRefinement({ refine: true, limit: 3 }), WHO).toBe(true)
+    expect(isFetchRefinement({ path: '/data/members.json', as: 'members' }), WHO).toBe(false)
+  })
+
+  it('the removed `inherit: true` alias answers false, and stays false', () => {
+    // Removed 2026-09-02. Pinned so the old spelling cannot quietly become a
+    // refinement again for a consumer that stopped expecting it.
+    expect(isFetchRefinement({ inherit: true }), WHO).toBe(false)
   })
 })
