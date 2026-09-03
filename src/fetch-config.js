@@ -34,15 +34,16 @@ import { resolveQueryAddress, resolveRecordAddressPattern } from './query-addres
  * Is this fetch declaration a per-instance *refinement* of an ancestor's
  * config rather than a new source of its own?
  *
- * The canonical spelling is `refine: true`. The legacy spelling `inherit: true`
- * is still honored; callers that want to warn about it should test for the key
- * themselves — this predicate stays silent so it is safe in any environment.
+ * The spelling is `refine: true`. Its earlier alias, `inherit: true`, was
+ * accepted with a warning from April 2026 and removed on 2026-09-02: the build
+ * refuses it with an error, and `EntityStore` refuses it in dev. This predicate
+ * stays silent so it is safe in any environment.
  *
  * @param {Object} cfg - a fetch declaration
  * @returns {boolean}
  */
 export function isFetchRefinement(cfg) {
-  return cfg?.refine === true || cfg?.inherit === true
+  return cfg?.refine === true
 }
 
 /**

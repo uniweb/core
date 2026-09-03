@@ -26,35 +26,43 @@ import { buildDetailConfig } from './detail-url.js'
 
 /**
  * Is `block.fetch` a per-instance refinement of the ancestor's fetch config
- * rather than a new source? The canonical spelling is `refine: true`; the
- * legacy spelling `inherit: true` is still honored for one release with a
- * dev-mode warning.
+ * rather than a new source? The spelling is `refine: true`.
  *
  * The predicate itself lives in `./fetch-config.js` with the rest of the
  * cascade rule; this alias keeps the local call sites reading as they did.
  */
 const isRefinement = isFetchRefinement
 
-let inheritDeprecationWarned = false
-function warnInheritDeprecation(block) {
-  if (inheritDeprecationWarned) return
-  inheritDeprecationWarned = true
-  // Dev-only; production builds typically strip console.warn. We gate on
-  // the presence of the deprecated key and fire once per process.
-  console.warn(
-    "[uniweb] 'fetch: { inherit: true }' is deprecated; rename to 'fetch: { refine: true }'. " +
-    'Accepted for one release; will be removed in the next minor. ' +
-    `First seen on block ${block?.id ?? '(unknown)'} of page ${block?.page?.route ?? '(unknown)'}.`
-  )
+/**
+ * `fetch: { inherit: true }` was the earlier spelling of `refine: true`, kept
+ * "for one release" from April 2026 and removed on 2026-09-02. It is refused
+ * rather than ignored: ignored, the declaration would read as a source with no
+ * location and the block would render empty with nothing to say why. Dev
+ * throws, so a page does not render on the old spelling; production logs once
+ * and the caller drops the declaration, so the block receives the cascaded
+ * data unrefined.
+ */
+let inheritRefusalLogged = false
+function refuseInheritAlias(block, dev) {
+  const message =
+    "[uniweb] 'fetch: { inherit: true }' is no longer accepted; write 'fetch: { refine: true }'. " +
+    `Seen on block ${block?.id ?? '(unknown)'} of page ${block?.page?.route ?? '(unknown)'}.`
+  if (dev) throw new Error(message)
+  if (inheritRefusalLogged) return
+  inheritRefusalLogged = true
+  console.error(message)
 }
 
 export default class EntityStore {
   /**
    * @param {Object} options
    * @param {import('./website.js').default} options.website
+   * @param {boolean} [options.dev=false] - dev mode: a retired spelling throws
+   *   instead of logging once.
    */
-  constructor({ website }) {
+  constructor({ website, dev = false }) {
     this.website = website
+    this.dev = dev
     Object.seal(this)
   }
 
@@ -116,8 +124,10 @@ export default class EntityStore {
    * exists to prevent.
    */
   _findFetchConfigs(block, requested) {
-    if (block.fetch?.inherit === true && block.fetch?.refine !== true) {
-      warnInheritDeprecation(block)
+    let blockFetch = block.fetch
+    if (blockFetch?.inherit !== undefined) {
+      refuseInheritAlias(block, this.dev)
+      blockFetch = null
     }
 
     const page = block.page
@@ -125,7 +135,7 @@ export default class EntityStore {
 
     return resolveFetchConfigs(
       [
-        block.fetch && !isRefinement(block.fetch) ? block.fetch : null,
+        blockFetch && !isRefinement(blockFetch) ? blockFetch : null,
         page?.fetch,
         page?.parent?.fetch,
         website?.config?.fetch,

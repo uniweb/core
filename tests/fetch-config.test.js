@@ -9,7 +9,7 @@ import { queryDataUrl, recordDataUrl } from '../src/data-paths.js'
  *
  * `entity-store.test.js` already covers this logic through the object graph
  * (hierarchy walk, first-match-per-schema, the three localization cases,
- * refine/inherit). These tests target the module directly instead, because it
+ * refine). These tests target the module directly instead, because it
  * is a public export other hosts call with sources assembled from a content
  * document rather than a graph — so the source-shape-agnostic contract and the
  * degradation paths need coverage that does not go through EntityStore.
@@ -18,9 +18,9 @@ import { queryDataUrl, recordDataUrl } from '../src/data-paths.js'
  */
 
 describe('isFetchRefinement', () => {
-  it('recognizes both the canonical and the legacy spelling', () => {
+  it('recognizes refine: true, and no longer the removed inherit: true alias', () => {
     expect(isFetchRefinement({ refine: true })).toBe(true)
-    expect(isFetchRefinement({ inherit: true })).toBe(true)
+    expect(isFetchRefinement({ inherit: true })).toBe(false)
   })
 
   it('is false for a plain source config, and safe on nullish input', () => {

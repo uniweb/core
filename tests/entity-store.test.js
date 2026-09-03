@@ -12,7 +12,7 @@ import { queryDataUrl } from '../src/data-paths.js'
  * DataStore backed by a mock default fetcher. Returns the fetcher spy so tests
  * can assert call counts / arguments.
  */
-function makeHarness({ fetcherImpl } = {}) {
+function makeHarness({ fetcherImpl, dev = false } = {}) {
   const dataStore = new DataStore()
   const defaultFetcher = {
     resolve: vi.fn((req) =>
@@ -27,7 +27,7 @@ function makeHarness({ fetcherImpl } = {}) {
     getActiveLocale: () => 'en',
     getDefaultLocale: () => 'en',
   }
-  const entityStore = new EntityStore({ website })
+  const entityStore = new EntityStore({ website, dev })
   website.entityStore = entityStore
   return { website, entityStore, dataStore, fetcher, fetcherSpy: defaultFetcher.resolve }
 }
@@ -442,7 +442,7 @@ describe('EntityStore.fetch', () => {
     expect(ctxArg?.signal).toBeDefined()
   })
 
-  describe('refine (formerly inherit)', () => {
+  describe('refine', () => {
     it('refine: true on a block skips it as a new source and fetches parent config', async () => {
       const articles = [{ slug: 'a' }, { slug: 'b' }]
       const { entityStore, fetcherSpy, website } = makeHarness({
@@ -461,23 +461,42 @@ describe('EntityStore.fetch', () => {
       expect(fetcherSpy).not.toHaveBeenCalledWith(blockConfig, expect.anything())
     })
 
-    it('inherit: true is still accepted as a deprecated alias', async () => {
-      const articles = [{ slug: 'a' }, { slug: 'b' }]
+    // `inherit: true` was the alias of `refine: true`, removed 2026-09-02. It is
+    // refused, not ignored: ignored, the block would render empty with nothing
+    // to say why.
+    it('inherit: true is refused in dev — the removed alias throws, naming refine', async () => {
+      const { entityStore, website } = makeHarness({
+        fetcherImpl: () => Promise.resolve({ data: [] }),
+        dev: true,
+      })
+      const parent = makePage({ fetch: { path: '/data/articles.json', as: 'articles' } })
+      const page = makePage({ parent })
+      const block = makeBlock({ page, fetch: { inherit: true, limit: 3 } }, website)
+
+      let err
+      try { await entityStore.fetch(block, {}) } catch (e) { err = e }
+      expect(err?.message).toMatch(/inherit: true/)
+      expect(err?.message).toMatch(/refine: true/)
+    })
+
+    it('in production inherit: true logs an error once and is dropped — cascaded data arrives unrefined', async () => {
+      const articles = [{ slug: 'a' }, { slug: 'b' }, { slug: 'c' }]
       const { entityStore, fetcherSpy, website } = makeHarness({
         fetcherImpl: () => Promise.resolve({ data: articles }),
       })
       const parentConfig = { path: '/data/articles.json', as: 'articles' }
-      const blockConfig = { path: '/data/override.json', as: 'articles' }
       const parent = makePage({ fetch: parentConfig })
       const page = makePage({ parent })
-      const block = makeBlock({ page, fetch: { ...blockConfig, inherit: true } }, website)
-      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const block = makeBlock({ page, fetch: { inherit: true, limit: 1 } }, website)
 
       const result = await entityStore.fetch(block, {})
+      // The parent's data still arrives; the `limit: 1` the alias carried does not apply.
       expect(result.data.articles).toEqual(articles)
       expect(fetcherSpy).toHaveBeenCalledWith(parentConfig, expect.anything())
-      expect(fetcherSpy).not.toHaveBeenCalledWith(blockConfig, expect.anything())
-      warn.mockRestore()
+      expect(error).toHaveBeenCalledTimes(1)
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('no longer accepted'))
+      error.mockRestore()
     })
 
     it('refine: true with detail: false returns collection minus active item', async () => {

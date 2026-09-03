@@ -57,7 +57,7 @@ export default class Website {
       transport,
       dev,
     })
-    this.entityStore = new EntityStore({ website: this })
+    this.entityStore = new EntityStore({ website: this, dev })
 
     // Observable site-wide state — allocated on first access via the `state`
     // getter, survives content rebuilds. Read-only prop (no `website.state = X`
