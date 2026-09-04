@@ -19,6 +19,7 @@ import {
   isDynamicRoute,
   stripLocalePrefix,
   decodeRouteValue,
+  fillRoutePattern,
 } from '../src/route-match.js'
 
 describe('matchDynamicRoute — what a param matches', () => {
@@ -188,5 +189,42 @@ describe('stripLocalePrefix', () => {
 
   it('does not strip a path that merely starts with the same letters', () => {
     expect(stripLocalePrefix('/french-press', 'fr', 'en')).toBe('/french-press')
+  })
+})
+
+describe('fillRoutePattern — the one encoder for a record\'s href', () => {
+  it('fills each param from the record, percent-encoding the value', () => {
+    expect(fillRoutePattern('/blog/:slug', { slug: 'a-post' })).toBe('/blog/a-post')
+    expect(fillRoutePattern('/blog/:slug', { slug: 'b post' })).toBe('/blog/b%20post')
+    expect(fillRoutePattern('/:year/:slug', { year: 2026, slug: 'x' })).toBe('/2026/x')
+  })
+
+  // A `/` in a value is the destructive case: raw, it makes a different route.
+  it('encodes a slash, so a value never becomes an extra segment', () => {
+    expect(fillRoutePattern('/team/:slug', { slug: 'members/ada' })).toBe('/team/members%2Fada')
+  })
+
+  it('reads a hyphenated param name — the same name class the matcher accepts', () => {
+    expect(fillRoutePattern('/blog/:post-id', { 'post-id': 'abc' })).toBe('/blog/abc')
+  })
+
+  it('keeps a literal suffix in the same segment', () => {
+    expect(fillRoutePattern('/files/:name.json', { name: 'data' })).toBe('/files/data.json')
+  })
+
+  it('returns null — never a partial href — when a param has no value', () => {
+    expect(fillRoutePattern('/blog/:slug', { title: 'no slug' })).toBeNull()
+    expect(fillRoutePattern('/blog/:slug', { slug: '' })).toBeNull()
+    expect(fillRoutePattern('/blog/:slug', { slug: null })).toBeNull()
+  })
+
+  it('returns null on bad input rather than throwing', () => {
+    expect(fillRoutePattern(undefined, { slug: 'x' })).toBeNull()
+    expect(fillRoutePattern('/blog/:slug', null)).toBeNull()
+  })
+
+  it('round-trips through the matcher — what it emits, matchDynamicRoute captures back', () => {
+    const href = fillRoutePattern('/team/:slug', { slug: 'Ada Lovelace' })
+    expect(matchDynamicRoute('/team/:slug', href)).toEqual({ params: { slug: 'Ada Lovelace' } })
   })
 })

@@ -168,6 +168,44 @@ export function matchDynamicRoute(pattern, path) {
 }
 
 /**
+ * Fill a route pattern's params from a record — the ONE encoder for a record's href.
+ *
+ * `/blog/:slug` + `{ slug: 'a post' }` → `/blog/a%20post`. Every value is
+ * `encodeURIComponent`-ed, because the output is a URL: it is compared against
+ * `location.pathname` (`isActive(item.route)`) and matched back through
+ * `matchDynamicRoute`, which decodes what it captures. A raw interpolation and an
+ * encoded one compare unequal on the first slug with a space — and they used to
+ * both exist: the build baked `${base}/${item.slug}` raw into `/data/*.json` while
+ * the runtime interpolated with encoding, and which one a site got was
+ * lane-dependent (measured 2026-09-04). Two producers of one field now call this.
+ *
+ * ⛔ NOT for a file path. The SSG writes `dist/<route>/index.html` from the DECODED
+ * value on purpose — a server decodes the request path before looking a file up,
+ * so `Ada%20Lovelace` on disk would 404 for `/team/Ada%20Lovelace`. A URL and a
+ * filesystem path are different jobs that are supposed to encode differently.
+ *
+ * Returns `null` — never a partial href — when a param has no value on the
+ * record, so a caller degrades to "no link" rather than emitting a broken one.
+ *
+ * @param {string} pattern - a route pattern with `:param` placeholders
+ * @param {Object} values - a record, read by param name
+ * @returns {string|null}
+ */
+export function fillRoutePattern(pattern, values) {
+  if (typeof pattern !== 'string' || !values || typeof values !== 'object') return null
+  let missing = false
+  const href = pattern.replace(new RegExp(`:(${PARAM_NAME})`, 'g'), (_, name) => {
+    const value = values[name]
+    if (value === undefined || value === null || value === '') {
+      missing = true
+      return ''
+    }
+    return encodeURIComponent(String(value))
+  })
+  return missing ? null : href
+}
+
+/**
  * Strip a locale prefix from a route.
  *
  * Pages are stored with unprefixed routes — the locale is a URL concern, not

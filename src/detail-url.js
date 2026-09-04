@@ -42,8 +42,22 @@ import { substitutePlaceholders } from './substitute-placeholders.js'
  * present in the context, so an unrelated `{name}` still passes through
  * literally, as it always has.
  */
-function paramContext(paramName, paramValue) {
-  return { [paramName]: paramValue, param: paramValue }
+function paramContext(paramName, paramValue, record) {
+  const context = { [paramName]: paramValue, param: paramValue }
+  // ⭐ `{slug}` is the RECORD'S slug, whatever the route calls its param. The
+  // file lane keys a query's per-record files by `item.slug` (`writeQueryFiles`)
+  // and injects `/data/<name>/{slug}.json` — so on a site routing `[id]`, the
+  // route's context carried `id` and `param` and `{slug}` stayed literal: the
+  // detail URL was `/data/articles/{slug}.json`, a guaranteed 404, on every
+  // template page with `deferred:` fields (measured 2026-09-04). When the caller
+  // holds the record — the entity store does (it matched it), and so does
+  // `useEntityDetail` — its slug fills the name the FILE was written under. A
+  // caller with no record in hand leaves `{slug}` literal rather than guessing
+  // the capture is one: a visibly unresolved address beats a plausible wrong one.
+  if (paramName !== 'slug' && record && typeof record === 'object' && record.slug != null && record.slug !== '') {
+    context.slug = record.slug
+  }
+  return context
 }
 
 /**
@@ -67,13 +81,16 @@ function paramContext(paramName, paramValue) {
  * @param {Object} queryConfig - A resolved fetch config for the query
  *   (post-`resolveFetchConfigs`, so `detail` may have been auto-injected for a
  *   `deferred:` query — see `./fetch-config.js`).
- * @param {{ paramName: string, paramValue: string }} dynamicContext
+ * @param {{ paramName: string, paramValue: string, record?: Object|null }} dynamicContext -
+ *   the route's param and its value; `record`, when the caller already holds the
+ *   matched record, lets `{slug}` resolve to the record's own slug (see
+ *   `paramContext`).
  * @returns {Object|null} A fetch config carrying `url` or `path`, or null.
  */
 export function buildDetailConfig(queryConfig, dynamicContext) {
   const { detail } = queryConfig
   if (!detail) return null
-  const { paramName, paramValue } = dynamicContext
+  const { paramName, paramValue, record = null } = dynamicContext
   if (!paramName || paramValue === undefined) return null
 
   // Three address kinds now, and the detail request must come back as the SAME
@@ -99,9 +116,9 @@ export function buildDetailConfig(queryConfig, dynamicContext) {
     }
     if (queryConfig.method) out.method = queryConfig.method
     if (detail.body !== undefined) {
-      out.body = substitutePlaceholders(detail.body, paramContext(paramName, paramValue), { encode: false })
+      out.body = substitutePlaceholders(detail.body, paramContext(paramName, paramValue, record), { encode: false })
     } else if (queryConfig.body !== undefined) {
-      out.body = substitutePlaceholders(queryConfig.body, paramContext(paramName, paramValue), { encode: false })
+      out.body = substitutePlaceholders(queryConfig.body, paramContext(paramName, paramValue, record), { encode: false })
     }
     if (detail.envelope) out.envelope = detail.envelope
     return out
@@ -140,7 +157,7 @@ export function buildDetailConfig(queryConfig, dynamicContext) {
     // Custom pattern like '/articles/{slug}' — substitute placeholders
     // from the dynamic-route context. Only placeholders matching the
     // active paramName resolve; others pass through as literal `{name}`.
-    detailUrl = substitutePlaceholders(detail, paramContext(paramName, paramValue))
+    detailUrl = substitutePlaceholders(detail, paramContext(paramName, paramValue, record))
   }
 
   return {

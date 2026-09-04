@@ -192,3 +192,47 @@ describe('the detail request keeps the collection\'s address kind', () => {
     expect(buildDetailConfig({ detail: 'rest', as: 'a' }, ctx)).toBeNull()
   })
 })
+
+describe('`{slug}` is the RECORD\'s slug, whatever the route calls its param', () => {
+  // The file lane keys per-record files by `item.slug` and injects
+  // `/data/<name>/{slug}.json`. A site routing `[id]` used to leave `{slug}`
+  // literal — `/data/articles/{slug}.json`, a guaranteed 404 on every template
+  // page with `deferred:` fields.
+  const deferred = { path: '/data/articles.json', as: 'articles', detail: '/data/articles/{slug}.json' }
+
+  it('fills {slug} from the record the caller holds when the route param is something else', () => {
+    const out = buildDetailConfig(deferred, {
+      paramName: 'id',
+      paramValue: '42',
+      record: { id: 42, slug: 'design-tips' },
+    })
+    expect(out.path).toBe('/data/articles/design-tips.json')
+  })
+
+  it('still fills the route\'s own param and the {param} alias from the capture', () => {
+    const out = buildDetailConfig(
+      { url: 'https://api.test/a', as: 'a', detail: '/api/{id}/{param}/{slug}' },
+      { paramName: 'id', paramValue: '42', record: { id: 42, slug: 'design-tips' } },
+    )
+    expect(out.url).toBe('/api/42/42/design-tips')
+  })
+
+  it('leaves {slug} literal with no record in hand — an unresolved address, not a guessed one', () => {
+    const out = buildDetailConfig(deferred, { paramName: 'id', paramValue: '42' })
+    expect(out.path).toBe('/data/articles/{slug}.json')
+  })
+
+  it('CONTROL — on a [slug] route the capture is the slug, record or not', () => {
+    const withRecord = buildDetailConfig(deferred, {
+      paramName: 'slug', paramValue: 'design-tips', record: { slug: 'design-tips' },
+    })
+    const without = buildDetailConfig(deferred, { paramName: 'slug', paramValue: 'design-tips' })
+    expect(withRecord.path).toBe('/data/articles/design-tips.json')
+    expect(without.path).toBe(withRecord.path)
+  })
+
+  it('a record with no slug adds nothing', () => {
+    const out = buildDetailConfig(deferred, { paramName: 'id', paramValue: '42', record: { id: 42 } })
+    expect(out.path).toBe('/data/articles/{slug}.json')
+  })
+})

@@ -17,6 +17,7 @@
     "./route-match": "./src/route-match.js",
     "./section-id": "./src/section-id.js",
     "./services": "./src/services.js",
+    "./sort": "./src/sort.js",
     "./tracker": "./src/tracker.js"
   },
   "files": [

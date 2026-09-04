@@ -7,7 +7,10 @@
  *   GET   — operators travel as URL params prefixed with underscore:
  *             ?_where=<JSON.stringify(predicate)>
  *             ?_limit=N
- *             ?_sort=field:dir       (comma-separated for multi-key)
+ *             ?_sort=<the authored sort, one key: `date desc`>
+ *           ⛔ ONE key. This line promised "comma-separated for multi-key" while
+ *           the language is single-key by ruling [Diego, 2026-09-04] — the wire
+ *           was documenting what no evaluator should honour (`core/src/sort.js`).
  *           The leading underscore avoids collision with backend-
  *           specific query params the author may have included in `url:`.
  *

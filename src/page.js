@@ -111,6 +111,12 @@ export default class Page {
     // Dynamic route context (for pages created from dynamic routes like /blog/:slug)
     this.dynamicContext = pageData.dynamicContext || null
 
+    // A detail page whose URL names no record: the records were loaded and the
+    // param matched none. Set by `Website._createDynamicPage` beside the
+    // 'Not found' title. Documented for years, carried only since 2026-09-04 —
+    // the flag was set on the page DATA and this sealed class dropped it.
+    this.notFound = pageData.notFound === true
+
     // Version context (for pages within versioned sections like /docs/v1/*)
     this.version = pageData.version || null // { id, label, latest, deprecated }
     this.versionMeta = pageData.versionMeta || null // { versions, latestId }

@@ -664,3 +664,149 @@ describe('EntityStore detailPage — SECTION-level (block.fetch) resolution', ()
     expect(result.data.articles[0].route).toBe('/section/x')
   })
 })
+
+describe('⛔ a failed fetch delivers NOTHING under its key, and says so', () => {
+  // Until 2026-09-04 a failure wrote `[]` into `content.data`: the fetcher
+  // returns `{ data: [], error }`, `[]` is neither undefined nor null, and
+  // nothing read `error`. By the framework's own rule that `[]` is a value, a
+  // failed key was indistinguishable from a successful empty answer.
+  it('leaves the key ABSENT — not [] — and reports the message on errors[key]', async () => {
+    const { entityStore, website } = makeHarness({
+      fetcherImpl: () => Promise.resolve({ data: [], error: 'HTTP 502: Bad Gateway' }),
+    })
+    const page = makePage({ fetch: { path: '/data/articles.json', as: 'articles' } })
+    const block = makeBlock({ page }, website)
+
+    const result = await entityStore.fetch(block, {})
+    expect('articles' in result.data).toBe(false)
+    expect(result.data.articles).toBeUndefined()
+    expect(result.errors).toEqual({ articles: 'HTTP 502: Bad Gateway' })
+  })
+
+  it('CONTROL — a successful empty answer IS delivered as [], with no error', async () => {
+    const { entityStore, website } = makeHarness({
+      fetcherImpl: () => Promise.resolve({ data: [] }),
+    })
+    const page = makePage({ fetch: { path: '/data/articles.json', as: 'articles' } })
+    const block = makeBlock({ page }, website)
+
+    const result = await entityStore.fetch(block, {})
+    expect(result.data.articles).toEqual([])
+    expect(result.errors).toBeNull()
+  })
+
+  it('one failed key does not take the others down', async () => {
+    const { entityStore, website } = makeHarness({
+      fetcherImpl: (req) => req.as === 'articles'
+        ? Promise.resolve({ data: [], error: 'down' })
+        : Promise.resolve({ data: [{ name: 'Tech' }] }),
+    })
+    const page = makePage({ fetch: [
+      { path: '/data/articles.json', as: 'articles' },
+      { path: '/data/categories.json', as: 'categories' },
+    ] })
+    const block = makeBlock({ page }, website)
+
+    const result = await entityStore.fetch(block, {})
+    expect(result.data).toEqual({ categories: [{ name: 'Tech' }] })
+    expect(result.errors).toEqual({ articles: 'down' })
+  })
+
+  it('a failed DETAIL fetch keeps the record the list matched — never [[]]', async () => {
+    // `result.data ?? match` delivered `[[]]` here, because a failure's data is
+    // `[]`, not null. The brief the list matched is a held value; keep it.
+    const list = [{ slug: 'my-post', title: 'Brief' }]
+    const { entityStore, website } = makeHarness({
+      fetcherImpl: (req) => req.url === 'https://api.example.com/articles'
+        ? Promise.resolve({ data: list })
+        : Promise.resolve({ data: [], error: 'HTTP 500' }),
+    })
+    const fetchConfig = { url: 'https://api.example.com/articles', as: 'articles', detail: 'rest' }
+    const dynamicContext = { paramName: 'slug', paramValue: 'my-post', schema: 'articles' }
+    const parent = makePage({ fetch: fetchConfig })
+    const page = makePage({ parent, dynamicContext })
+    const block = makeBlock({ page }, website)
+
+    const result = await entityStore.fetch(block, {})
+    expect(result.data.articles).toEqual([{ slug: 'my-post', title: 'Brief' }])
+    expect(result.errors).toEqual({ articles: 'HTTP 500' })
+  })
+
+  it('a failed LIST fetch on a detail page reports rather than delivering "not found"', async () => {
+    const { entityStore, website } = makeHarness({
+      fetcherImpl: () => Promise.resolve({ data: [], error: 'down' }),
+    })
+    const fetchConfig = { url: 'https://api.example.com/articles', as: 'articles' }
+    const dynamicContext = { paramName: 'slug', paramValue: 'my-post', schema: 'articles' }
+    const parent = makePage({ fetch: fetchConfig })
+    const page = makePage({ parent, dynamicContext })
+    const block = makeBlock({ page }, website)
+
+    const result = await entityStore.fetch(block, {})
+    // `[]` here would have read as "no such record" — a delivered answer.
+    expect(result.data.articles).toBeUndefined()
+    expect(result.errors).toEqual({ articles: 'down' })
+  })
+
+  it('in dev, logs the failure once, naming the key, the page and the address', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { entityStore, website } = makeHarness({
+      fetcherImpl: () => Promise.resolve({ data: [], error: 'down' }),
+      dev: true,
+    })
+    const page = makePage({ fetch: { path: '/data/dev-fail.json', as: 'devfail' }, route: '/x' })
+    const block = makeBlock({ page }, website)
+
+    await entityStore.fetch(block, {})
+    await entityStore.fetch(block, {})
+    const lines = error.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('content.data.devfail'))
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toContain('/x')
+    expect(lines[0]).toContain('/data/dev-fail.json')
+    expect(lines[0]).toContain('down')
+    error.mockRestore()
+  })
+})
+
+describe('the record in hand reaches the detail address', () => {
+  it('a [id] route over a deferred file-lane query fetches the record\'s own per-record file', async () => {
+    // `/data/articles/{slug}.json` used to stay literal on an `[id]` route: the
+    // context carried `id` and `param`, never `slug`. The list already matched
+    // the record, so its slug names the file the build wrote.
+    const list = [{ id: 7, slug: 'design-tips', title: 'Brief' }]
+    const full = { id: 7, slug: 'design-tips', title: 'Brief', body: 'Full' }
+    const { entityStore, fetcherSpy, website } = makeHarness({
+      fetcherImpl: (req) => req.path === '/data/articles.json'
+        ? Promise.resolve({ data: list })
+        : Promise.resolve({ data: full }),
+    })
+    website.config = { queries: { articles: { deferred: ['body'] } } }
+    const fetchConfig = { query: 'articles', path: '/data/articles.json', as: 'articles' }
+    const dynamicContext = { paramName: 'id', paramValue: '7', schema: 'articles' }
+    const parent = makePage({ fetch: fetchConfig })
+    const page = makePage({ parent, dynamicContext })
+    const block = makeBlock({ page }, website)
+
+    const result = await entityStore.fetch(block, {})
+    expect(result.data.articles).toEqual([full])
+    expect(fetcherSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ path: '/data/articles/design-tips.json' }),
+      expect.anything(),
+    )
+  })
+})
+
+describe('refine order rides the shared sort', () => {
+  it('sorts the cascaded records by { orderBy, sortOrder }', async () => {
+    const articles = [{ slug: 'b', n: 2 }, { slug: 'a', n: 1 }, { slug: 'c', n: 3 }]
+    const { entityStore, website } = makeHarness({
+      fetcherImpl: () => Promise.resolve({ data: articles }),
+    })
+    const parent = makePage({ fetch: { path: '/data/articles.json', as: 'articles' } })
+    const page = makePage({ parent })
+    const block = makeBlock({ page, fetch: { refine: true, order: { orderBy: 'n', sortOrder: 'DESC' } } }, website)
+
+    const result = await entityStore.fetch(block, {})
+    expect(result.data.articles.map((a) => a.slug)).toEqual(['c', 'b', 'a'])
+  })
+})

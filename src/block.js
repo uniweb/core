@@ -223,6 +223,12 @@ export default class Block {
     // Components check this to show loading UI (spinners, skeletons)
     this.dataLoading = false
 
+    // Data failure state — set by BlockRenderer when a runtime fetch FAILED:
+    // `{ <binding key>: <message> }`, or null. A failed key is absent from
+    // `content.data` (never `[]`, which is a delivered value), so this is the
+    // only way a component can tell "no records" from "the request failed".
+    this.dataError = null
+
     // Whether engine-level background is active (set by BlockRenderer/prerender)
     // Components check this to skip their own opaque background
     this.hasBackground = false

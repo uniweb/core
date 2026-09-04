@@ -12,6 +12,8 @@ import ObservableState from './observable-state.js'
 import { normalizeSeo } from './seo.js'
 import { resolveDefaultLocale, localeLabel } from './locale-config.js'
 import { matchDynamicRoute, decodeRouteValue } from './route-match.js'
+import { resolveFetchConfigs } from './fetch-config.js'
+import { buildDetailConfig } from './detail-url.js'
 import { resolveService } from './services.js'
 
 /**
@@ -584,28 +586,57 @@ export default class Website {
     const parentPage = this.pages.find(p => p.route === parentRoute || p.getNavRoute() === parentRoute)
 
     if (parentPage && pluralSchema) {
-      // Find the records from the parent's fetch config via the dispatcher's
-      // peek (sync cache probe). Used to populate the page title / notFound
-      // flag on dynamic pages before the page instance is constructed.
+      // Find the record the page is ABOUT via the dispatcher's peek (a sync
+      // cache probe), to set the page title / description / notFound flag
+      // before the page instance is constructed.
+      //
+      // ⛔ RESOLVED THE WAY THE ENTITY STORE RESOLVES IT, not the raw declaration.
+      // Until 2026-09-04 this peeked `parentPage.fetch` as authored — `{ query,
+      // path, as }` — while the store writes under the RESOLVED config: on a live
+      // lane that carries `endpoint` and no `path`, and on a non-default locale a
+      // `/fr/data/…` path. Two different keys for one dataset, so the probe
+      // missed on exactly those lanes: no title, no not-found, and the page was
+      // never cached (`recordsLoaded` false on every visit). Silent, on a
+      // visitor's page — the "write key ≠ read key" row of
+      // kb/framework/architecture/content-data-failures.md.
       const parentFetch = parentPage.fetch
       let items = []
+      let currentItem = null
 
       if (parentFetch && this.fetcher) {
         // ⛔ `as` is the binding key. This matched on `schema` alone until
         // 2026-09-02 — which, once the alias went, would have found nothing:
         // `items` stays `[]` and the page reports "Not found" for a record that
         // exists. Silent, and on a visitor's page.
-        const keyOf = (f) => f?.as
-        const fetchConfig = Array.isArray(parentFetch)
-          ? parentFetch.find((f) => keyOf(f) === pluralSchema)
-          : (keyOf(parentFetch) === pluralSchema ? parentFetch : null)
+        const fetchConfig = resolveFetchConfigs([parentFetch], {
+          schemas: [pluralSchema],
+          locale: this.getActiveLocale(),
+          defaultLocale: this.getDefaultLocale(),
+          queries: this.config?.queries ?? null,
+          records: this.config?.records ?? null,
+        }).get(pluralSchema)
         if (fetchConfig) {
-          const cached = this.fetcher.peek(fetchConfig, { website: this })
+          const ctx = { website: this }
+          // ⭐ The page is about ONE record, so ask for that record first: a
+          // cached detail fetch (a live lane's record address, a deferred
+          // query's per-record file) carries the title even when the list was
+          // never fetched — a cold load on a detail URL — where a scan of the
+          // list finds nothing and silently sets no title (F3, 2026-09-04).
+          const detailCfg = fetchConfig.detail
+            ? buildDetailConfig(fetchConfig, { paramName, paramValue })
+            : null
+          const detailCached = detailCfg ? this.fetcher.peek(detailCfg, ctx) : null
+          const record = detailCached?.data
+          if (record && typeof record === 'object' && !Array.isArray(record)) currentItem = record
+
+          const cached = this.fetcher.peek(fetchConfig, ctx)
           items = Array.isArray(cached?.data) ? cached.data : []
         }
       }
 
-      const currentItem = items.find(item => String(item[paramName]) === String(paramValue))
+      if (!currentItem) {
+        currentItem = items.find(item => String(item[paramName]) === String(paramValue)) ?? null
+      }
 
       if (currentItem) {
         if (currentItem.title) pageData.title = currentItem.title
@@ -624,7 +655,7 @@ export default class Website {
       // { paramName, paramValue, schema }; the record reaches components via
       // content.data, siblings via `fetch: { refine: true, detail: false }`).
       // The local `currentItem`/`items` above drive title/description/notFound.
-      pageData._recordsLoaded = items.length > 0
+      pageData._recordsLoaded = items.length > 0 || currentItem !== null
     }
 
     // Create the page instance
@@ -812,6 +843,31 @@ export default class Website {
     }
 
     return resolvedHref
+  }
+
+  /**
+   * The route template that renders ONE record of a binding key — `{ route,
+   * paramName }` for the `[param]` page whose parent query lands under `key`,
+   * or null when the site routes no detail page over it.
+   *
+   * ⭐ This is how a caller outside a template page learns which record field
+   * the site's URL is built on: `kit`'s `useEntityDetail` asks it so a hover
+   * card and the page it links to address the record by the SAME field. It
+   * hardcoded `slug` until 2026-09-04, which was quietly wrong on any site
+   * routing `[id]` (`kb/framework/open-work.md` U5). The first template found
+   * wins, matching `parentSchema`'s own rule that one key indexes one template.
+   *
+   * @param {string} key - a binding key (`content.data.<key>`)
+   * @returns {{ route: string, paramName: string } | null}
+   */
+  detailTemplateFor(key) {
+    if (!key) return null
+    for (const data of this._dynamicPageData.values()) {
+      if (data?.parentSchema === key && data.paramName) {
+        return { route: data.route, paramName: data.paramName }
+      }
+    }
+    return null
   }
 
   /**

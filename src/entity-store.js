@@ -15,6 +15,8 @@
  */
 
 import { isFetchRefinement, resolveFetchConfigs } from './fetch-config.js'
+import { fillRoutePattern } from './route-match.js'
+import { sortRecords } from './sort.js'
 
 /**
  * A fetch config's binding key — the `content.data.<key>` a component reads.
@@ -85,18 +87,13 @@ export default class EntityStore {
     return null
   }
 
+  /**
+   * A refine block's `order: { orderBy, sortOrder }` — the same one-key sort the
+   * build and the fetcher fallback run (`./sort.js`), so the three cannot drift.
+   */
   _sortItems(items, order) {
-    if (!order?.orderBy || !Array.isArray(items) || items.length === 0) return items
-    const { orderBy, sortOrder = 'ASC' } = order
-    const desc = sortOrder === 'DESC'
-    return [...items].sort((a, b) => {
-      const av = a[orderBy] ?? ''
-      const bv = b[orderBy] ?? ''
-      const cmp = typeof av === 'string' && typeof bv === 'string'
-        ? av.localeCompare(bv)
-        : (av > bv ? 1 : av < bv ? -1 : 0)
-      return desc ? -cmp : cmp
-    })
+    if (!order?.orderBy) return items
+    return sortRecords(items, { field: order.orderBy, desc: order.sortOrder === 'DESC' })
   }
 
   /**
@@ -268,7 +265,7 @@ export default class EntityStore {
           if (!match) {
             data[schema] = []
           } else if (cfg.detail) {
-            const detailCfg = this._buildDetailConfig(cfg, dynamicContext)
+            const detailCfg = this._buildDetailConfig(cfg, { ...dynamicContext, record: match })
             const detailCached = detailCfg ? dispatcher?.peek(detailCfg, ctx) : null
             if (detailCfg && detailCached) {
               data[schema] = [detailCached.data]
@@ -305,13 +302,23 @@ export default class EntityStore {
    * Async fetch — dispatches missing configs through the FetcherDispatcher
    * and assembles the result. List-first detail ordering preserved.
    *
+   * ⛔ A FAILED FETCH DELIVERS NOTHING UNDER ITS KEY, AND SAYS SO. Until 2026-09-04
+   * a failure wrote `[]` into `content.data` — the fetcher returns `{ data: [], error }`,
+   * `[]` is neither `undefined` nor `null`, and nothing read `error` — so a key
+   * whose request failed was indistinguishable from one that succeeded with no
+   * records, by the framework's own rule that `[]` is a value. Now the key is
+   * ABSENT from `data`, the message is on `errors[key]`, and in dev it is logged
+   * where the author is looking. A detail fetch that fails keeps the record the
+   * list already matched (the brief) rather than clobbering it.
+   *
    * @param {Object} [options]
    * @param {AbortSignal} [options.signal] - Forwarded to the dispatcher.
-   * @returns {Promise<{ data: Object|null }>}
+   * @returns {Promise<{ data: Object|null, errors: Object|null }>} `data` keyed by
+   *   binding key; `errors` keyed the same way, `null` when every fetch succeeded.
    */
   async fetch(block, meta, { signal } = {}) {
     const dispatcher = this.website?.fetcher
-    if (!dispatcher) return { data: null }
+    if (!dispatcher) return { data: null, errors: null }
 
     let requested = this._getRequestedSchemas(meta)
     if (requested === null && block.fetch) {
@@ -319,10 +326,10 @@ export default class EntityStore {
       const schemas = blockFetchList.filter(bindingKeyOf).map(bindingKeyOf)
       if (schemas.length > 0) requested = schemas
     }
-    if (requested === null) return { data: null }
+    if (requested === null) return { data: null, errors: null }
 
     const configs = this._findFetchConfigs(block, requested)
-    if (configs.size === 0) return { data: null }
+    if (configs.size === 0) return { data: null, errors: null }
 
     const dynamicContext = block.dynamicContext || block.page?.dynamicContext
     const inheritDetail = this._shouldInheritDetail(meta, block)
@@ -331,7 +338,12 @@ export default class EntityStore {
     const ctx = this._ctx(block, { signal })
 
     const data = {}
+    const errors = {}
     const parallelFetches = []
+    const fail = (key, cfg, message) => {
+      errors[key] = message
+      reportFetchFailure(this.dev, block, key, cfg, message)
+    }
 
     const routeSchema = dynamicContext?.schema
 
@@ -342,6 +354,10 @@ export default class EntityStore {
         let records = peekArray(dispatcher, cfg, ctx)
         if (records === null) {
           const result = await dispatcher.dispatch(cfg, ctx)
+          if (result?.error) {
+            fail(schema, cfg, result.error)
+            continue
+          }
           records = Array.isArray(result?.data) ? result.data : null
         }
         const { paramName, paramValue } = dynamicContext
@@ -357,6 +373,10 @@ export default class EntityStore {
         let records = peekArray(dispatcher, cfg, ctx)
         if (records === null) {
           const result = await dispatcher.dispatch(cfg, ctx)
+          if (result?.error) {
+            fail(schema, cfg, result.error)
+            continue
+          }
           records = Array.isArray(result?.data) ? result.data : null
         }
 
@@ -370,10 +390,19 @@ export default class EntityStore {
         }
 
         if (cfg.detail) {
-          const detailCfg = this._buildDetailConfig(cfg, dynamicContext)
+          const detailCfg = this._buildDetailConfig(cfg, { ...dynamicContext, record: match })
           if (detailCfg) {
             parallelFetches.push(
               dispatcher.dispatch(detailCfg, ctx).then((result) => {
+                // The list already matched the record, so the brief is a HELD
+                // value: a failed detail fetch keeps it and reports, rather than
+                // delivering `[[]]` — which is what `result.data ?? match` did,
+                // because a failure's `data` is `[]`, not null.
+                if (result?.error) {
+                  fail(schema, detailCfg, result.error)
+                  data[schema] = [match]
+                  return
+                }
                 const record = (result?.data !== undefined && result?.data !== null)
                   ? result.data
                   : match
@@ -389,8 +418,15 @@ export default class EntityStore {
       } else {
         parallelFetches.push(
           dispatcher.dispatch(cfg, ctx).then((result) => {
+            if (result?.error) {
+              fail(schema, cfg, result.error)
+              return
+            }
             if (result?.data !== undefined && result?.data !== null) {
-              data[schema] = result.data
+              // The same refine `order` the sync path applies (`resolve`), so a
+              // block sorts identically on a cache hit and on the fetch that
+              // filled it — it did not until 2026-09-04.
+              data[schema] = order ? this._sortItems(result.data, order) : result.data
             }
           })
         )
@@ -399,8 +435,31 @@ export default class EntityStore {
 
     if (parallelFetches.length > 0) await Promise.all(parallelFetches)
     this._applyDetailRoutes(data, configs, block.website)
-    return { data }
+    return { data, errors: Object.keys(errors).length ? errors : null }
   }
+}
+
+/**
+ * Say where a fetch failed, once per key per page, where the author is looking.
+ *
+ * Dev only: production has no reader for a console line, and the page has the
+ * structured answer already — the key is absent from `data`, the message is on
+ * `errors[key]`, and the runtime sets `block.dataError`. What must never happen
+ * again is the third option this path used to take: an empty array under the
+ * key, and silence.
+ */
+const reportedFailures = new Set()
+function reportFetchFailure(dev, block, key, cfg, message) {
+  if (!dev) return
+  const where = cfg?.endpoint || cfg?.url || cfg?.path || '(no address)'
+  const page = block?.page?.route ?? '(unknown page)'
+  const memo = `${page}::${key}::${where}`
+  if (reportedFailures.has(memo)) return
+  reportedFailures.add(memo)
+  console.error(
+    `[uniweb] fetch for content.data.${key} failed on ${page} (${where}): ${message}. ` +
+      `The key is left absent — not [] — and block.dataError carries this message.`
+  )
 }
 
 /**
@@ -421,17 +480,12 @@ function peekArray(dispatcher, cfg, ctx) {
  * (the file lane bakes one via the query processor) is returned untouched. A
  * `:param` with no matching record field → no `route` (graceful; degrades to the
  * component's own fallback rather than emitting a broken href).
+ *
+ * ⭐ The encoding is `fillRoutePattern`'s, shared with the build's bake, so the
+ * two producers of `item.route` agree — they did not (F14, 2026-09-04).
  */
 function addDetailRoute(item, template) {
   if (!item || typeof item !== 'object' || item.route !== undefined) return item
-  let missing = false
-  const route = template.replace(/:(\w+)/g, (_, name) => {
-    const value = item[name]
-    if (value == null) {
-      missing = true
-      return ''
-    }
-    return encodeURIComponent(String(value))
-  })
-  return missing ? item : { ...item, route }
+  const route = fillRoutePattern(template, item)
+  return route === null ? item : { ...item, route }
 }
