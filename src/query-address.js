@@ -112,6 +112,39 @@ export function resolveQueryAddress(query, lane) {
 }
 
 /**
+ * The QUESTION door a host declares — a POST address with a `{locale}` slot —
+ * substituted for one locale, or `null` when the lane declares none.
+ *
+ * ⚠️ PROVISIONAL STAMP KEY. Backend's records-query contract
+ * (kb/backend/records-query-contract.md §7) says a question door "needs a
+ * third pattern, carrying a `{locale}` slot", and has not named the key it is
+ * stamped under. This reads `config.records.query` until they do — one
+ * constant, changed in one place — and everything downstream is dark until a
+ * host stamps it. The locale is a ROUTE SEGMENT there, never a query param:
+ * a request that cannot name one does not address this door at all.
+ *
+ * @param {Object|null} lane - `config.records`
+ * @param {string|null} locale - the locale being rendered; required
+ * @returns {string|null}
+ */
+export const QUERY_DOOR_KEY = 'query'
+
+export function resolveQueryDoor(lane, locale) {
+  const pattern = readPattern(lane, QUERY_DOOR_KEY)
+  if (!pattern) return null
+  if (typeof locale !== 'string' || locale.length === 0) return null
+  if (!pattern.includes('{locale}')) {
+    warnOnce(
+      `query:${pattern}`,
+      `config.records.${QUERY_DOOR_KEY} carries no {locale} placeholder; the door takes the ` +
+        `locale as a route segment. Ignoring it.`
+    )
+    return null
+  }
+  return substitutePlaceholders(pattern, { locale })
+}
+
+/**
  * The address pattern for ONE record of a query, with `{param}` left in
  * place for the dynamic-route substitution that happens later.
  *

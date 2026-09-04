@@ -87,11 +87,38 @@ function paramContext(paramName, paramValue, record) {
  *   `paramContext`).
  * @returns {Object|null} A fetch config carrying `url` or `path`, or null.
  */
+/**
+ * The key a route param narrows a QUESTION by — the entry's own handle, which
+ * a records door guarantees unique among siblings (kb/backend/records-query-contract.md
+ * §1b: `$name`, "addressed AND filtered"). ⚠️ One constant, because the spelling
+ * moved four times in one day (`path_segment` → `$slug` → `$name` → `meta::name`
+ * → `$name`); the door is dark until a host stamps it, so this is the one place
+ * to change if it moves again. Not read by the file lane or the address door,
+ * which narrow by the route's own param (`item[paramName]`).
+ */
+export const ROUTE_HANDLE_KEY = '$name'
+
 export function buildDetailConfig(queryConfig, dynamicContext) {
   const { detail } = queryConfig
   if (!detail) return null
   const { paramName, paramValue, record = null } = dynamicContext
   if (!paramName || paramValue === undefined) return null
+
+  // ⭐ A QUESTION DOOR: the record is the list's own question, narrowed to one
+  // entry by its handle and asked in full — the list page and the detail page
+  // are the same query, differing only by whether the parameter is bound
+  // (kb/backend/records-query-contract.md §1a). `sort` and `limit` are the
+  // list's and drop; `scope` and the authored `where` stay, so a scoped query
+  // cannot be escaped through the URL.
+  if (queryConfig.door) {
+    const { sort, limit, detail: _detail, ...rest } = queryConfig
+    return {
+      ...rest,
+      where: { ...(queryConfig.where && typeof queryConfig.where === 'object' ? queryConfig.where : {}), [ROUTE_HANDLE_KEY]: String(paramValue) },
+      depth: 'full',
+      dynamicContext: { paramName, paramValue },
+    }
+  }
 
   // Three address kinds now, and the detail request must come back as the SAME
   // kind: an `endpoint` carries remote semantics the fetcher decides on, so

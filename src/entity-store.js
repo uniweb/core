@@ -259,6 +259,16 @@ export default class EntityStore {
         } else {
           allCached = false
         }
+      } else if (isRouteQuery && cfg.door) {
+        // A question door: the record's own answer is cached under its own key.
+        const detailCfg = this._buildDetailConfig(cfg, dynamicContext)
+        const detailCached = detailCfg ? dispatcher?.peek(detailCfg, ctx) : null
+        if (detailCached) {
+          const answer = Array.isArray(detailCached.data) ? detailCached.data : (detailCached.data ? [detailCached.data] : [])
+          data[schema] = answer.slice(0, 1)
+        } else {
+          allCached = false
+        }
       } else if (isRouteQuery) {
         // Detail page: deliver the focused record as a length-1 array under the
         // query key. A deferred/remote query fetches the full per-record;
@@ -380,6 +390,25 @@ export default class EntityStore {
           : (records ?? [])
         if (order) filtered = this._sortItems(filtered, order)
         data[schema] = limit && Array.isArray(filtered) ? filtered.slice(0, limit) : filtered
+      } else if (isRouteQuery && cfg.door) {
+        // ⭐ A QUESTION DOOR needs no list to find the record: the record is the
+        // same question narrowed by the route's handle, so list and record are
+        // asked together — one round trip, and no client-side scan gating the
+        // fetch (F13, the live half). The list is asked too, because sections
+        // beside the record read it (`refine: true, detail: false`) and the
+        // index files its briefs; the record's own answer is the answer.
+        const detailCfg = this._buildDetailConfig(cfg, dynamicContext)
+        parallelFetches.push(dispatcher.dispatch(cfg, ctx).then((result) => {
+          if (result?.error) fail(schema, cfg, result.error)
+        }))
+        parallelFetches.push(dispatcher.dispatch(detailCfg, ctx).then((result) => {
+          if (result?.error) {
+            fail(schema, detailCfg, result.error)
+            return
+          }
+          const answer = Array.isArray(result?.data) ? result.data : (result?.data ? [result.data] : [])
+          data[schema] = answer.slice(0, 1) // a route resolves to ONE; `[]` is not found
+        }))
       } else if (isRouteQuery) {
         // Detail page: focused record as a length-1 array under the query key.
         const { paramName, paramValue } = dynamicContext

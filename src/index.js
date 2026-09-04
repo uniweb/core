@@ -30,7 +30,7 @@ export { substitutePlaceholders } from './substitute-placeholders.js'
 // surface and emits a live named re-export for every one, so nothing here can
 // ever be tree-shaken on the hosted lane.
 export { resolveFetchConfigs } from './fetch-config.js'
-export { buildDetailConfig } from './detail-url.js'
+export { buildDetailConfig, ROUTE_HANDLE_KEY } from './detail-url.js'
 // `isWildcardLanguages` is likewise internal — `./locale-config.js` reads it
 // and nothing else does. Same subpath escape hatch: `@uniweb/core/locale-config`.
 export {

@@ -874,3 +874,46 @@ describe('R1 on a detail page — a record held in full is delivered, not fetche
     expect(calls.filter((c) => c === '/_records/members/ada')).toHaveLength(1) // cached by key, not by index
   })
 })
+
+describe('on a question door a detail page asks list and record TOGETHER — no scan gates the fetch', () => {
+  const LANE = { list: '/_records/{path}', record: '/_records/{path}/{param}', query: '/_records/ask/{locale}' }
+  const QUERIES = { members: { name: 'members', schema: '@std/person' } }
+
+  it('dispatches both at once; the record\'s own answer is delivered, `[]` when none', async () => {
+    const asked = []
+    const { entityStore, website } = makeHarness({
+      fetcherImpl: (req) => {
+        asked.push({ depth: req.depth, where: req.where })
+        if (req.depth === 'full') return Promise.resolve({ data: [{ $uuid: 'u1', $name: 'ada', name: 'Ada', bio: 'Full' }], meta: { depth: 'full' } })
+        return Promise.resolve({ data: [{ $uuid: 'u1', $name: 'ada', name: 'Ada' }], meta: { depth: 'brief' } })
+      },
+    })
+    website.config = { records: LANE, queries: QUERIES }
+    const dynamicContext = { paramName: 'slug', paramValue: 'ada', schema: 'members' }
+    const parent = makePage({ fetch: { query: 'members', as: 'members' } })
+    const page = makePage({ parent, dynamicContext })
+
+    const result = await entityStore.fetch(makeBlock({ page }, website), {})
+    expect(result.data.members).toEqual([{ $uuid: 'u1', $name: 'ada', name: 'Ada', bio: 'Full' }])
+    expect(asked).toHaveLength(2)
+    expect(asked.find((a) => a.depth === 'full').where).toEqual({ $name: 'ada' })
+    // second visit: the record's answer is cached under its own key; the sync path delivers it
+    const resolved = entityStore.resolve(makeBlock({ page }, website), {})
+    expect(resolved.status).toBe('ready')
+    expect(resolved.data.members[0].bio).toBe('Full')
+  })
+
+  it('an empty answer is not-found, and a failed answer is absent with an error', async () => {
+    const { entityStore, website } = makeHarness({
+      fetcherImpl: (req) => req.depth === 'full'
+        ? Promise.resolve({ data: [], meta: { depth: 'full' } })
+        : Promise.resolve({ data: [], error: 'HTTP 502' }),
+    })
+    website.config = { records: LANE, queries: QUERIES }
+    const dynamicContext = { paramName: 'slug', paramValue: 'nope', schema: 'members' }
+    const page = makePage({ parent: makePage({ fetch: { query: 'members', as: 'members' } }), dynamicContext })
+    const result = await entityStore.fetch(makeBlock({ page }, website), {})
+    expect(result.data.members).toEqual([])
+    expect(result.errors).toEqual({ members: 'HTTP 502' })
+  })
+})

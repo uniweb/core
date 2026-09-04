@@ -28,7 +28,7 @@
  */
 
 import { queryDataUrl, isDataUrl, recordDataUrl } from './data-paths.js'
-import { resolveQueryAddress, resolveRecordAddressPattern } from './query-address.js'
+import { resolveQueryAddress, resolveRecordAddressPattern, resolveQueryDoor } from './query-address.js'
 
 /**
  * Is this fetch declaration a per-instance *refinement* of an ancestor's
@@ -100,6 +100,10 @@ function localizeConfig(cfg, locale, defaultLocale) {
 function applyDeferredDetail(cfg, queries, records) {
   if (cfg.detail !== undefined) return cfg
 
+  // A question door answers a RECORD by the same question narrowed to it, so
+  // every door config has a detail source; `buildDetailConfig` composes it.
+  if (cfg.door) return { ...cfg, detail: true }
+
   // ⭐ A lane's record address is injected whenever the lane declares one —
   // NOT only for a `deferred:` query, and the difference is load-bearing.
   //
@@ -170,8 +174,31 @@ function applyDeferredDetail(cfg, queries, records) {
  * `query`, ignoring any `path`), so the two agree rather than disagreeing on a
  * shape nobody hand-writes.
  */
-function resolveQuerySource(cfg, records) {
+function resolveQuerySource(cfg, records, { queries = null, locale = null, defaultLocale = null } = {}) {
   if (typeof cfg.query !== 'string' || cfg.query.length === 0) return cfg
+
+  // ⭐ THE QUESTION DOOR FIRST. A host that answers questions gets the whole
+  // query — `schema`, `scope`, `where`, `sort`, `limit`, `depth` — and composes
+  // no per-query address at all (kb/backend/records-query-contract.md §2). It
+  // needs the query's MODEL REF, which lives on the site's `config.queries`
+  // declaration; a payload that carries the door but not the declaration
+  // cannot ask, and falls through to the address door below. ⚠️ Dark until a
+  // host stamps the door; see `resolveQueryDoor`.
+  const door = resolveQueryDoor(records, locale ?? defaultLocale)
+  if (door) {
+    const decl = queries && typeof queries === 'object' ? queries[cfg.query] : null
+    const schema = typeof decl?.schema === 'string' && decl.schema ? decl.schema : null
+    if (schema) {
+      const { path, url, ...rest } = cfg
+      const asked = { ...rest, door, schema }
+      // A saved query's own narrowing applies unless the fetch overrides it.
+      if (asked.scope === undefined && typeof decl.scope === 'string') asked.scope = decl.scope
+      if (asked.where === undefined && decl.where && typeof decl.where === 'object') asked.where = decl.where
+      if (asked.sort === undefined && decl.sort !== undefined && decl.sort !== null) asked.sort = decl.sort
+      if (asked.limit === undefined && typeof decl.limit === 'number' && decl.limit > 0) asked.limit = decl.limit
+      return asked
+    }
+  }
 
   const endpoint = resolveQueryAddress(cfg.query, records)
   if (endpoint) {
@@ -266,7 +293,7 @@ export function resolveFetchConfigs(sources, options = {}) {
       if (!collectAll && !schemas.includes(key)) continue
       // Address first: localization and deferred-detail both key on `path`,
       // which a query ref does not have until this runs.
-      const sourced = resolveQuerySource(cfg, records)
+      const sourced = resolveQuerySource(cfg, records, { queries, locale, defaultLocale })
       const localized = localizeConfig(sourced, locale, defaultLocale)
       const bound = foldScope(bindRouteVariables(localized, variables))
       configs.set(key, stampDepthAndLocale(applyDeferredDetail(bound, queries, records), locale, defaultLocale))
@@ -398,6 +425,12 @@ function stampDepthAndLocale(cfg, locale, defaultLocale) {
   }
   if (out.endpoint && locale && locale !== defaultLocale && out.locale === undefined) {
     out = { ...out, locale }
+  }
+  // A door is asked in exactly one locale — it is in the route — so the config
+  // carries it whatever the locale is; two locales' answers never share an entry.
+  if (out.door && out.locale === undefined) {
+    const asked = locale ?? defaultLocale
+    if (asked) out = { ...out, locale: asked }
   }
   return out
 }
