@@ -107,7 +107,7 @@ describe('EntityStore.fetch', () => {
 
     const result = await entityStore.fetch(block, { inheritData: ['articles'] })
     expect(result.data.articles).toEqual(articles)
-    expect(fetcherSpy).toHaveBeenCalledWith(fetchConfig, expect.anything())
+    expect(fetcherSpy).toHaveBeenCalledWith(expect.objectContaining(fetchConfig), expect.anything())
   })
 
   it('does not walk beyond parent page', async () => {
@@ -157,7 +157,7 @@ describe('EntityStore.fetch', () => {
     const result = await entityStore.fetch(block, {})
     expect(result.data.articles).toEqual(blockArticles)
     expect(fetcherSpy).toHaveBeenCalledTimes(1)
-    expect(fetcherSpy).toHaveBeenCalledWith(blockConfig, expect.anything())
+    expect(fetcherSpy).toHaveBeenCalledWith(expect.objectContaining(blockConfig), expect.anything())
   })
 
   it('delivers the focused record as a single-element array on dynamic routes', async () => {
@@ -317,7 +317,7 @@ describe('EntityStore.fetch', () => {
 
     const result = await entityStore.fetch(block, {})
     expect(result.data.articles).toEqual(articles)
-    expect(fetcherSpy).toHaveBeenCalledWith(fetchConfig, expect.anything())
+    expect(fetcherSpy).toHaveBeenCalledWith(expect.objectContaining(fetchConfig), expect.anything())
   })
 
   it('falls back to collection fetch when detail is not defined', async () => {
@@ -334,7 +334,7 @@ describe('EntityStore.fetch', () => {
     const result = await entityStore.fetch(block, {})
     expect(result.data.articles).toEqual([{ slug: 'my-post' }])
     expect(result.data.article).toBeUndefined()
-    expect(fetcherSpy).toHaveBeenCalledWith(fetchConfig, expect.anything())
+    expect(fetcherSpy).toHaveBeenCalledWith(expect.objectContaining(fetchConfig), expect.anything())
   })
 
   it('localizes compiled-collection paths for non-default locale', async () => {
@@ -369,7 +369,7 @@ describe('EntityStore.fetch', () => {
     const block = makeBlock({ page }, website)
 
     await entityStore.fetch(block, {})
-    expect(fetcherSpy).toHaveBeenCalledWith(fetchConfig, expect.anything())
+    expect(fetcherSpy).toHaveBeenCalledWith(expect.objectContaining(fetchConfig), expect.anything())
   })
 
   it('does not localize local paths outside the compiled-collection tree', async () => {
@@ -383,7 +383,7 @@ describe('EntityStore.fetch', () => {
     const block = makeBlock({ page }, website)
 
     await entityStore.fetch(block, {})
-    expect(fetcherSpy).toHaveBeenCalledWith(fetchConfig, expect.anything())
+    expect(fetcherSpy).toHaveBeenCalledWith(expect.objectContaining(fetchConfig), expect.anything())
   })
 
   it('resolve() uses localized key for cache lookup', () => {
@@ -457,8 +457,8 @@ describe('EntityStore.fetch', () => {
       const result = await entityStore.fetch(block, {})
       expect(result.data.articles).toEqual(articles)
       // Parent's URL is fetched — block's own URL is NOT used as a new source.
-      expect(fetcherSpy).toHaveBeenCalledWith(parentConfig, expect.anything())
-      expect(fetcherSpy).not.toHaveBeenCalledWith(blockConfig, expect.anything())
+      expect(fetcherSpy).toHaveBeenCalledWith(expect.objectContaining(parentConfig), expect.anything())
+      expect(fetcherSpy).not.toHaveBeenCalledWith(expect.objectContaining(blockConfig), expect.anything())
     })
 
     // `inherit: true` was the alias of `refine: true`, removed 2026-09-02. It is
@@ -493,7 +493,7 @@ describe('EntityStore.fetch', () => {
       const result = await entityStore.fetch(block, {})
       // The parent's data still arrives; the `limit: 1` the alias carried does not apply.
       expect(result.data.articles).toEqual(articles)
-      expect(fetcherSpy).toHaveBeenCalledWith(parentConfig, expect.anything())
+      expect(fetcherSpy).toHaveBeenCalledWith(expect.objectContaining(parentConfig), expect.anything())
       expect(error).toHaveBeenCalledTimes(1)
       expect(error).toHaveBeenCalledWith(expect.stringContaining('no longer accepted'))
       error.mockRestore()
@@ -808,5 +808,69 @@ describe('refine order rides the shared sort', () => {
 
     const result = await entityStore.fetch(block, {})
     expect(result.data.articles.map((a) => a.slug)).toEqual(['c', 'b', 'a'])
+  })
+})
+
+describe('R1 on a detail page — a record held in full is delivered, not fetched again', () => {
+  const RECORDS = { list: '/_records/{path}', record: '/_records/{path}/{param}' }
+  const briefs = [{ $uuid: 'u1', slug: 'ada', title: 'Ada' }, { $uuid: 'u2', slug: 'lin', title: 'Lin' }]
+  const fullAda = { $uuid: 'u1', slug: 'ada', title: 'Ada', bio: 'Full bio' }
+
+  function liveHarness(fetcherImpl) {
+    const h = makeHarness({ fetcherImpl })
+    h.website.config = { records: RECORDS }
+    return h
+  }
+  const detailPage = () => {
+    const dynamicContext = { paramName: 'slug', paramValue: 'ada', schema: 'members' }
+    const parent = makePage({ fetch: { query: 'members', as: 'members' } })
+    return makePage({ parent, dynamicContext })
+  }
+
+  it('fetches the record once (the list is briefs), then delivers it from the index on the next visit', async () => {
+    const calls = []
+    const { entityStore, website } = liveHarness((req) => {
+      calls.push(req.endpoint)
+      if (req.endpoint === '/_records/members') return Promise.resolve({ data: briefs, meta: { depth: 'brief' } })
+      return Promise.resolve({ data: fullAda, meta: { depth: 'full' } })
+    })
+    const first = await entityStore.fetch(makeBlock({ page: detailPage() }, website), {})
+    expect(first.data.members).toEqual([fullAda])
+    expect(calls).toEqual(['/_records/members', '/_records/members/ada'])
+
+    // second visit: the list is cached and the record is held in FULL — no detail request
+    const second = await entityStore.fetch(makeBlock({ page: detailPage() }, website), {})
+    expect(second.data.members).toEqual([fullAda])
+    expect(calls).toHaveLength(2)
+    // the sync path agrees, and needs no detail probe either
+    const resolved = entityStore.resolve(makeBlock({ page: detailPage() }, website), {})
+    expect(resolved.status).toBe('ready')
+    expect(resolved.data.members).toEqual([fullAda])
+  })
+
+  it('the list page then sees the upgraded record too — R3, through the index', async () => {
+    const { entityStore, website } = liveHarness((req) =>
+      req.endpoint === '/_records/members'
+        ? Promise.resolve({ data: briefs, meta: { depth: 'brief' } })
+        : Promise.resolve({ data: fullAda, meta: { depth: 'full' } }),
+    )
+    await entityStore.fetch(makeBlock({ page: detailPage() }, website), {})
+    const list = await entityStore.fetch(makeBlock({ page: makePage({ fetch: { query: 'members', as: 'members' } }) }, website), {})
+    expect(list.data.members.find((r) => r.$uuid === 'u1').bio).toBe('Full bio')
+    expect(list.data.members.find((r) => r.$uuid === 'u2')).toEqual(briefs[1])
+  })
+
+  it('CONTROL — a record with no identity still goes through the detail fetch every time', async () => {
+    const calls = []
+    const noIds = [{ slug: 'ada', title: 'Ada' }]
+    const { entityStore, website } = liveHarness((req) => {
+      calls.push(req.endpoint)
+      return req.endpoint === '/_records/members'
+        ? Promise.resolve({ data: noIds, meta: { depth: 'brief' } })
+        : Promise.resolve({ data: { slug: 'ada', bio: 'x' }, meta: { depth: 'full' } })
+    })
+    await entityStore.fetch(makeBlock({ page: detailPage() }, website), {})
+    await entityStore.fetch(makeBlock({ page: detailPage() }, website), {})
+    expect(calls.filter((c) => c === '/_records/members/ada')).toHaveLength(1) // cached by key, not by index
   })
 })

@@ -263,9 +263,34 @@ export function resolveFetchConfigs(sources, options = {}) {
       // which a query ref does not have until this runs.
       const sourced = resolveQuerySource(cfg, records)
       const localized = localizeConfig(sourced, locale, defaultLocale)
-      configs.set(key, applyDeferredDetail(localized, queries, records))
+      configs.set(key, stampDepthAndLocale(applyDeferredDetail(localized, queries, records), locale, defaultLocale))
     }
   }
 
   return configs
+}
+
+/**
+ * Say what a resolved config will GET, so the record index can file it.
+ *
+ * `depth` — `brief` when the config has a per-record source (`detail`), because
+ * a list with a separate record address is a list of partial records: a live
+ * lane answers a list at brief depth and a record in full, and a `deferred:`
+ * query's compiled file is the stripped list. `full` otherwise. An explicit
+ * `depth` on the config wins (a question door's client sets it).
+ *
+ * `locale` — stamped on a LIVE-lane config only. A compiled path already carries
+ * its locale (`/fr/data/…`), but a live address does not, and two locales'
+ * records must not share a cache entry (F1). Absent on the default locale, so a
+ * site with one language sees no new field.
+ */
+function stampDepthAndLocale(cfg, locale, defaultLocale) {
+  let out = cfg
+  if (out.depth !== 'brief' && out.depth !== 'full') {
+    out = { ...out, depth: out.detail ? 'brief' : 'full' }
+  }
+  if (out.endpoint && locale && locale !== defaultLocale && out.locale === undefined) {
+    out = { ...out, locale }
+  }
+  return out
 }

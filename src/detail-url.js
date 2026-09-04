@@ -105,14 +105,32 @@ export function buildDetailConfig(queryConfig, dynamicContext) {
       ? 'url'
       : 'path'
 
+  // What every detail config carries beside its address:
+  //   `as`             — the binding key, so the record lands where the list did;
+  //   `query`          — the query it is one record of (identity on a door);
+  //   `depth: 'full'`  — what it asks for, and what the record index files it as;
+  //   `dynamicContext` — the route param, which the default fetcher already keys
+  //                      a SINGLE-RECORD response on (`envelope.item`, body
+  //                      placeholders). ⛔ The entity store never passed it, so
+  //                      a live lane's bare record response was unwrapped with
+  //                      the LIST key and read as `[]` (found 2026-09-04).
+  //   `locale`         — carried from the list, so the two share a locale.
+  const common = {
+    as: queryConfig.as,
+    transform: queryConfig.transform,
+    depth: 'full',
+    dynamicContext: { paramName, paramValue },
+  }
+  if (typeof queryConfig.query === 'string') common.query = queryConfig.query
+  if (queryConfig.locale !== undefined) common.locale = queryConfig.locale
+
   // Object form: `detail: { body, envelope }`. Reuses the query's URL +
   // method + headers + auth. The body is placeholder-substituted against
   // the dynamic context so `body: { variables: { slug: "{slug}" } }` works.
   if (detail && typeof detail === 'object') {
     const out = {
       [addressKey]: baseUrl,
-      as: queryConfig.as,
-      transform: queryConfig.transform,
+      ...common,
     }
     if (queryConfig.method) out.method = queryConfig.method
     if (detail.body !== undefined) {
@@ -162,7 +180,6 @@ export function buildDetailConfig(queryConfig, dynamicContext) {
 
   return {
     [addressKey]: detailUrl,
-    as: queryConfig.as,
-    transform: queryConfig.transform,
+    ...common,
   }
 }

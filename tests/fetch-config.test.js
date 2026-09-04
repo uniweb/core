@@ -150,7 +150,9 @@ describe('resolveFetchConfigs — deferred detail', () => {
     // gets a fetchable config — injection is an enhancement, not a
     // correctness requirement.
     const configs = resolveFetchConfigs([cfg], { collections: null })
-    expect(configs.get('articles')).toEqual(cfg)
+    // `depth` is the one field resolution always adds (what the fetch will GET,
+    // for the record index); everything authored is untouched.
+    expect(configs.get('articles')).toEqual({ ...cfg, depth: 'full' })
   })
 })
 
@@ -233,5 +235,38 @@ describe('a lane\'s record address becomes the detail source', () => {
     expect(resolveFetchConfigs(decl, { queries: withDeferred }).get('articles').detail)
       .toBe('/data/articles/{slug}.json')
     expect(resolveFetchConfigs(decl, {}).get('articles').detail).toBeUndefined()
+  })
+})
+
+describe('resolution says what a config will GET — depth, and the locale a live address lacks', () => {
+  const RECORDS = { list: '/_records/{path}', record: '/_records/{path}/{param}' }
+
+  it('a config with a per-record source is a list of BRIEFS', () => {
+    const live = resolveFetchConfigs([{ query: 'members', as: 'members' }], { records: RECORDS }).get('members')
+    expect(live.depth).toBe('brief')
+    const deferred = resolveFetchConfigs([{ query: 'articles', path: '/data/articles.json', as: 'articles' }], {
+      queries: { articles: { deferred: ['body'] } },
+    }).get('articles')
+    expect(deferred.depth).toBe('brief')
+  })
+
+  it('a config with no per-record source is FULL', () => {
+    const cfg = resolveFetchConfigs([{ query: 'articles', path: '/data/articles.json', as: 'articles' }], {}).get('articles')
+    expect(cfg.depth).toBe('full')
+  })
+
+  it('an explicit depth on the config wins', () => {
+    const cfg = resolveFetchConfigs([{ query: 'members', as: 'members', depth: 'full' }], { records: RECORDS }).get('members')
+    expect(cfg.depth).toBe('full')
+  })
+
+  it('a live-lane config carries the non-default locale; a compiled path does not need to', () => {
+    const live = resolveFetchConfigs([{ query: 'members', as: 'members' }], { records: RECORDS, locale: 'fr', defaultLocale: 'en' }).get('members')
+    expect(live.locale).toBe('fr')
+    const liveDefault = resolveFetchConfigs([{ query: 'members', as: 'members' }], { records: RECORDS, locale: 'en', defaultLocale: 'en' }).get('members')
+    expect(liveDefault.locale).toBeUndefined()
+    const file = resolveFetchConfigs([{ query: 'members', path: '/data/members.json', as: 'members' }], { locale: 'fr', defaultLocale: 'en' }).get('members')
+    expect(file.path).toBe('/fr/data/members.json')
+    expect(file.locale).toBeUndefined()
   })
 })

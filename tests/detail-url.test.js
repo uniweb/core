@@ -236,3 +236,28 @@ describe('`{slug}` is the RECORD\'s slug, whatever the route calls its param', (
     expect(out.path).toBe('/data/articles/{slug}.json')
   })
 })
+
+describe('what a detail config carries beside its address', () => {
+  it('depth full, the query, the locale, and the route context the fetcher keys a single-record response on', () => {
+    const out = buildDetailConfig(
+      { endpoint: '/_records/members', query: 'members', as: 'members', locale: 'fr', detail: '/_records/members/{param}' },
+      { paramName: 'slug', paramValue: 'ada' },
+    )
+    expect(out).toEqual({
+      endpoint: '/_records/members/ada',
+      as: 'members',
+      transform: undefined,
+      query: 'members',
+      locale: 'fr',
+      depth: 'full',
+      dynamicContext: { paramName: 'slug', paramValue: 'ada' },
+    })
+  })
+
+  it('omits query and locale when the list had none', () => {
+    const out = buildDetailConfig({ url: 'https://api.test/a', as: 'a', detail: 'rest' }, ctx)
+    expect('query' in out).toBe(false)
+    expect('locale' in out).toBe(false)
+    expect(out.depth).toBe('full')
+  })
+})

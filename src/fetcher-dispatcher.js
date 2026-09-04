@@ -205,6 +205,18 @@ export default class FetcherDispatcher {
   }
 
   /**
+   * The record held under an identity, if any, with its depth — the entity
+   * store asks this before fetching a detail record, so a record already held
+   * in full is delivered rather than fetched again (R1).
+   *
+   * @param {string} id - a `$uuid`
+   * @returns {{ depth: 'brief'|'full', record: Object } | null}
+   */
+  peekRecord(id) {
+    return this._dataStore.getRecord(id)
+  }
+
+  /**
    * Full dispatch — selection, cache check, in-flight dedup, execution.
    *
    *   Cache hit        → returns a resolved promise with the cached entry.

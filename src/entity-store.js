@@ -265,9 +265,15 @@ export default class EntityStore {
           if (!match) {
             data[schema] = []
           } else if (cfg.detail) {
-            const detailCfg = this._buildDetailConfig(cfg, { ...dynamicContext, record: match })
+            // ⭐ Held in full already? Then it IS the record — no detail probe.
+            // The list is materialized from the record index, so `match` is the
+            // record at its latest depth; the index says which depth that is.
+            const held = heldInFull(dispatcher, match)
+            const detailCfg = held ? null : this._buildDetailConfig(cfg, { ...dynamicContext, record: match })
             const detailCached = detailCfg ? dispatcher?.peek(detailCfg, ctx) : null
-            if (detailCfg && detailCached) {
+            if (held) {
+              data[schema] = [held]
+            } else if (detailCfg && detailCached) {
               data[schema] = [detailCached.data]
             } else if (detailCfg) {
               allCached = false
@@ -389,7 +395,12 @@ export default class EntityStore {
           continue
         }
 
-        if (cfg.detail) {
+        const held = cfg.detail ? heldInFull(dispatcher, match) : null
+        if (held) {
+          // R1: the record index holds it in full — a detail fetch would only
+          // re-fetch what the page already has.
+          data[schema] = [held]
+        } else if (cfg.detail) {
           const detailCfg = this._buildDetailConfig(cfg, { ...dynamicContext, record: match })
           if (detailCfg) {
             parallelFetches.push(
@@ -460,6 +471,18 @@ function reportFetchFailure(dev, block, key, cfg, message) {
     `[uniweb] fetch for content.data.${key} failed on ${page} (${where}): ${message}. ` +
       `The key is left absent — not [] — and block.dataError carries this message.`
   )
+}
+
+/**
+ * The record the index holds in FULL for a list match, or null — the R1 gate.
+ * A record with no identity (`$uuid`) is never indexed, so the answer for it is
+ * null and the detail fetch proceeds as before.
+ */
+function heldInFull(dispatcher, match) {
+  const id = match?.$uuid
+  if (typeof id !== 'string' || !id || typeof dispatcher?.peekRecord !== 'function') return null
+  const held = dispatcher.peekRecord(id)
+  return held?.depth === 'full' ? held.record : null
 }
 
 /**
