@@ -89,7 +89,7 @@ function paramContext(paramName, paramValue, record) {
  */
 /**
  * The key a route param narrows a QUESTION by — the entry's own handle, which
- * a records door guarantees unique among siblings (kb/backend/records-query-contract.md
+ * a records door guarantees unique among siblings (the records door's contract
  * §1b: `$name`, "addressed AND filtered"). ⚠️ One constant, because the spelling
  * moved four times in one day (`path_segment` → `$slug` → `$name` → `meta::name`
  * → `$name`); the door is dark until a host stamps it, so this is the one place
@@ -107,7 +107,7 @@ export function buildDetailConfig(queryConfig, dynamicContext) {
   // ⭐ A QUESTION DOOR: the record is the list's own question, narrowed to one
   // entry by its handle and asked in full — the list page and the detail page
   // are the same query, differing only by whether the parameter is bound
-  // (kb/backend/records-query-contract.md §1a). `sort` and `limit` are the
+  // (the records door's contract, §1a). `sort` and `limit` are the
   // list's and drop; `scope` and the authored `where` stay, so a scoped query
   // cannot be escaped through the URL.
   if (queryConfig.door) {

@@ -65,7 +65,6 @@ export { isRichSchema } from './schemas.js'
 // since it must not pull the package root into an SSR/Worker bundle.
 export { resolveService, resolveServiceUrl, readServiceOptions } from './services.js'
 export { applyBasePath } from './base-path.js'
-export { resolveStyle as resolveRequestStyle } from './request-styles/index.js'
 
 /**
  * The singleton Uniweb instance.

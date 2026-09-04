@@ -50,7 +50,6 @@ import { substitutePlaceholders } from './substitute-placeholders.js'
  * serving records has no such thing: it has content organised somewhere, and what we
  * substitute is a **path** to it. Naming the slot for our file vocabulary put that
  * vocabulary into a string a HOST writes, which makes them reason in our shape.
- * See `kb/framework/architecture/backend-boundary.md` §2.
  */
 const PATH_SLOT = '{path}'
 /** The placeholder a record pattern must carry to address a specific record. */
@@ -115,8 +114,8 @@ export function resolveQueryAddress(query, lane) {
  * The QUESTION door a host declares — a POST address with a `{locale}` slot —
  * substituted for one locale, or `null` when the lane declares none.
  *
- * ⚠️ PROVISIONAL STAMP KEY. Backend's records-query contract
- * (kb/backend/records-query-contract.md §7) says a question door "needs a
+ * ⚠️ PROVISIONAL STAMP KEY. The records door's contract (§7) says a question
+ * door "needs a
  * third pattern, carrying a `{locale}` slot", and has not named the key it is
  * stamped under. This reads `config.records.query` until they do — one
  * constant, changed in one place — and everything downstream is dark until a

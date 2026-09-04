@@ -45,7 +45,7 @@
  * ⚖️ This module said "deliberately no catch-alls" until 2026-09-04. The reversal
  * is considered, announced to the consumer that imports this leaf before it
  * landed, and narrow: one construct, final segment only, nothing author-named —
- * the build emits `:path*` and nothing else (kb/framework/open-work.md §3).
+ * the build emits `:path*` and nothing else.
  *
  * ## What this module does NOT decide
  *

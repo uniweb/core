@@ -8,15 +8,15 @@
  * several keys while the one shipped wire dialect documented the same, so a site
  * authoring `sort: order asc, title asc` worked on the static lane and would have
  * been refused by the records door, which takes one key. The language is the
- * INTERSECTION of what both lanes honour (`kb/framework/plans/records-query-verdict.md`
- * §5), so a comma is refused here rather than half-honoured somewhere.
+ * INTERSECTION of what both lanes honour, so a comma is refused here rather than
+ * half-honoured somewhere.
  *
  * Author spelling, unchanged: `date`, `date asc`, `date desc`. The records door's
  * spelling is `date` / `-date`; `-date` is accepted on the way in so a value that
  * came off the wire round-trips, and `sortToWire` produces it on the way out.
  *
  * Dotted paths descend into nested objects (`tenure.start`) — kept, like the
- * predicate evaluator's (`kb/framework/open-work.md` P1).
+ * predicate evaluator's.
  *
  * Zero-dependency leaf: `@uniweb/build` reads it to materialize `/data/<name>.json`
  * and `@uniweb/runtime` reads it as the fallback over a fetched array, so the two

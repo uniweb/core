@@ -179,7 +179,7 @@ function resolveQuerySource(cfg, records, { queries = null, locale = null, defau
 
   // ⭐ THE QUESTION DOOR FIRST. A host that answers questions gets the whole
   // query — `schema`, `scope`, `where`, `sort`, `limit`, `depth` — and composes
-  // no per-query address at all (kb/backend/records-query-contract.md §2). It
+  // no per-query address at all (the records door's contract, §2). It
   // needs the query's MODEL REF, which lives on the site's `config.queries`
   // declaration; a payload that carries the door but not the declaration
   // cannot ask, and falls through to the address door below. ⚠️ Dark until a
@@ -319,7 +319,7 @@ const ROUTE_VARIABLE = /^:(path|dir|slug)$/
  * `/blog/rust/my-post` and vanishes on `/blog`, where there is no `:dir`. A
  * variable bound to an empty string (`:dir` on a single-segment capture) is
  * bound, and binds the empty value. Backend's records door states the same
- * rule from its side (kb/backend/records-query-contract.md §6b).
+ * rule from its side (the records door's contract, §6b).
  *
  * ⚠️ The price, stated where it is paid: a MISSPELLED variable is byte-identical
  * to an intentional list page. Only an authoring surface can catch that; this
@@ -389,7 +389,7 @@ function bindWhere(where, variables) {
  * is the same question as `where: { path: { under: scope } }`: a record's
  * `path` is the folder `records.yml` placed it in, and the evaluator's `under`
  * is segment-aware containment. Folding it keeps the language the INTERSECTION
- * of both lanes (kb/framework/plans/records-query-verdict.md §5): an author
+ * of both lanes: an author
  * writes `scope: :dir` once and it means the same branch on a static site and
  * on a door that takes `scope` natively. A config addressed to a question door
  * (`door`) keeps `scope` as the door's own field.

@@ -1,6 +1,6 @@
 /**
  * The QUESTION door — a host that answers a query instead of serving a path
- * (kb/backend/records-query-contract.md). ⚠️ Nothing here is live: no host stamps
+ * (the records door's contract). ⚠️ Nothing here is live: no host stamps
  * the door yet, and the stamp key this client reads (`config.records.query`) is
  * provisional. These pin what framework will SEND and how it degrades, so the
  * client can go live by a stamp alone.

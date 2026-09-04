@@ -620,8 +620,7 @@ export default class Website {
       // `/fr/data/…` path. Two different keys for one dataset, so the probe
       // missed on exactly those lanes: no title, no not-found, and the page was
       // never cached (`recordsLoaded` false on every visit). Silent, on a
-      // visitor's page — the "write key ≠ read key" row of
-      // kb/framework/architecture/content-data-failures.md.
+      // visitor's page — the "write key ≠ read key" failure.
       const parentFetch = parentPage.fetch
       let items = []
       let currentItem = null
@@ -878,7 +877,7 @@ export default class Website {
    * the site's URL is built on: `kit`'s `useEntityDetail` asks it so a hover
    * card and the page it links to address the record by the SAME field. It
    * hardcoded `slug` until 2026-09-04, which was quietly wrong on any site
-   * routing `[id]` (`kb/framework/open-work.md` U5). The first template found
+   * routing `[id]`. The first template found
    * wins, matching `parentSchema`'s own rule that one key indexes one template.
    *
    * @param {string} key - a binding key (`content.data.<key>`)

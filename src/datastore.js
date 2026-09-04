@@ -32,7 +32,7 @@
  *
  * An ADDRESS-LESS request — a QUESTION sent to a records door — is identified by
  * the question: `query`, `schema`, `scope`, `where`, `sort`, `limit`, `depth`.
- * ⛔ This is F11 (kb/framework/open-work.md): with no per-query address, two pages
+ * ⛔ The reason: with no per-query address, two pages
  * binding one `as` to two queries would otherwise share an entry, and a list
  * (brief) and a record (full) of one query would collide — the one defect on
  * this path that delivers WRONG data rather than none.
@@ -96,7 +96,7 @@ function indexableDepth(entry) {
  * record was already held in full still fetched it again, or — with the record's
  * list already cached — delivered the brief as if it were the record.
  *
- * Three rules (kb/framework/open-work.md R1–R3):
+ * Three rules:
  *   R1  an entry whose `meta.depth` is `brief` or `full` and whose records all
  *       carry `$uuid` is filed by id; `get()` materializes it from the index, so
  *       every list holding a record sees the record's latest depth;

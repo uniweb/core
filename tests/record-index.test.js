@@ -1,6 +1,6 @@
 /**
  * The record index — records held once, by identity, at the depth they were
- * fetched (kb/framework/open-work.md R1–R3), and the cache key that keeps a
+ * fetched, and the cache key that keeps a
  * question door's list and record apart (F11).
  */
 import { describe, it, expect, vi } from 'vitest'
