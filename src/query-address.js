@@ -114,13 +114,14 @@ export function resolveQueryAddress(query, lane) {
  * The QUESTION door a host declares — a POST address with a `{locale}` slot —
  * substituted for one locale, or `null` when the lane declares none.
  *
- * ⚠️ PROVISIONAL STAMP KEY. The records door's contract (§7) says a question
- * door "needs a
- * third pattern, carrying a `{locale}` slot", and has not named the key it is
- * stamped under. This reads `config.records.query` until they do — one
- * constant, changed in one place — and everything downstream is dark until a
- * host stamps it. The locale is a ROUTE SEGMENT there, never a query param:
- * a request that cannot name one does not address this door at all.
+ * The stamp key is `config.records.query` — read here as a provisional spelling
+ * on 2026-09-04 and NAMED THE SAME DAY by the door's owner (their site-records
+ * contract, §11.4: stamped since 2026-09-04, value `/_records/_query/{locale}`).
+ * One constant, changed in one place should it ever move. Everything downstream
+ * wakes only when a host stamps it AND the payload carries the query's Model ref
+ * (`config.queries`), and stays dark otherwise. The locale is a ROUTE SEGMENT
+ * there, never a query param: a request that cannot name one does not address
+ * this door at all.
  *
  * @param {Object|null} lane - `config.records`
  * @param {string|null} locale - the locale being rendered; required
