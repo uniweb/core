@@ -280,9 +280,10 @@ describe('route variables reach a query as placeholders — and an unbound one d
     expect(cfg.where).toEqual({ tag: 'rust/2025', $name: 'my-post' })
   })
 
-  it('binds :path as the whole scope', () => {
+  it('binds :dir as the whole scope — which a compiled query then evaluates as a path predicate', () => {
     const cfg = resolveFetchConfigs(decl({ scope: ':dir' }), { variables: vars }).get('posts')
-    expect(cfg.scope).toBe('rust/2025')
+    expect(cfg.where).toEqual({ path: { under: 'rust/2025' } })
+    expect('scope' in cfg).toBe(false)
   })
 
   it('⭐ unbound ⇒ the clause DROPS — one saved query serves the list page and the detail page', () => {
@@ -317,5 +318,35 @@ describe('route variables reach a query as placeholders — and an unbound one d
     const authored = decl({ where: { tag: ':dir' } })
     resolveFetchConfigs(authored, { variables: vars })
     expect(authored[0].where).toEqual({ tag: ':dir' })
+  })
+})
+
+describe('scope: on a lane that cannot be asked folds into the path predicate', () => {
+  const decl = (extra) => [{ query: 'posts', path: '/data/posts.json', as: 'posts', ...extra }]
+
+  it('becomes where.path.under on a compiled query', () => {
+    const cfg = resolveFetchConfigs(decl({ scope: 'field' }), {}).get('posts')
+    expect(cfg.where).toEqual({ path: { under: 'field' } })
+    expect('scope' in cfg).toBe(false)
+  })
+
+  it('conjoins with an authored where', () => {
+    const cfg = resolveFetchConfigs(decl({ scope: 'field', where: { published: true } }), {}).get('posts')
+    expect(cfg.where).toEqual({ and: [{ published: true }, { path: { under: 'field' } }] })
+  })
+
+  it('binds :dir first, then folds — so one query scopes by the URL on both lanes', () => {
+    const vars = { path: 'field/river', dir: 'field', slug: 'river' }
+    const cfg = resolveFetchConfigs(decl({ scope: ':dir' }), { variables: vars }).get('posts')
+    expect(cfg.where).toEqual({ path: { under: 'field' } })
+    // and the list page, where :dir is unbound, sees the whole set
+    const list = resolveFetchConfigs(decl({ scope: ':dir' }), {}).get('posts')
+    expect('where' in list).toBe(false)
+    expect('scope' in list).toBe(false)
+  })
+
+  it('an empty scope is dropped, never "the root"', () => {
+    const cfg = resolveFetchConfigs(decl({ scope: '' }), {}).get('posts')
+    expect('where' in cfg).toBe(false)
   })
 })

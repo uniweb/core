@@ -237,8 +237,12 @@ export default class Block {
     this.refId = blockData.refId || null
 
     // Dynamic route context (params from URL matching)
-    // Set when accessing a dynamic page like /blog/:slug -> /blog/my-post
-    this.dynamicContext = blockData.dynamicContext || null
+    // Set when accessing a dynamic page like /blog/:slug -> /blog/my-post.
+    // ⭐ The PAGE's context is the fallback: the SPA stamps it on every section
+    // as it creates the page, the static build stamps it on the page only, and a
+    // section reading `block.dynamicContext` must see the same thing on both
+    // lanes — it did not until 2026-09-04 (empty on every prerendered page).
+    this.dynamicContext = blockData.dynamicContext || this.page?.dynamicContext || null
 
     // State management (dynamic, can change at runtime)
     this.startState = null

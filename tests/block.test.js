@@ -326,3 +326,23 @@ describe('Block.track', () => {
     expect(() => block.track('x')).not.toThrow()
   })
 })
+
+describe('a block sees its page\'s dynamic context on every lane', () => {
+  it('falls back to the page\'s dynamicContext when the section carries none — the static build\'s shape', () => {
+    const page = { route: '/blog/x', dynamicContext: { paramName: 'slug', paramValue: 'x', schema: 'posts', params: { path: 'x', dir: '', slug: 'x' } }, website: null }
+    const block = new Block({ type: 'Post', content: { type: 'doc', content: [] } }, 'b1', page)
+    expect(block.dynamicContext).toBe(page.dynamicContext)
+  })
+
+  it('keeps its own when the SPA stamped one — CONTROL', () => {
+    const own = { paramName: 'slug', paramValue: 'y', schema: 'posts' }
+    const page = { route: '/blog/y', dynamicContext: { paramName: 'slug', paramValue: 'other' }, website: null }
+    const block = new Block({ type: 'Post', content: { type: 'doc', content: [] }, dynamicContext: own }, 'b1', page)
+    expect(block.dynamicContext).toBe(own)
+  })
+
+  it('is null off a dynamic page', () => {
+    const block = new Block({ type: 'Post', content: { type: 'doc', content: [] } }, 'b1', { route: '/about', website: null })
+    expect(block.dynamicContext).toBeNull()
+  })
+})

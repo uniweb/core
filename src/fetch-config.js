@@ -268,7 +268,7 @@ export function resolveFetchConfigs(sources, options = {}) {
       // which a query ref does not have until this runs.
       const sourced = resolveQuerySource(cfg, records)
       const localized = localizeConfig(sourced, locale, defaultLocale)
-      const bound = bindRouteVariables(localized, variables)
+      const bound = foldScope(bindRouteVariables(localized, variables))
       configs.set(key, stampDepthAndLocale(applyDeferredDetail(bound, queries, records), locale, defaultLocale))
     }
   }
@@ -355,6 +355,26 @@ function bindWhere(where, variables) {
   }
   if (!changed) return where
   return Object.keys(next).length ? next : null
+}
+
+/**
+ * `scope:` on a lane that cannot be ASKED — the compiled file, an address door —
+ * is the same question as `where: { path: { under: scope } }`: a record's
+ * `path` is the folder `records.yml` placed it in, and the evaluator's `under`
+ * is segment-aware containment. Folding it keeps the language the INTERSECTION
+ * of both lanes (kb/framework/plans/records-query-verdict.md §5): an author
+ * writes `scope: :dir` once and it means the same branch on a static site and
+ * on a door that takes `scope` natively. A config addressed to a question door
+ * (`door`) keeps `scope` as the door's own field.
+ */
+function foldScope(cfg) {
+  if (typeof cfg.scope !== 'string' || cfg.scope === '' || cfg.door) return cfg
+  const { scope, ...rest } = cfg
+  const under = { path: { under: scope } }
+  const where = cfg.where && typeof cfg.where === 'object' && Object.keys(cfg.where).length
+    ? { and: [cfg.where, under] }
+    : under
+  return { ...rest, where }
 }
 
 /**
