@@ -10,13 +10,22 @@
  * literal, while the second consumed the whole name. Two answers to one
  * question, neither wrong on the routes anyone had tried.
  *
- * That is already bad inside one repo. It is worse across them: a host that
- * renders a page server-side has to decide *which* page a path names, and the
- * runtime then hydrates over that decision in the browser. If the two matchers
- * disagree by a single route, the server renders page A and hydration replaces
- * it with page B — silently, and only on the paths that have a pattern, which
- * are exactly the interesting ones. So this is a cross-boundary contract, not
- * an implementation detail, and it is exported rather than merely shared.
+ * That is already bad inside one repo. It is worse across them, because the
+ * matcher answers a question more than one lane asks: *which page does this
+ * path name?* A consumer outside this repo routes with these patterns —
+ * `hosting/framework-surface.json` declares `routePatternToRegex`,
+ * `isDynamicRoute` and `normalizeRoute` read by its `src/routes.js`. Two copies
+ * that disagree by a single route give two answers to page identity, silently,
+ * and only on the paths that have a pattern — which are exactly the interesting
+ * ones. So this is a cross-boundary contract, not an implementation detail, and
+ * it is exported rather than merely shared.
+ *
+ * ⛔ This paragraph used to justify itself with a server-rendering story — "the
+ * server renders page A and hydration replaces it with page B". That premise is
+ * wrong (Diego, 2026-09-04: *the server does not render*) and the argument never
+ * needed it: two answers to page identity are a defect wherever the second
+ * answer is formed. Do not reintroduce a rendering narrative here; what this
+ * module guarantees is that everyone matching a path agrees on the page.
  *
  * Zero-dependency leaf, like `./data-paths.js` and `./locale-config.js`, so a
  * consumer that must not pull core's graph — an edge worker, a build step —
