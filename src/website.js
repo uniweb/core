@@ -11,7 +11,7 @@ import FetcherDispatcher from './fetcher-dispatcher.js'
 import ObservableState from './observable-state.js'
 import { normalizeSeo } from './seo.js'
 import { resolveDefaultLocale, localeLabel } from './locale-config.js'
-import { matchDynamicRoute, decodeRouteValue } from './route-match.js'
+import { matchDynamicRoute, decodeRouteValue, routePatternToRegex, splitPathCapture } from './route-match.js'
 import { resolveFetchConfigs } from './fetch-config.js'
 import { buildDetailConfig } from './detail-url.js'
 import { resolveService } from './services.js'
@@ -560,14 +560,36 @@ export default class Website {
     pageData.route = concreteRoute
     pageData.isDynamic = false // No longer a template
 
-    const paramName = Object.keys(params)[0]
-    const paramValue = Object.values(params)[0]
+    // ⭐ The route's variables, and the param the record is delivered by.
+    //
+    // `[slug]` — the one capture, under the folder's own label: `paramName` is
+    // that label and the record is matched on `item[paramName]`.
+    //
+    // `[...path]` — the capture is split by the rule in `route-match.js`
+    // (`:path` the whole capture · `:dir` everything before the last segment ·
+    // `:slug` the last segment); the record is delivered by `slug`, its handle,
+    // exactly as under `[slug]`, and `path` / `dir` exist for a query to bind
+    // (`scope: :dir`, `where: { tag: :dir }`). Ruled 2026-09-04 [Diego]: the
+    // variables are standard, never author-named.
+    const { catchAll } = routePatternToRegex(templatePage.route)
+    let variables = { ...params }
+    let paramName
+    let paramValue
+    if (catchAll && params[catchAll] !== undefined) {
+      const parts = splitPathCapture(params[catchAll])
+      variables = { ...params, ...parts }
+      paramName = originalData.paramName || 'slug'
+      paramValue = parts.slug
+    } else {
+      paramName = originalData.paramName || Object.keys(params)[0]
+      paramValue = params[paramName]
+    }
     const pluralSchema = originalData.parentSchema // e.g., 'articles'
 
     // Store dynamic context for components to access
     pageData.dynamicContext = {
       templateRoute: templatePage.route,
-      params,
+      params: variables,
       paramName,
       paramValue,
       schema: pluralSchema,
@@ -582,7 +604,8 @@ export default class Website {
 
     // Try to resolve page metadata from DataStore
     // Look up the parent page's fetch config to find data in the store
-    const parentRoute = templatePage.route.replace(/\/:[\w]+$/, '') || '/'
+    // The template's parent: the route without its `:param` — or `:path*` — tail.
+    const parentRoute = templatePage.route.replace(/\/:[\w-]+\*?$/, '') || '/'
     const parentPage = this.pages.find(p => p.route === parentRoute || p.getNavRoute() === parentRoute)
 
     if (parentPage && pluralSchema) {
@@ -614,6 +637,7 @@ export default class Website {
           defaultLocale: this.getDefaultLocale(),
           queries: this.config?.queries ?? null,
           records: this.config?.records ?? null,
+          variables,
         }).get(pluralSchema)
         if (fetchConfig) {
           const ctx = { website: this }

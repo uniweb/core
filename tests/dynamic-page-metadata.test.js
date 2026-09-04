@@ -131,3 +131,49 @@ describe('detailTemplateFor — which field a site routes a key\'s records by', 
     expect(w.detailTemplateFor('products')).toEqual({ route: '/products/:id', paramName: 'id' })
   })
 })
+
+describe('a [...path] template binds its capture to the standard variables', () => {
+  function pathSite() {
+    return new Website({
+      content: {
+        config: { name: 'T', defaultLanguage: 'en' },
+        theme: {},
+        pages: [
+          { route: '/', isIndex: true, title: 'Home', sections: [] },
+          { route: '/blog', title: 'Blog', sections: [], fetch: { query: 'posts', path: '/data/posts.json', as: 'posts' } },
+          { route: '/blog/:path*', isDynamic: true, paramName: 'slug', parentSchema: 'posts', title: 'Post', sections: [] },
+        ],
+      },
+    })
+  }
+
+  it('delivers by slug, the last segment, and exposes path and dir', () => {
+    const w = pathSite()
+    w.dataStore.set(deriveCacheKey({ query: 'posts', as: 'posts', path: '/data/posts.json' }), {
+      data: [{ slug: 'my-post', path: 'rust/2025', title: 'Rust post' }],
+    })
+    const page = w.getPage('/blog/rust/2025/my-post')
+    expect(page.dynamicContext).toEqual({
+      templateRoute: '/blog/:path*',
+      params: { path: 'rust/2025/my-post', dir: 'rust/2025', slug: 'my-post' },
+      paramName: 'slug',
+      paramValue: 'my-post',
+      schema: 'posts',
+    })
+    expect(page.title).toBe('Rust post')
+  })
+
+  it('a single segment binds an empty dir, so :slug means the same thing as under [slug]', () => {
+    const w = pathSite()
+    const page = w.getPage('/blog/my-post')
+    expect(page.dynamicContext.params).toEqual({ path: 'my-post', dir: '', slug: 'my-post' })
+    expect(page.dynamicContext.paramValue).toBe('my-post')
+  })
+
+  it('CONTROL — a [slug] template still binds the one capture under the folder\'s own label', () => {
+    const w = site()
+    const page = w.getPage('/blog/hello')
+    expect(page.dynamicContext.params).toEqual({ slug: 'hello' })
+    expect(page.dynamicContext.paramName).toBe('slug')
+  })
+})

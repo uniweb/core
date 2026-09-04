@@ -237,6 +237,10 @@ function bindingKey(cfg) {
  * @param {Object|null} [options.records] - the site's `config.records`, a host's
  *   live-records lane. Absent means the compiled artifact answers, which is
  *   the whole of what a site with no backend needs.
+ * @param {Object|null} [options.variables] - the route's variables on a template
+ *   page (`{ path, dir, slug }` under `[...path]`, the capture under `[slug]`);
+ *   a `:path` / `:dir` / `:slug` placeholder in `where:` or `scope:` binds to
+ *   them, and an unbound one drops its clause. Null off a template page.
  * @returns {Map<string, Object>} schema name → resolved config
  */
 export function resolveFetchConfigs(sources, options = {}) {
@@ -246,6 +250,7 @@ export function resolveFetchConfigs(sources, options = {}) {
     defaultLocale = null,
     queries = null,
     records = null,
+    variables = null,
   } = options
 
   const configs = new Map()
@@ -263,11 +268,93 @@ export function resolveFetchConfigs(sources, options = {}) {
       // which a query ref does not have until this runs.
       const sourced = resolveQuerySource(cfg, records)
       const localized = localizeConfig(sourced, locale, defaultLocale)
-      configs.set(key, stampDepthAndLocale(applyDeferredDetail(localized, queries, records), locale, defaultLocale))
+      const bound = bindRouteVariables(localized, variables)
+      configs.set(key, stampDepthAndLocale(applyDeferredDetail(bound, queries, records), locale, defaultLocale))
     }
   }
 
   return configs
+}
+
+/**
+ * The three route variables a query may reference, and only these — `:path`,
+ * `:dir`, `:slug` — as a VALUE in `where:` or as the whole `scope:`. Ruled
+ * 2026-09-04 [Diego]: standard names, never author-chosen; a placeholder fills
+ * a value, never a key or an operator, never `schema`.
+ */
+const ROUTE_VARIABLE = /^:(path|dir|slug)$/
+
+/**
+ * Bind a query's route placeholders from the page's variables.
+ *
+ * ⭐ UNBOUND ⇒ THE CLAUSE DROPS. That is what lets ONE saved query serve both
+ * the list page and the detail page: `where: { tag: :dir }` narrows on
+ * `/blog/rust/my-post` and vanishes on `/blog`, where there is no `:dir`. A
+ * variable bound to an empty string (`:dir` on a single-segment capture) is
+ * bound, and binds the empty value. Backend's records door states the same
+ * rule from its side (kb/backend/records-query-contract.md §6b).
+ *
+ * ⚠️ The price, stated where it is paid: a MISSPELLED variable is byte-identical
+ * to an intentional list page. Only an authoring surface can catch that; this
+ * function cannot.
+ *
+ * @param {Object} cfg - a resolved config
+ * @param {Object|null} variables - `{ path, dir, slug, … }` from the route, or null off a template page
+ * @returns {Object} the config, with placeholders bound or their clauses dropped
+ */
+function bindRouteVariables(cfg, variables) {
+  let out = cfg
+  if (typeof cfg.scope === 'string' && ROUTE_VARIABLE.test(cfg.scope)) {
+    const name = cfg.scope.slice(1)
+    const value = variables?.[name]
+    const { scope, ...rest } = out
+    out = value === undefined || value === null ? rest : { ...rest, scope: String(value) }
+  }
+  if (cfg.where && typeof cfg.where === 'object') {
+    const bound = bindWhere(cfg.where, variables)
+    if (bound !== cfg.where) {
+      const { where, ...rest } = out
+      out = bound === null ? rest : { ...rest, where: bound }
+    }
+  }
+  return out
+}
+
+/** Walk a where-object: bind `:var` VALUES, drop clauses whose variable is unbound. */
+function bindWhere(where, variables) {
+  if (Array.isArray(where)) {
+    let changed = false
+    const next = []
+    for (const item of where) {
+      const b = item && typeof item === 'object' ? bindWhere(item, variables) : item
+      if (b !== item) changed = true
+      if (b !== null) next.push(b)
+    }
+    if (!changed) return where
+    return next.length ? next : null
+  }
+  if (!where || typeof where !== 'object') return where
+  let changed = false
+  const next = {}
+  for (const [key, value] of Object.entries(where)) {
+    if (typeof value === 'string' && ROUTE_VARIABLE.test(value)) {
+      const bound = variables?.[value.slice(1)]
+      changed = true
+      if (bound === undefined || bound === null) continue // unbound ⇒ drop
+      next[key] = String(bound)
+      continue
+    }
+    if (value && typeof value === 'object') {
+      const b = bindWhere(value, variables)
+      if (b !== value) changed = true
+      if (b === null) continue // an operator object or sub-predicate emptied out
+      next[key] = b
+      continue
+    }
+    next[key] = value
+  }
+  if (!changed) return where
+  return Object.keys(next).length ? next : null
 }
 
 /**

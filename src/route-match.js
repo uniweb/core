@@ -33,11 +33,19 @@
  *
  * ## The syntax, in full
  *
- * `:param` is the only construct. There are deliberately **no** catch-alls
- * (`*`), **no** optional segments (`?`), and **no** regex constraints — a
- * pattern is not a regular expression, and regex metacharacters in a route are
- * escaped to literals before any substitution happens. Matching is anchored,
- * case-sensitive, and a param captures exactly one non-empty path segment.
+ * `:param` captures exactly one non-empty path segment. `:param*` — the ONE
+ * multi-segment construct, admitted 2026-09-04 by ruling [Diego] for the
+ * `[...path]` route folder — captures one or more segments, slashes intact, and
+ * only as the FINAL segment of a pattern; anywhere else the `*` is the literal it
+ * always was. There are still **no** optional segments (`?`) and **no** regex
+ * constraints — a pattern is not a regular expression, and regex metacharacters in
+ * a route are escaped to literals before any substitution happens. Matching is
+ * anchored and case-sensitive.
+ *
+ * ⚖️ This module said "deliberately no catch-alls" until 2026-09-04. The reversal
+ * is considered, announced to the consumer that imports this leaf before it
+ * landed, and narrow: one construct, final segment only, nothing author-named —
+ * the build emits `:path*` and nothing else (kb/framework/open-work.md §3).
  *
  * ## What this module does NOT decide
  *
@@ -85,6 +93,9 @@ export function isDynamicRoute(route) {
   return typeof route === 'string' && route.includes(':')
 }
 
+/** The catch-all token, only as a pattern's final segment: `/:path*`. */
+const CATCH_ALL = new RegExp(`/:(${PARAM_NAME})\\*$`)
+
 /**
  * Compile a route pattern to an anchored regex plus its param names.
  *
@@ -92,12 +103,22 @@ export function isDynamicRoute(route) {
  * compile once — an edge worker checking every request against a site's
  * patterns, for instance.
  *
- * @param {string} pattern - e.g. `/blog/:id`
- * @returns {{ regex: RegExp, paramNames: string[] }}
+ * `catchAll` names the `:name*` param when the pattern ends in one, else null —
+ * a caller decoding captures needs to know which one may hold slashes.
+ *
+ * @param {string} pattern - e.g. `/blog/:id`, `/docs/:path*`
+ * @returns {{ regex: RegExp, paramNames: string[], catchAll: string|null }}
  */
 export function routePatternToRegex(pattern) {
   const paramNames = []
-  const source = normalizeRoute(pattern)
+  let head = normalizeRoute(pattern)
+  let catchAll = null
+  const tail = head.match(CATCH_ALL)
+  if (tail) {
+    catchAll = tail[1]
+    head = head.slice(0, tail.index)
+  }
+  let source = head
     // Escape first: a `.` in a route is a literal `.`, not "any character".
     .replace(REGEX_SPECIALS, '\\$&')
     // Then each `:name` becomes one non-empty segment capture.
@@ -105,8 +126,14 @@ export function routePatternToRegex(pattern) {
       paramNames.push(name)
       return '([^/]+)'
     })
+  if (catchAll) {
+    paramNames.push(catchAll)
+    // One or more segments; the segments are separated by literal slashes, and
+    // an empty segment (`//`) is not a segment.
+    source += '/([^/]+(?:/[^/]+)*)'
+  }
 
-  return { regex: new RegExp(`^${source}$`), paramNames }
+  return { regex: new RegExp(`^${source}$`), paramNames, catchAll }
 }
 
 /**
@@ -156,15 +183,59 @@ export function decodeRouteValue(value) {
  * @returns {{ params: Record<string,string> } | null}
  */
 export function matchDynamicRoute(pattern, path) {
-  const { regex, paramNames } = routePatternToRegex(pattern)
+  const { regex, paramNames, catchAll } = routePatternToRegex(pattern)
   const match = normalizeRoute(path).match(regex)
   if (!match) return null
 
   const params = {}
   paramNames.forEach((name, i) => {
-    params[name] = decodeRouteValue(match[i + 1])
+    const raw = match[i + 1]
+    // A catch-all is decoded PER SEGMENT: an encoded slash inside one segment
+    // (`members%2Fada`) stays a value, while the slashes between segments stay
+    // structure. Decoding the whole capture at once would conflate the two.
+    params[name] = name === catchAll
+      ? raw.split('/').map(decodeRouteValue).join('/')
+      : decodeRouteValue(raw)
   })
   return { params }
+}
+
+/**
+ * The three standard variables a multi-segment capture yields — the split rule,
+ * ruled 2026-09-04 [Diego]:
+ *
+ *     /blog/rust/2025/my-post  →  path = rust/2025/my-post   the whole capture
+ *                                 dir  = rust/2025           everything before the last segment
+ *                                 slug = my-post             the last segment — the record's handle
+ *
+ * `slug` means the same thing in both route kinds — in `[slug]` it is the whole
+ * segment — and `dir` is empty for a single segment, so a query written against
+ * one behaves the same under the other.
+ *
+ * @param {string} capture - a decoded `:path*` value
+ * @returns {{ path: string, dir: string, slug: string }}
+ */
+export function splitPathCapture(capture) {
+  const path = typeof capture === 'string' ? capture.replace(/^\/+|\/+$/g, '') : ''
+  const segments = path ? path.split('/') : []
+  return {
+    path,
+    dir: segments.slice(0, -1).join('/'),
+    slug: segments.length ? segments[segments.length - 1] : '',
+  }
+}
+
+/**
+ * The inverse of `splitPathCapture` — a record's own URL path under a
+ * `[...path]` template, from its placement and its handle. `dir` may be empty.
+ *
+ * @param {{ dir?: string|null, slug?: string|null }} parts
+ * @returns {string|null} null when there is no slug to name the record by
+ */
+export function joinPathCapture({ dir, slug } = {}) {
+  if (slug === undefined || slug === null || slug === '') return null
+  const d = typeof dir === 'string' ? dir.replace(/^\/+|\/+$/g, '') : ''
+  return d ? `${d}/${slug}` : String(slug)
 }
 
 /**
@@ -194,7 +265,24 @@ export function matchDynamicRoute(pattern, path) {
 export function fillRoutePattern(pattern, values) {
   if (typeof pattern !== 'string' || !values || typeof values !== 'object') return null
   let missing = false
-  const href = pattern.replace(new RegExp(`:(${PARAM_NAME})`, 'g'), (_, name) => {
+  let head = pattern
+  let tailHref = ''
+  const tail = pattern.match(CATCH_ALL)
+  if (tail) {
+    // A catch-all is filled from the record's placement and handle — the split
+    // rule in reverse (`joinPathCapture`) — with each SEGMENT encoded and the
+    // slashes between them kept as structure. `dir` is the placement; a record
+    // carries it as `path` (the folder `records.yml` put it in), which is why
+    // `path` here is read as the DIRECTORY and never as a composed capture.
+    if (joinPathCapture({ dir: values.dir ?? values.path, slug: values.slug }) === null) return null
+    const dir = String(values.dir ?? values.path ?? '')
+    const segments = dir.split('/').filter(Boolean).map((seg) => encodeURIComponent(seg))
+    // The handle is ONE segment whatever it contains: a `/` inside it is a value.
+    segments.push(encodeURIComponent(String(values.slug)))
+    tailHref = '/' + segments.join('/')
+    head = pattern.slice(0, tail.index)
+  }
+  const href = head.replace(new RegExp(`:(${PARAM_NAME})`, 'g'), (_, name) => {
     const value = values[name]
     if (value === undefined || value === null || value === '') {
       missing = true
@@ -202,7 +290,7 @@ export function fillRoutePattern(pattern, values) {
     }
     return encodeURIComponent(String(value))
   })
-  return missing ? null : href
+  return missing ? null : href + tailHref
 }
 
 /**

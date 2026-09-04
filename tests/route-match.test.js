@@ -20,6 +20,8 @@ import {
   stripLocalePrefix,
   decodeRouteValue,
   fillRoutePattern,
+  splitPathCapture,
+  joinPathCapture,
 } from '../src/route-match.js'
 
 describe('matchDynamicRoute — what a param matches', () => {
@@ -86,10 +88,15 @@ describe('matchDynamicRoute — what a param matches', () => {
 })
 
 describe('matchDynamicRoute — what the syntax deliberately is NOT', () => {
-  it('has no catch-all', () => {
+  it('a bare `*` is not a catch-all — it is the literal it always was', () => {
     expect(matchDynamicRoute('/docs/*', '/docs/a/b')).toBeNull()
     // `*` is escaped to a literal asterisk, not treated as a wildcard.
     expect(matchDynamicRoute('/docs/*', '/docs/*')).toEqual({ params: {} })
+  })
+
+  it('`:name*` anywhere but the final segment is literal too', () => {
+    expect(matchDynamicRoute('/:path*/tail', '/a/b/tail')).toBeNull()
+    expect(matchDynamicRoute('/:path*/tail', '/x*/tail')).toEqual({ params: { path: 'x' } })
   })
 
   it('has no optional segments', () => {
@@ -226,5 +233,104 @@ describe('fillRoutePattern — the one encoder for a record\'s href', () => {
   it('round-trips through the matcher — what it emits, matchDynamicRoute captures back', () => {
     const href = fillRoutePattern('/team/:slug', { slug: 'Ada Lovelace' })
     expect(matchDynamicRoute('/team/:slug', href)).toEqual({ params: { slug: 'Ada Lovelace' } })
+  })
+})
+
+describe('`:name*` — the ONE multi-segment construct (the [...path] route folder)', () => {
+  // Admitted 2026-09-04 by ruling; announced to the consumer that imports this
+  // leaf before it landed. Final segment only; the build emits `:path*` and no
+  // other name.
+  it('captures one or more segments, slashes intact', () => {
+    expect(matchDynamicRoute('/blog/:path*', '/blog/my-post')).toEqual({ params: { path: 'my-post' } })
+    expect(matchDynamicRoute('/blog/:path*', '/blog/rust/2025/my-post')).toEqual({ params: { path: 'rust/2025/my-post' } })
+  })
+
+  it('captures nothing empty — the bare parent is not a match, nor is an empty segment', () => {
+    expect(matchDynamicRoute('/blog/:path*', '/blog')).toBeNull()
+    expect(matchDynamicRoute('/blog/:path*', '/blog/')).toBeNull()
+    expect(matchDynamicRoute('/blog/:path*', '/blog/a//b')).toBeNull()
+  })
+
+  it('decodes PER SEGMENT — an encoded slash inside a segment stays a value', () => {
+    expect(matchDynamicRoute('/team/:path*', '/team/research/members%2Fada')).toEqual({
+      params: { path: 'research/members/ada' },
+    })
+    expect(matchDynamicRoute('/team/:path*', '/team/caf%C3%A9/a%20b')).toEqual({ params: { path: 'café/a b' } })
+  })
+
+  it('composes with ordinary params before it', () => {
+    expect(matchDynamicRoute('/:lang/docs/:path*', '/en/docs/a/b')).toEqual({ params: { lang: 'en', path: 'a/b' } })
+  })
+
+  it('routePatternToRegex names the catch-all and lists it among the params', () => {
+    const { paramNames, catchAll, regex } = routePatternToRegex('/blog/:path*')
+    expect(paramNames).toEqual(['path'])
+    expect(catchAll).toBe('path')
+    expect(regex.test('/blog/a/b')).toBe(true)
+    expect(routePatternToRegex('/blog/:slug').catchAll).toBeNull()
+  })
+
+  it('CONTROL — every pattern without the construct compiles to exactly the regex it did before', () => {
+    expect(routePatternToRegex('/blog/:slug').regex.source).toBe('^\\/blog\\/([^/]+)$')
+    expect(routePatternToRegex('/files/:name.json').regex.source).toBe('^\\/files\\/([^/]+)\\.json$')
+    expect(routePatternToRegex('/docs/*').regex.source).toBe('^\\/docs\\/\\*$')
+  })
+
+  it('isDynamicRoute is unchanged by it', () => {
+    expect(isDynamicRoute('/blog/:path*')).toBe(true)
+  })
+})
+
+describe('splitPathCapture — the split rule', () => {
+  it('yields the whole capture, the leading directory and the last segment', () => {
+    expect(splitPathCapture('rust/2025/my-post')).toEqual({ path: 'rust/2025/my-post', dir: 'rust/2025', slug: 'my-post' })
+  })
+
+  it('a single segment has an empty dir, so `:slug` means the same in both route kinds', () => {
+    expect(splitPathCapture('my-post')).toEqual({ path: 'my-post', dir: '', slug: 'my-post' })
+  })
+
+  it('tolerates stray slashes and non-strings', () => {
+    expect(splitPathCapture('/a/b/')).toEqual({ path: 'a/b', dir: 'a', slug: 'b' })
+    expect(splitPathCapture(undefined)).toEqual({ path: '', dir: '', slug: '' })
+  })
+})
+
+describe('joinPathCapture — the split rule in reverse', () => {
+  it('composes a record\'s path from its placement and its handle', () => {
+    expect(joinPathCapture({ dir: 'rust/2025', slug: 'my-post' })).toBe('rust/2025/my-post')
+    expect(joinPathCapture({ dir: '', slug: 'my-post' })).toBe('my-post')
+    expect(joinPathCapture({ slug: 'my-post' })).toBe('my-post')
+  })
+
+  it('is null with no handle — no partial path', () => {
+    expect(joinPathCapture({ dir: 'a' })).toBeNull()
+    expect(joinPathCapture({})).toBeNull()
+  })
+
+  it('round-trips through the split', () => {
+    const parts = splitPathCapture('a/b/c')
+    expect(joinPathCapture(parts)).toBe('a/b/c')
+  })
+})
+
+describe('fillRoutePattern — a catch-all is filled from placement + handle, each segment encoded', () => {
+  it('fills `:path*` from `path` (the placement dir) and `slug`', () => {
+    expect(fillRoutePattern('/blog/:path*', { path: 'rust/2025', slug: 'my post' })).toBe('/blog/rust/2025/my%20post')
+    expect(fillRoutePattern('/blog/:path*', { path: '', slug: 'my-post' })).toBe('/blog/my-post')
+    expect(fillRoutePattern('/blog/:path*', { dir: 'a', slug: 'b' })).toBe('/blog/a/b')
+  })
+
+  it('a slash inside a SEGMENT is encoded, the slashes between segments are structure', () => {
+    expect(fillRoutePattern('/team/:path*', { path: 'research', slug: 'members/ada' })).toBe('/team/research/members%2Fada')
+  })
+
+  it('returns null without a handle', () => {
+    expect(fillRoutePattern('/blog/:path*', { path: 'a' })).toBeNull()
+  })
+
+  it('round-trips through the matcher', () => {
+    const href = fillRoutePattern('/blog/:path*', { path: 'rust/2025', slug: 'my post' })
+    expect(matchDynamicRoute('/blog/:path*', href)).toEqual({ params: { path: 'rust/2025/my post' } })
   })
 })

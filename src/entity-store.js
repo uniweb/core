@@ -129,6 +129,13 @@ export default class EntityStore {
 
     const page = block.page
     const website = block.website
+    const dynamicContext = block.dynamicContext || page?.dynamicContext
+    // The route's variables, for a query that binds `:path` / `:dir` / `:slug`.
+    // A baked page carries `params` when it has more than the one capture;
+    // otherwise the capture itself is the only variable.
+    const variables = dynamicContext
+      ? (dynamicContext.params ?? { [dynamicContext.paramName]: dynamicContext.paramValue })
+      : null
 
     return resolveFetchConfigs(
       [
@@ -149,6 +156,7 @@ export default class EntityStore {
         // local dev, which is why `resolveQuerySource` treats absence as
         // the ordinary case and reads the compiled artifact without comment.
         records: website?.config?.records ?? null,
+        variables,
       },
     )
   }

@@ -270,3 +270,52 @@ describe('resolution says what a config will GET — depth, and the locale a liv
     expect(file.locale).toBeUndefined()
   })
 })
+
+describe('route variables reach a query as placeholders — and an unbound one drops its clause', () => {
+  const vars = { path: 'rust/2025/my-post', dir: 'rust/2025', slug: 'my-post' }
+  const decl = (extra) => [{ query: 'posts', path: '/data/posts.json', as: 'posts', ...extra }]
+
+  it('binds :dir / :path / :slug as VALUES in where', () => {
+    const cfg = resolveFetchConfigs(decl({ where: { tag: ':dir', $name: ':slug' } }), { variables: vars }).get('posts')
+    expect(cfg.where).toEqual({ tag: 'rust/2025', $name: 'my-post' })
+  })
+
+  it('binds :path as the whole scope', () => {
+    const cfg = resolveFetchConfigs(decl({ scope: ':dir' }), { variables: vars }).get('posts')
+    expect(cfg.scope).toBe('rust/2025')
+  })
+
+  it('⭐ unbound ⇒ the clause DROPS — one saved query serves the list page and the detail page', () => {
+    const list = resolveFetchConfigs(decl({ where: { tag: ':dir', published: true }, scope: ':dir' }), {}).get('posts')
+    expect(list.where).toEqual({ published: true })
+    expect('scope' in list).toBe(false)
+    const only = resolveFetchConfigs(decl({ where: { tag: ':dir' } }), {}).get('posts')
+    expect('where' in only).toBe(false)
+  })
+
+  it('a variable bound to the EMPTY string is bound — :dir under a single-segment capture', () => {
+    const cfg = resolveFetchConfigs(decl({ where: { tag: ':dir' } }), { variables: { path: 'x', dir: '', slug: 'x' } }).get('posts')
+    expect(cfg.where).toEqual({ tag: '' })
+  })
+
+  it('binds inside an operator object and inside composition, dropping what empties', () => {
+    const cfg = resolveFetchConfigs(
+      decl({ where: { or: [{ tag: ':dir' }, { pinned: true }], year: { gte: ':path' } } }),
+      { variables: { path: 'a', dir: 'a', slug: 'a' } },
+    ).get('posts')
+    expect(cfg.where).toEqual({ or: [{ tag: 'a' }, { pinned: true }], year: { gte: 'a' } })
+    const unbound = resolveFetchConfigs(decl({ where: { or: [{ tag: ':dir' }], year: { gte: ':path' } } }), {}).get('posts')
+    expect('where' in unbound).toBe(false)
+  })
+
+  it('only the three standard names are variables — anything else is a literal value', () => {
+    const cfg = resolveFetchConfigs(decl({ where: { tag: ':category', code: 'a:b' } }), { variables: vars }).get('posts')
+    expect(cfg.where).toEqual({ tag: ':category', code: 'a:b' })
+  })
+
+  it('does not mutate the authored declaration', () => {
+    const authored = decl({ where: { tag: ':dir' } })
+    resolveFetchConfigs(authored, { variables: vars })
+    expect(authored[0].where).toEqual({ tag: ':dir' })
+  })
+})

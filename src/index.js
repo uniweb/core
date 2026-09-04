@@ -52,7 +52,7 @@ export { evaluate as evaluateWhere, match as matchWhere } from './where.js'
 // (materialization, the `route:` bake) and by `@uniweb/runtime` (the fallback),
 // which is what keeps the static and live lanes answering a query identically.
 export { parseSort, sortRecords, sortToWire } from './sort.js'
-export { fillRoutePattern } from './route-match.js'
+export { fillRoutePattern, splitPathCapture, joinPathCapture } from './route-match.js'
 export { isRichSchema } from './schemas.js'
 // ⛔ `Tracker` is NOT on the package entry. It is a FEATURE, not part of the
 // object graph this package exists to define, and putting it here made every
