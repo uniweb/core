@@ -84,7 +84,9 @@ function readPattern(lane, key) {
  *
  * The stamp key is `config.records.query` — read here as a provisional spelling
  * on 2026-09-04 and NAMED THE SAME DAY by the door's owner (their site-records
- * contract, §11.4: stamped since 2026-09-04, value `/_records/_query/{locale}`).
+ * contract, §11.4: stamped since 2026-09-04; the value is the host's — it began as
+ * `/_records/_query/{locale}` and is moving to `/_query/{locale}`, and nothing here
+ * assumes either: the whole value is read and only `{locale}` is filled).
  * One constant, changed in one place should it ever move. Everything downstream
  * wakes only when a host stamps it AND the payload carries the query's Model ref
  * (`config.queries`), and stays dark otherwise. The locale is a ROUTE SEGMENT
