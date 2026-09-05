@@ -812,13 +812,17 @@ describe('refine order rides the shared sort', () => {
 })
 
 describe('R1 on a detail page — a record held in full is delivered, not fetched again', () => {
-  const RECORDS = { list: '/_records/{path}', record: '/_records/{path}/{param}' }
-  const briefs = [{ $uuid: 'u1', slug: 'ada', title: 'Ada' }, { $uuid: 'u2', slug: 'lin', title: 'Lin' }]
-  const fullAda = { $uuid: 'u1', slug: 'ada', title: 'Ada', bio: 'Full bio' }
+  // On the question door (the one live lane): the list question answers briefs,
+  // the same question narrowed by `$name` answers the record in full.
+  const RECORDS = { query: '/_records/ask/{locale}' }
+  const QUERIES = { members: { schema: '@std/person' } }
+  const briefs = [{ $uuid: 'u1', $name: 'ada', title: 'Ada' }, { $uuid: 'u2', $name: 'lin', title: 'Lin' }]
+  const fullAda = { $uuid: 'u1', $name: 'ada', title: 'Ada', bio: 'Full bio' }
+  const isRecord = (req) => req.where && req.where.$name !== undefined
 
   function liveHarness(fetcherImpl) {
     const h = makeHarness({ fetcherImpl })
-    h.website.config = { records: RECORDS }
+    h.website.config = { records: RECORDS, queries: QUERIES, defaultLanguage: 'en' }
     return h
   }
   const detailPage = () => {
@@ -827,22 +831,22 @@ describe('R1 on a detail page — a record held in full is delivered, not fetche
     return makePage({ parent, dynamicContext })
   }
 
-  it('fetches the record once (the list is briefs), then delivers it from the index on the next visit', async () => {
+  it('asks list and record once, then delivers the record from the index on the next visit', async () => {
     const calls = []
     const { entityStore, website } = liveHarness((req) => {
-      calls.push(req.endpoint)
-      if (req.endpoint === '/_records/members') return Promise.resolve({ data: briefs, meta: { depth: 'brief' } })
-      return Promise.resolve({ data: fullAda, meta: { depth: 'full' } })
+      calls.push(isRecord(req) ? 'record' : 'list')
+      return isRecord(req)
+        ? Promise.resolve({ data: [fullAda], meta: { depth: 'full' } })
+        : Promise.resolve({ data: briefs, meta: { depth: 'brief' } })
     })
     const first = await entityStore.fetch(makeBlock({ page: detailPage() }, website), {})
     expect(first.data.members).toEqual([fullAda])
-    expect(calls).toEqual(['/_records/members', '/_records/members/ada'])
+    expect(calls.sort()).toEqual(['list', 'record'])
 
-    // second visit: the list is cached and the record is held in FULL — no detail request
+    // second visit: both questions are cached under their own keys — no request
     const second = await entityStore.fetch(makeBlock({ page: detailPage() }, website), {})
     expect(second.data.members).toEqual([fullAda])
     expect(calls).toHaveLength(2)
-    // the sync path agrees, and needs no detail probe either
     const resolved = entityStore.resolve(makeBlock({ page: detailPage() }, website), {})
     expect(resolved.status).toBe('ready')
     expect(resolved.data.members).toEqual([fullAda])
@@ -850,9 +854,9 @@ describe('R1 on a detail page — a record held in full is delivered, not fetche
 
   it('the list page then sees the upgraded record too — R3, through the index', async () => {
     const { entityStore, website } = liveHarness((req) =>
-      req.endpoint === '/_records/members'
-        ? Promise.resolve({ data: briefs, meta: { depth: 'brief' } })
-        : Promise.resolve({ data: fullAda, meta: { depth: 'full' } }),
+      isRecord(req)
+        ? Promise.resolve({ data: [fullAda], meta: { depth: 'full' } })
+        : Promise.resolve({ data: briefs, meta: { depth: 'brief' } }),
     )
     await entityStore.fetch(makeBlock({ page: detailPage() }, website), {})
     const list = await entityStore.fetch(makeBlock({ page: makePage({ fetch: { query: 'members', as: 'members' } }) }, website), {})
@@ -860,18 +864,19 @@ describe('R1 on a detail page — a record held in full is delivered, not fetche
     expect(list.data.members.find((r) => r.$uuid === 'u2')).toEqual(briefs[1])
   })
 
-  it('CONTROL — a record with no identity still goes through the detail fetch every time', async () => {
+  it('CONTROL — a record with no identity is still delivered, cached by its question', async () => {
     const calls = []
-    const noIds = [{ slug: 'ada', title: 'Ada' }]
+    const noIds = [{ $name: 'ada', title: 'Ada' }]
     const { entityStore, website } = liveHarness((req) => {
-      calls.push(req.endpoint)
-      return req.endpoint === '/_records/members'
-        ? Promise.resolve({ data: noIds, meta: { depth: 'brief' } })
-        : Promise.resolve({ data: { slug: 'ada', bio: 'x' }, meta: { depth: 'full' } })
+      calls.push(isRecord(req) ? 'record' : 'list')
+      return isRecord(req)
+        ? Promise.resolve({ data: [{ $name: 'ada', bio: 'x' }], meta: { depth: 'full' } })
+        : Promise.resolve({ data: noIds, meta: { depth: 'brief' } })
     })
+    const first = await entityStore.fetch(makeBlock({ page: detailPage() }, website), {})
+    expect(first.data.members).toEqual([{ $name: 'ada', bio: 'x' }])
     await entityStore.fetch(makeBlock({ page: detailPage() }, website), {})
-    await entityStore.fetch(makeBlock({ page: detailPage() }, website), {})
-    expect(calls.filter((c) => c === '/_records/members/ada')).toHaveLength(1) // cached by key, not by index
+    expect(calls.filter((c) => c === 'record')).toHaveLength(1) // cached by key, not by index
   })
 })
 

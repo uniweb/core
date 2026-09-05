@@ -60,10 +60,15 @@ describe('a query resolves to the door when the host stamps one AND the payload 
     expect(cfg.sort).toBe('date desc')
   })
 
-  it('⛔ falls back to the ADDRESS door when the payload carries no Model ref for the query', () => {
+  it('⛔ a stamped door with no Model ref for the query is a door config with `schema: null` — loud downstream, never a fallthrough', () => {
+    // Until 2026-09-04 this fell back to the ADDRESS door. That lane is gone by
+    // ruling; a payload that stamps a door and carries no `config.queries` entry
+    // is a producer defect, and the fetcher says so per key without a request.
     const cfg = resolveFetchConfigs(authored(), opts({ queries: null })).get('members')
-    expect(cfg.door).toBeUndefined()
-    expect(cfg.endpoint).toBe('/_records/members')
+    expect(cfg.door).toBe('/_records/ask/en')
+    expect(cfg.schema).toBeNull()
+    expect(cfg.path).toBeUndefined()
+    expect(cfg).not.toHaveProperty('endpoint')
   })
 
   it('falls back to the compiled file when no lane is declared at all — CONTROL', () => {

@@ -156,8 +156,8 @@ describe('deriveCacheKey — two identities (F11)', () => {
   })
 
   it('locale splits an entry on both identities', () => {
-    expect(deriveCacheKey({ endpoint: '/_records/x', as: 'x', locale: 'fr' }))
-      .not.toBe(deriveCacheKey({ endpoint: '/_records/x', as: 'x' }))
+    expect(deriveCacheKey({ url: 'https://h.example/x', as: 'x', locale: 'fr' }))
+      .not.toBe(deriveCacheKey({ url: 'https://h.example/x', as: 'x' }))
     expect(deriveCacheKey({ query: 'x', as: 'x', depth: 'brief', locale: 'fr' }))
       .not.toBe(deriveCacheKey({ query: 'x', as: 'x', depth: 'brief' }))
   })

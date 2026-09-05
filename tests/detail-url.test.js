@@ -132,8 +132,8 @@ describe('the generic {param} alias', () => {
   // translation step is where this codebase has twice grown a second copy of a
   // rule that then drifted.
   it('resolves a host-written {param}', () => {
-    const out = buildDetailConfig({ endpoint: '/_d/articles', detail: '/_d/articles/{param}' }, ctx)
-    expect(out.endpoint).toBe('/_d/articles/my-post')
+    const out = buildDetailConfig({ url: '/_d/articles', detail: '/_d/articles/{param}' }, ctx)
+    expect(out.url).toBe('/_d/articles/my-post')
   })
 
   it('still resolves an author-written {paramName} — the convention is unchanged', () => {
@@ -143,10 +143,10 @@ describe('the generic {param} alias', () => {
 
   it('resolves {param} whatever the route calls its param', () => {
     const out = buildDetailConfig(
-      { endpoint: '/_d/x', detail: '/_d/x/{param}' },
+      { url: '/_d/x', detail: '/_d/x/{param}' },
       { paramName: 'id', paramValue: '42' }
     )
-    expect(out.endpoint).toBe('/_d/x/42')
+    expect(out.url).toBe('/_d/x/42')
   })
 
   it('leaves an unrelated placeholder literal, as it always has', () => {
@@ -166,26 +166,16 @@ describe('the generic {param} alias', () => {
 describe('the detail request keeps the collection\'s address kind', () => {
   const ctx = { paramName: 'slug', paramValue: 'p' }
 
-  // An `endpoint` carries remote semantics the fetcher decides on. Returning a
-  // detail as `path` would silently drop operator pushdown and the site's
-  // static headers for exactly the request that is one record.
-  it('endpoint → endpoint', () => {
-    const out = buildDetailConfig({ endpoint: '/_d/a', detail: 'rest', as: 'a' }, ctx)
-    expect(out).toMatchObject({ endpoint: '/_d/a/p' })
-    expect(out.path).toBeUndefined()
-    expect(out.url).toBeUndefined()
-  })
-
   it('path → path, url → url', () => {
     // `rest` appends the param as a segment, so the assertion is about WHICH
     // key carries the result, not about the URL shape that form produces.
     const local = buildDetailConfig({ path: '/d/a', detail: 'rest' }, ctx)
     expect(local.path).toBe('/d/a/p')
-    expect(local.endpoint).toBeUndefined()
+    expect(local.url).toBeUndefined()
 
     const remote = buildDetailConfig({ url: 'https://x.example/a', detail: 'rest' }, ctx)
     expect(remote.url).toBe('https://x.example/a/p')
-    expect(remote.endpoint).toBeUndefined()
+    expect(remote.path).toBeUndefined()
   })
 
   it('returns null when the collection has no address at all', () => {
@@ -240,11 +230,11 @@ describe('`{slug}` is the RECORD\'s slug, whatever the route calls its param', (
 describe('what a detail config carries beside its address', () => {
   it('depth full, the query, the locale, and the route context the fetcher keys a single-record response on', () => {
     const out = buildDetailConfig(
-      { endpoint: '/_records/members', query: 'members', as: 'members', locale: 'fr', detail: '/_records/members/{param}' },
+      { url: '/_records/members', query: 'members', as: 'members', locale: 'fr', detail: '/_records/members/{param}' },
       { paramName: 'slug', paramValue: 'ada' },
     )
     expect(out).toEqual({
-      endpoint: '/_records/members/ada',
+      url: '/_records/members/ada',
       as: 'members',
       transform: undefined,
       query: 'members',

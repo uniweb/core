@@ -21,7 +21,7 @@
  *
  * ⭐ TWO IDENTITIES, decided by whether the request carries an ADDRESS.
  *
- * An ADDRESSED request — `path`, `url` or `endpoint` — is identified by where it
+ * An ADDRESSED request — `path` or `url` — is identified by where it
  * goes: the address, the binding key, the unwrap, and for a POST its method and
  * body. Post-processing fields (`limit`, `sort`, `where`) are applied after the
  * fetch over one shared copy and must not split the cache; `query` and `depth`
@@ -37,8 +37,8 @@
  * (brief) and a record (full) of one query would collide — the one defect on
  * this path that delivers WRONG data rather than none.
  *
- * `locale` is hashed on both when present: a live lane's address does not carry
- * the locale, and two locales' records must not share an entry (F1).
+ * `locale` is hashed on both when present: two locales' answers must not share
+ * an entry, and a door config always carries the locale it was asked in.
  *
  * @param {Object} request - Normalized request (or fetch config)
  * @returns {string} A stable JSON string usable as a cache-Map key
@@ -47,18 +47,18 @@ export function deriveCacheKey(request) {
   // ⭐ `as` is the binding key — the name it has had since 2026-09-02, when the
   // compatibility alias for the older `schema` spelling was removed alongside
   // frontend's and hosting's.
-  const { path, url, endpoint, transform, locale } = request || {}
+  const { path, url, transform, locale } = request || {}
   const as = request?.as
   const method = request?.method && request.method.toUpperCase() !== 'GET'
     ? request.method.toUpperCase()
     : undefined
   const body = method === 'POST' ? request?.body : undefined
-  if (path || url || endpoint) {
+  if (path || url) {
     // ⚠️ The field NAME is part of the hash, so renaming it moves every key ONCE.
     // In-memory stores repopulate; a consumer with a persistent cache takes one
     // cold pass. Chosen over hashing under the old name, which would have hidden
     // the rename inside the one function whose job is to be canonical.
-    return JSON.stringify({ path, url, endpoint, as, transform, method, body, locale })
+    return JSON.stringify({ path, url, as, transform, method, body, locale })
   }
   const { query, schema, scope, where, sort, limit, depth } = request || {}
   return JSON.stringify({ query, schema, scope, where, sort, limit, depth, as, transform, locale })

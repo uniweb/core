@@ -142,18 +142,23 @@ describe('DataStore', () => {
   })
 })
 
-describe('deriveCacheKey — endpoint is part of the identity', () => {
-  it('separates two collections resolved through a lane', () => {
-    // Without `endpoint` in the key these collapse to one entry and the second
-    // collection reads the first one's records out of the cache.
-    const a = deriveCacheKey({ endpoint: '/_data/articles', as: 'articles' })
-    const b = deriveCacheKey({ endpoint: '/_data/news', as: 'news' })
+describe('deriveCacheKey — a door question and the compiled artifact are different identities', () => {
+  it('separates two queries asked at one door', () => {
+    // Without the question in the key these collapse to one entry and the second
+    // query reads the first one's records out of the cache.
+    const a = deriveCacheKey({ door: '/_records/_query/en', query: 'articles', schema: '@x/article', as: 'articles', depth: 'brief' })
+    const b = deriveCacheKey({ door: '/_records/_query/en', query: 'news', schema: '@x/news', as: 'news', depth: 'brief' })
     expect(a).not.toBe(b)
   })
 
-  it('separates the lane address from the artifact for one collection', () => {
-    const lane = deriveCacheKey({ endpoint: '/_data/articles', as: 'articles' })
+  it('separates the door question from the artifact for one collection', () => {
+    const asked = deriveCacheKey({ door: '/_records/_query/en', query: 'articles', schema: '@x/article', as: 'articles', depth: 'brief' })
     const file = deriveCacheKey({ path: '/data/articles.json', as: 'articles' })
-    expect(lane).not.toBe(file)
+    expect(asked).not.toBe(file)
+  })
+
+  it('⛔ `endpoint` is not an identity field — the address door is retired', () => {
+    // A stray `endpoint` on a request neither addresses it nor splits the cache.
+    expect(deriveCacheKey({ endpoint: '/_records/x', as: 'x' })).toBe(deriveCacheKey({ as: 'x' }))
   })
 })

@@ -6,7 +6,7 @@
  * Two defects, both silent on a visitor's page, both measured 2026-09-04:
  *
  *   1. `_createDynamicPage` peeked the parent's fetch AS AUTHORED while the store
- *      writes under the RESOLVED config. On a live lane (`endpoint`, no `path`)
+ *      writes under the RESOLVED config. On a live lane (`door`, no `path`)
  *      and on a non-default locale (`/fr/data/…`) the keys differ, so the probe
  *      always missed: no title, no not-found, page never cached.
  *   2. It scanned the LIST only. On a cold load of a detail URL the list is not
@@ -16,8 +16,21 @@
 import { describe, it, expect } from 'vitest'
 import Website from '../src/website.js'
 import { deriveCacheKey } from '../src/datastore.js'
+import { resolveFetchConfigs } from '../src/fetch-config.js'
+import { buildDetailConfig } from '../src/detail-url.js'
 
-const RECORDS = { list: '/_records/{path}', record: '/_records/{path}/{param}' }
+// The one live lane: the question door, with the query's Model ref on the payload.
+const RECORDS = { query: '/_records/_query/{locale}' }
+const QUERIES = { articles: { schema: '@x/article' } }
+const LIVE = { records: RECORDS, queries: QUERIES }
+// The keys the entity store writes on that lane — computed by the same rule, never
+// hand-written, so the probe and the store cannot disagree.
+const listCfg = (w) => resolveFetchConfigs([{ query: 'articles', path: '/data/articles.json', as: 'articles' }], {
+  records: RECORDS, queries: QUERIES,
+  locale: w.getActiveLocale?.() ?? null, defaultLocale: w.getDefaultLocale?.() ?? null,
+}).get('articles')
+const listKey = (w) => deriveCacheKey(listCfg(w))
+const recordKey = (w, slug) => deriveCacheKey(buildDetailConfig(listCfg(w), { paramName: 'slug', paramValue: slug }))
 
 function site(config = {}) {
   return new Website({
@@ -34,10 +47,10 @@ function site(config = {}) {
 }
 
 describe('the probe reads the key the store writes', () => {
-  it('on a live lane the list is cached under its `endpoint` — and the title is found there', () => {
-    const w = site({ records: RECORDS })
+  it('on a live lane the list is cached under its QUESTION — and the title is found there', () => {
+    const w = site(LIVE)
     // What the entity store writes for `{ query: 'articles' }` on this lane.
-    w.dataStore.set(deriveCacheKey({ query: 'articles', as: 'articles', endpoint: '/_records/articles', detail: '/_records/articles/{param}' }), {
+    w.dataStore.set(listKey(w), {
       data: [{ slug: 'hello', title: 'Hello World' }],
     })
     const page = w.getPage('/blog/hello')
@@ -45,8 +58,8 @@ describe('the probe reads the key the store writes', () => {
   })
 
   it('on a live lane a missing record is a definitive not-found once the list is cached', () => {
-    const w = site({ records: RECORDS })
-    w.dataStore.set(deriveCacheKey({ query: 'articles', as: 'articles', endpoint: '/_records/articles', detail: '/_records/articles/{param}' }), {
+    const w = site(LIVE)
+    w.dataStore.set(listKey(w), {
       data: [{ slug: 'hello', title: 'Hello World' }],
     })
     const page = w.getPage('/blog/nope')
@@ -76,10 +89,10 @@ describe('the probe reads the key the store writes', () => {
 
 describe('the page is about one record, so the record is asked first (F3)', () => {
   it('a cold load with the RECORD cached and the list not still titles the page', () => {
-    const w = site({ records: RECORDS })
-    // Only the detail fetch landed (a live lane answers one record by address).
-    w.dataStore.set(deriveCacheKey({ endpoint: '/_records/articles/hello', as: 'articles' }), {
-      data: { slug: 'hello', title: 'Hello World', description: 'The one' },
+    const w = site(LIVE)
+    // Only the detail question landed (the door answers one record by its handle).
+    w.dataStore.set(recordKey(w, 'hello'), {
+      data: [{ slug: 'hello', title: 'Hello World', description: 'The one' }],
     })
     const page = w.getPage('/blog/hello')
     expect(page.title).toBe('Hello World')
@@ -88,15 +101,15 @@ describe('the page is about one record, so the record is asked first (F3)', () =
   })
 
   it('and caches the resolved page, since the record was available', () => {
-    const w = site({ records: RECORDS })
-    w.dataStore.set(deriveCacheKey({ endpoint: '/_records/articles/hello', as: 'articles' }), {
-      data: { slug: 'hello', title: 'Hello World' },
+    const w = site(LIVE)
+    w.dataStore.set(recordKey(w, 'hello'), {
+      data: [{ slug: 'hello', title: 'Hello World' }],
     })
     expect(w.getPage('/blog/hello')).toBe(w.getPage('/blog/hello'))
   })
 
   it('with neither cached, nothing is claimed: no title change, no not-found, page not cached', () => {
-    const w = site({ records: RECORDS })
+    const w = site(LIVE)
     const first = w.getPage('/blog/hello')
     expect(first.title).toBe('Article')
     expect(first.notFound).toBeFalsy()

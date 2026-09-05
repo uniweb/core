@@ -28,7 +28,7 @@
  */
 
 import { queryDataUrl, isDataUrl, recordDataUrl } from './data-paths.js'
-import { resolveQueryAddress, resolveRecordAddressPattern, resolveQueryDoor } from './query-address.js'
+import { resolveQueryDoor } from './query-address.js'
 
 /**
  * Is this fetch declaration a per-instance *refinement* of an ancestor's
@@ -104,24 +104,6 @@ function applyDeferredDetail(cfg, queries, records) {
   // every door config has a detail source; `buildDetailConfig` composes it.
   if (cfg.door) return { ...cfg, detail: true }
 
-  // ⭐ A lane's record address is injected whenever the lane declares one —
-  // NOT only for a `deferred:` query, and the difference is load-bearing.
-  //
-  // A live lane answers a list request at brief depth and a record request in
-  // full, so a detail page that filtered the list would render the brief and
-  // silently miss the body. And it cannot fall back to the rule below: the
-  // `deferred:` declaration lives in `config.queries`, which a host's
-  // projection is not obliged to carry — so on such a host that rule can never
-  // fire, and this is the only way a detail page reaches a whole record.
-  if (cfg.endpoint) {
-    // ⛔ `cfg.query`, not `cfg.query ?? cfg.schema`. The `??` was unreachable:
-    // `endpoint` is set in exactly one place (`resolveQuerySource`), which returns
-    // early unless `cfg.query` is a non-empty string — so reaching here proves it.
-    // It read as a tolerance for two producer shapes and was really a vestige of
-    // the build lane not emitting `query`, which it now does.
-    const recordPattern = resolveRecordAddressPattern(cfg.query, records)
-    if (recordPattern) return { ...cfg, detail: recordPattern }
-  }
 
   // ⛔ **`config.queries` is keyed by QUERY NAME, so look it up by the query.**
   // This read `cfg.schema` — the BINDING KEY, which merely defaults to the query
@@ -159,9 +141,14 @@ function applyDeferredDetail(cfg, queries, records) {
  * The author names a query; this decides where its records live, and there are
  * exactly two answers:
  *
- *   - a host declared a live lane (`config.records`) → an `endpoint`, final on
- *     arrival, which the fetcher calls without composing anything further;
+ *   - a host declared a question door (`config.records.query`) → a `door`, and
+ *     the whole query goes to it (`schema` from the payload's `config.queries`;
+ *     a door with no Model ref is a loud per-key error, never a fallthrough);
  *   - nobody did → the `path` of the artifact the build emitted.
+ *
+ * ⛔ There is no third answer. The ADDRESS door — `config.records.list` /
+ * `.record`, a GET lane the runtime evaluated the query over locally — was
+ * retired 2026-09-04 by ruling (`query-address.js` says why).
  *
  * ⭐ The second is not a fallback in the apologetic sense. It is the answer for
  * every site with no backend, which is the framework's default rather than a
@@ -188,24 +175,24 @@ function resolveQuerySource(cfg, records, { queries = null, locale = null, defau
   if (door) {
     const decl = queries && typeof queries === 'object' ? queries[cfg.query] : null
     const schema = typeof decl?.schema === 'string' && decl.schema ? decl.schema : null
-    if (schema) {
-      const { path, url, ...rest } = cfg
-      const asked = { ...rest, door, schema }
-      // A saved query's own narrowing applies unless the fetch overrides it.
-      if (asked.scope === undefined && typeof decl.scope === 'string') asked.scope = decl.scope
-      if (asked.where === undefined && decl.where && typeof decl.where === 'object') asked.where = decl.where
-      if (asked.sort === undefined && decl.sort !== undefined && decl.sort !== null) asked.sort = decl.sort
-      if (asked.limit === undefined && typeof decl.limit === 'number' && decl.limit > 0) asked.limit = decl.limit
-      return asked
-    }
-  }
-
-  const endpoint = resolveQueryAddress(cfg.query, records)
-  if (endpoint) {
     // Drop the transitional `path`: two addresses on one request is an
     // ambiguity the fetcher would have to break by accident of field order.
     const { path, url, ...rest } = cfg
-    return { ...rest, endpoint }
+    if (!schema) {
+      // ⛔ LOUD, not a fallthrough. A payload that stamps a door and carries no
+      // Model ref for the query cannot ask, and reading the compiled file
+      // instead would turn a producer defect into a 404 that names the wrong
+      // thing. The fetcher refuses a door request with no `schema` before any
+      // request is made, and the block's `dataError` says exactly this.
+      return { ...rest, door, schema: null }
+    }
+    const asked = { ...rest, door, schema }
+    // A saved query's own narrowing applies unless the fetch overrides it.
+    if (asked.scope === undefined && typeof decl.scope === 'string') asked.scope = decl.scope
+    if (asked.where === undefined && decl.where && typeof decl.where === 'object') asked.where = decl.where
+    if (asked.sort === undefined && decl.sort !== undefined && decl.sort !== null) asked.sort = decl.sort
+    if (asked.limit === undefined && typeof decl.limit === 'number' && decl.limit > 0) asked.limit = decl.limit
+    return asked
   }
   return { ...cfg, path: queryDataUrl(cfg.query) }
 }
@@ -413,18 +400,14 @@ function foldScope(cfg) {
  * query's compiled file is the stripped list. `full` otherwise. An explicit
  * `depth` on the config wins (a question door's client sets it).
  *
- * `locale` — stamped on a LIVE-lane config only. A compiled path already carries
- * its locale (`/fr/data/…`), but a live address does not, and two locales'
- * records must not share a cache entry (F1). Absent on the default locale, so a
- * site with one language sees no new field.
+ * `locale` — stamped on a DOOR config only. A compiled path already carries its
+ * locale (`/fr/data/…`); a door is asked in one locale (it is in the route), and
+ * two locales' answers must not share a cache entry.
  */
 function stampDepthAndLocale(cfg, locale, defaultLocale) {
   let out = cfg
   if (out.depth !== 'brief' && out.depth !== 'full') {
     out = { ...out, depth: out.detail ? 'brief' : 'full' }
-  }
-  if (out.endpoint && locale && locale !== defaultLocale && out.locale === undefined) {
-    out = { ...out, locale }
   }
   // A door is asked in exactly one locale — it is in the route — so the config
   // carries it whatever the locale is; two locales' answers never share an entry.

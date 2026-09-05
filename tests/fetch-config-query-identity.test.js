@@ -12,8 +12,8 @@ import { resolveFetchConfigs } from '../src/fetch-config.js'
  * on `query`, so it fired for a published site and never for a `--link`-deployed
  * one. Measured 2026-09-02 against a host declaring `config.records`:
  *
- *   --link   endpoint undefined, path /data/articles.json   ← the STATIC file
- *   publish  endpoint /_api/q/articles                      ← the live lane
+ *   --link   door undefined, path /data/articles.json   ← the STATIC file
+ *   publish  door /_api/q/en (the query rides in the body)   ← the live lane
  *
  * ⭐ **Same site, same declaration, two verbs, two data sources.** Publishing to
  * a platform that declares a live lane is supposed to read from it; the compiled
@@ -28,8 +28,9 @@ import { resolveFetchConfigs } from '../src/fetch-config.js'
  */
 
 // What a host declares when it answers queries live.
-const RECORDS = { list: '/_api/q/{path}', record: '/_api/r/{path}/{slug}' }
-const QUERIES = { articles: { deferred: ['body'] } }
+const RECORDS = { query: '/_api/q/{locale}' }
+const QUERIES = { articles: { schema: '@x/article', deferred: ['body'] } }
+const LOCALE = { locale: 'en', defaultLocale: 'en' }
 
 /** The build lane's shape for `fetch: { query: 'articles' }`. */
 const buildLane = (over = {}) => ({
@@ -42,16 +43,17 @@ const buildLane = (over = {}) => ({
 })
 
 describe('a host that declares a live lane', () => {
-  it('⭐ resolves the live endpoint from the BUILD lane, not just the sync lane', () => {
-    const cfg = resolveFetchConfigs([buildLane()], { queries: QUERIES, records: RECORDS })
+  it('⭐ asks the live door from the BUILD lane, not just the sync lane', () => {
+    const cfg = resolveFetchConfigs([buildLane()], { queries: QUERIES, records: RECORDS, ...LOCALE })
       .get('articles')
-    expect(cfg.endpoint).toBe('/_api/q/articles')
+    expect(cfg.door).toBe('/_api/q/en')
+    expect(cfg.schema).toBe('@x/article')
   })
 
-  it('drops the compiled path once an endpoint answers', () => {
+  it('drops the compiled path once the door answers', () => {
     // Two addresses on one request is an ambiguity the fetcher would break by
     // accident of field order.
-    const cfg = resolveFetchConfigs([buildLane()], { queries: QUERIES, records: RECORDS })
+    const cfg = resolveFetchConfigs([buildLane()], { queries: QUERIES, records: RECORDS, ...LOCALE })
       .get('articles')
     expect(cfg.path).toBeUndefined()
   })
@@ -59,8 +61,8 @@ describe('a host that declares a live lane', () => {
   it('⛔ still reads the compiled file when NO live lane is declared', () => {
     // The escape hatch, and the default for every site with no backend — which
     // is the framework's normal case, not a degraded one.
-    const cfg = resolveFetchConfigs([buildLane()], { queries: QUERIES }).get('articles')
-    expect(cfg.endpoint).toBeUndefined()
+    const cfg = resolveFetchConfigs([buildLane()], { queries: QUERIES, ...LOCALE }).get('articles')
+    expect(cfg.door).toBeUndefined()
     expect(cfg.path).toBe('/data/articles.json')
   })
 })
@@ -101,15 +103,15 @@ describe('a source-shape fetch, which has no query at all', () => {
     expect(cfg.detail).toBe('/data/articles/{slug}.json')
   })
 
-  it('⛔ gets no live endpoint — it named a file, not a query', () => {
+  it('⛔ gets no door — it named a file, not a query', () => {
     // A host's live lane answers QUERIES. A fetch that points at a path is asking
     // for that artifact, and silently redirecting it would be inventing an
     // identity the author never declared.
     const cfg = resolveFetchConfigs(
       [{ path: '/data/articles.json', as: 'articles' }],
-      { queries: QUERIES, records: RECORDS }
+      { queries: QUERIES, records: RECORDS, ...LOCALE }
     ).get('articles')
-    expect(cfg.endpoint).toBeUndefined()
+    expect(cfg.door).toBeUndefined()
     expect(cfg.path).toBe('/data/articles.json')
   })
 })

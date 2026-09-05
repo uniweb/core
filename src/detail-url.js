@@ -122,17 +122,12 @@ export function buildDetailConfig(queryConfig, dynamicContext) {
     }
   }
 
-  // Three address kinds now, and the detail request must come back as the SAME
-  // kind: an `endpoint` carries remote semantics the fetcher decides on, so
-  // returning a detail as `path` would silently drop operator pushdown and the
-  // site's static headers for exactly the request that is one record.
-  const baseUrl = queryConfig.endpoint || queryConfig.url || queryConfig.path
+  // Two address kinds, and the detail request comes back as the SAME kind as
+  // the list: a `url` the author wrote stays a `url`, a compiled `path` stays a
+  // `path`. (A third kind, the host's address door, was retired 2026-09-04.)
+  const baseUrl = queryConfig.url || queryConfig.path
   if (!baseUrl) return null
-  const addressKey = queryConfig.endpoint
-    ? 'endpoint'
-    : queryConfig.url
-      ? 'url'
-      : 'path'
+  const addressKey = queryConfig.url ? 'url' : 'path'
 
   // What every detail config carries beside its address:
   //   `as`             — the binding key, so the record lands where the list did;
