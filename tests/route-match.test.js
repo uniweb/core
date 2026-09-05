@@ -12,7 +12,7 @@
  * a caller can rely on. A host matching identically depends on all of it.
  */
 
-import {
+import { recordHandle, routeParamValue,
   matchDynamicRoute,
   routePatternToRegex,
   normalizeRoute,
@@ -332,5 +332,34 @@ describe('fillRoutePattern — a catch-all is filled from placement + handle, ea
   it('round-trips through the matcher', () => {
     const href = fillRoutePattern('/blog/:path*', { path: 'rust/2025', slug: 'my post' })
     expect(matchDynamicRoute('/blog/:path*', href)).toEqual({ params: { path: 'rust/2025/my post' } })
+  })
+})
+
+
+describe('the placement handle — `$name` on a live record, `slug` on a file-lane one', () => {
+  it('recordHandle prefers $name and falls back to slug', () => {
+    expect(recordHandle({ $name: 'ada', slug: 'not-this' })).toBe('ada')
+    expect(recordHandle({ slug: 'ada' })).toBe('ada')
+    expect(recordHandle({ $name: '', slug: 'ada' })).toBe('ada')
+    expect(recordHandle({ title: 'no handle' })).toBeUndefined()
+    expect(recordHandle(null)).toBeUndefined()
+  })
+
+  it('routeParamValue reads the handle for `slug` and the field for any other param', () => {
+    const live = { $name: 'ada', id: 7, slug: 'model-field' }
+    expect(routeParamValue(live, 'slug')).toBe('ada')
+    expect(routeParamValue(live, 'id')).toBe(7)
+    expect(routeParamValue({ slug: 'ada' }, 'slug')).toBe('ada')
+  })
+
+  it('fillRoutePattern links a live record by its $name', () => {
+    // Until 2026-09-04 a record served with `$name` and no `slug` produced no href
+    // at all — a list on a live lane linked to nothing.
+    expect(fillRoutePattern('/team/:slug', { $name: 'ada lovelace' })).toBe('/team/ada%20lovelace')
+    expect(fillRoutePattern('/docs/:path*', { $name: 'intro', path: 'guides/start' })).toBe('/docs/guides/start/intro')
+    // CONTROL — the file lane is unchanged
+    expect(fillRoutePattern('/team/:slug', { slug: 'ada' })).toBe('/team/ada')
+    // a Model's own `slug` field does not override the placement
+    expect(fillRoutePattern('/team/:slug', { $name: 'ada', slug: 'model-field' })).toBe('/team/ada')
   })
 })

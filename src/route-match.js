@@ -239,6 +239,48 @@ export function joinPathCapture({ dir, slug } = {}) {
 }
 
 /**
+ * A record's PLACEMENT HANDLE — the segment its folder entry is named by, which is
+ * what a `[slug]` route (or the last segment of a `[...path]` one) matches.
+ *
+ * ⭐ Two lanes spell it differently and mean one thing. A host's records door
+ * serves the entry's handle as `$name` — `$`-namespaced because a Model may
+ * declare its own `name` or `slug` field (five of eight seeded briefs do), and
+ * the placement must not be shadowed by one. The file lane derives it from the
+ * source filename and calls it `slug`. `$name` wins when present: on a live
+ * record a Model field named `slug` is the author's data, not the placement.
+ *
+ * @param {Object} record
+ * @returns {string|undefined}
+ */
+export function recordHandle(record) {
+  if (!record || typeof record !== 'object') return undefined
+  const name = record.$name
+  if (typeof name === 'string' && name.length) return name
+  return record.slug
+}
+
+/**
+ * The value a record carries for a route param. `slug` — the default param, and
+ * the last segment of a `[...path]` route — is the placement handle
+ * (`recordHandle`); any other param is a field the site chose to route by.
+ *
+ * ⛔ Every reader that matches a delivered record to a route param goes through
+ * this — the entity store, the website's dynamic page, the kit's detail hook,
+ * the href encoder below. Until 2026-09-04 each read `item[paramName]` directly,
+ * so a record served with `$name` and no `slug` matched nothing: a template page
+ * on a live lane rendered `[]` and a list linked to no record.
+ *
+ * @param {Object} record
+ * @param {string} paramName
+ * @returns {*}
+ */
+export function routeParamValue(record, paramName) {
+  if (!record || typeof record !== 'object') return undefined
+  if (paramName === 'slug') return recordHandle(record)
+  return record[paramName]
+}
+
+/**
  * Fill a route pattern's params from a record — the ONE encoder for a record's href.
  *
  * `/blog/:slug` + `{ slug: 'a post' }` → `/blog/a%20post`. Every value is
@@ -274,16 +316,17 @@ export function fillRoutePattern(pattern, values) {
     // slashes between them kept as structure. `dir` is the placement; a record
     // carries it as `path` (the folder `records.yml` put it in), which is why
     // `path` here is read as the DIRECTORY and never as a composed capture.
-    if (joinPathCapture({ dir: values.dir ?? values.path, slug: values.slug }) === null) return null
+    const handle = recordHandle(values)
+    if (joinPathCapture({ dir: values.dir ?? values.path, slug: handle }) === null) return null
     const dir = String(values.dir ?? values.path ?? '')
     const segments = dir.split('/').filter(Boolean).map((seg) => encodeURIComponent(seg))
     // The handle is ONE segment whatever it contains: a `/` inside it is a value.
-    segments.push(encodeURIComponent(String(values.slug)))
+    segments.push(encodeURIComponent(String(handle)))
     tailHref = '/' + segments.join('/')
     head = pattern.slice(0, tail.index)
   }
   const href = head.replace(new RegExp(`:(${PARAM_NAME})`, 'g'), (_, name) => {
-    const value = values[name]
+    const value = routeParamValue(values, name)
     if (value === undefined || value === null || value === '') {
       missing = true
       return ''

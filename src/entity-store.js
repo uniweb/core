@@ -15,7 +15,7 @@
  */
 
 import { isFetchRefinement, resolveFetchConfigs } from './fetch-config.js'
-import { fillRoutePattern } from './route-match.js'
+import { fillRoutePattern, routeParamValue } from './route-match.js'
 import { sortRecords } from './sort.js'
 
 /**
@@ -252,7 +252,7 @@ export default class EntityStore {
           const { paramName, paramValue } = dynamicContext
           const items = cached.data
           let filtered = Array.isArray(items)
-            ? items.filter((item) => String(item[paramName]) !== String(paramValue))
+            ? items.filter((item) => String(routeParamValue(item, paramName)) !== String(paramValue))
             : items
           if (order) filtered = this._sortItems(filtered, order)
           data[schema] = limit && Array.isArray(filtered) ? filtered.slice(0, limit) : filtered
@@ -278,7 +278,7 @@ export default class EntityStore {
           const { paramName, paramValue } = dynamicContext
           const items = cached.data
           const match = Array.isArray(items)
-            ? items.find((item) => String(item[paramName]) === String(paramValue))
+            ? items.find((item) => String(routeParamValue(item, paramName)) === String(paramValue))
             : null
           if (!match) {
             data[schema] = []
@@ -386,7 +386,7 @@ export default class EntityStore {
         }
         const { paramName, paramValue } = dynamicContext
         let filtered = Array.isArray(records)
-          ? records.filter((item) => String(item[paramName]) !== String(paramValue))
+          ? records.filter((item) => String(routeParamValue(item, paramName)) !== String(paramValue))
           : (records ?? [])
         if (order) filtered = this._sortItems(filtered, order)
         data[schema] = limit && Array.isArray(filtered) ? filtered.slice(0, limit) : filtered
@@ -424,7 +424,7 @@ export default class EntityStore {
         }
 
         const match = records?.find(
-          (item) => String(item[paramName]) === String(paramValue)
+          (item) => String(routeParamValue(item, paramName)) === String(paramValue)
         ) ?? null
 
         if (!match) {

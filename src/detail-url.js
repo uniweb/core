@@ -22,6 +22,7 @@
  * a matched route pattern says nothing about the record behind it.
  */
 
+import { recordHandle } from './route-match.js'
 import { substitutePlaceholders } from './substitute-placeholders.js'
 
 /**
@@ -54,8 +55,9 @@ function paramContext(paramName, paramValue, record) {
   // `useEntityDetail` — its slug fills the name the FILE was written under. A
   // caller with no record in hand leaves `{slug}` literal rather than guessing
   // the capture is one: a visibly unresolved address beats a plausible wrong one.
-  if (paramName !== 'slug' && record && typeof record === 'object' && record.slug != null && record.slug !== '') {
-    context.slug = record.slug
+  const handle = recordHandle(record)
+  if (paramName !== 'slug' && handle != null && handle !== '') {
+    context.slug = handle
   }
   return context
 }

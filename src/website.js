@@ -11,7 +11,7 @@ import FetcherDispatcher from './fetcher-dispatcher.js'
 import ObservableState from './observable-state.js'
 import { normalizeSeo } from './seo.js'
 import { resolveDefaultLocale, localeLabel } from './locale-config.js'
-import { matchDynamicRoute, decodeRouteValue, routePatternToRegex, splitPathCapture } from './route-match.js'
+import { matchDynamicRoute, decodeRouteValue, routePatternToRegex, splitPathCapture, routeParamValue } from './route-match.js'
 import { resolveFetchConfigs } from './fetch-config.js'
 import { buildDetailConfig } from './detail-url.js'
 import { resolveService } from './services.js'
@@ -658,7 +658,7 @@ export default class Website {
       }
 
       if (!currentItem) {
-        currentItem = items.find(item => String(item[paramName]) === String(paramValue)) ?? null
+        currentItem = items.find(item => String(routeParamValue(item, paramName)) === String(paramValue)) ?? null
       }
 
       if (currentItem) {
