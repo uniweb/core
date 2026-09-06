@@ -1,48 +1,48 @@
 /**
  * The QUESTION door — a host that answers a query instead of serving a path
- * (the records door's contract). ⚠️ Nothing here is live: no host stamps
- * the door yet, and the stamp key this client reads (`config.records.query`) is
+ * (the records contract). ⚠️ Nothing here is live: no host stamps
+ * the service yet, and the stamp key this client reads (`config.services.records`) is
  * provisional. These pin what framework will SEND and how it degrades, so the
  * client can go live by a stamp alone.
  */
 import { describe, it, expect } from 'vitest'
 import { resolveFetchConfigs } from '../src/fetch-config.js'
 import { buildDetailConfig, ROUTE_HANDLE_KEY } from '../src/detail-url.js'
-import { resolveQueryDoor, _resetQueryAddressWarnings } from '../src/query-address.js'
+import { resolveRecordsService, _resetRecordsServiceWarnings } from '../src/records-service.js'
 import { deriveCacheKey } from '../src/datastore.js'
 
-const LANE = { list: '/_records/{path}', record: '/_records/{path}/{param}', query: '/_records/ask/{locale}' }
+const SERVICES = { records: '/_records/ask/{locale}' }
 const QUERIES = { members: { name: 'members', schema: '@std/person', sort: 'name', where: { published: true } } }
 const authored = (extra = {}) => [{ query: 'members', path: '/data/members.json', as: 'members', ...extra }]
-const opts = (extra = {}) => ({ records: LANE, queries: QUERIES, locale: 'en', defaultLocale: 'en', ...extra })
+const opts = (extra = {}) => ({ services: SERVICES, queries: QUERIES, locale: 'en', defaultLocale: 'en', ...extra })
 
-describe('resolveQueryDoor — the stamp, and the locale as a route segment', () => {
-  it('substitutes the locale into the door pattern', () => {
-    expect(resolveQueryDoor(LANE, 'fr')).toBe('/_records/ask/fr')
+describe('resolveRecordsService — the stamp, and the locale as a route segment', () => {
+  it('substitutes the locale into the endpoint', () => {
+    expect(resolveRecordsService(SERVICES, 'fr')).toBe('/_records/ask/fr')
   })
 
-  it('is null with no door stamped, or no locale to name', () => {
-    expect(resolveQueryDoor({ list: '/_records/{path}' }, 'en')).toBeNull()
-    expect(resolveQueryDoor(LANE, null)).toBeNull()
-    expect(resolveQueryDoor(null, 'en')).toBeNull()
+  it('is null with no records row stamped, or no locale to name', () => {
+    expect(resolveRecordsService({ list: '/_records/{path}' }, 'en')).toBeNull()
+    expect(resolveRecordsService(SERVICES, null)).toBeNull()
+    expect(resolveRecordsService(null, 'en')).toBeNull()
   })
 
-  it('refuses a door pattern with no {locale} slot — the locale cannot be omitted there', () => {
-    _resetQueryAddressWarnings()
+  it('refuses an endpoint with no {locale} slot — the locale cannot be omitted there', () => {
+    _resetRecordsServiceWarnings()
     const warn = []
     const orig = console.warn
     console.warn = (m) => warn.push(String(m))
     try {
-      expect(resolveQueryDoor({ query: '/_records/ask' }, 'en')).toBeNull()
+      expect(resolveRecordsService({ records: '/_records/ask' }, 'en')).toBeNull()
     } finally { console.warn = orig }
     expect(warn.some((m) => m.includes('{locale}'))).toBe(true)
   })
 })
 
-describe('a query resolves to the door when the host stamps one AND the payload carries the Model ref', () => {
+describe('a query resolves to the service when the host offers one AND the payload carries the Model ref', () => {
   it('composes the whole question: door, schema, the saved query\'s narrowing, depth, locale', () => {
     const cfg = resolveFetchConfigs(authored({ limit: 5 }), opts()).get('members')
-    expect(cfg.door).toBe('/_records/ask/en')
+    expect(cfg.ask).toBe('/_records/ask/en')
     expect(cfg.schema).toBe('@std/person')
     expect(cfg.where).toEqual({ published: true })
     expect(cfg.sort).toBe('name')
@@ -60,12 +60,12 @@ describe('a query resolves to the door when the host stamps one AND the payload 
     expect(cfg.sort).toBe('date desc')
   })
 
-  it('⛔ a stamped door with no Model ref for the query is a door config with `schema: null` — loud downstream, never a fallthrough', () => {
-    // Until 2026-09-04 this fell back to the ADDRESS door. That lane is gone by
-    // ruling; a payload that stamps a door and carries no `config.queries` entry
+  it('⛔ a stamped service with no Model ref for the query is an asked config with `schema: null` — loud downstream, never a fallthrough', () => {
+    // Until 2026-09-04 this fell back to the retired GET lane. That lane is gone by
+    // ruling; a payload that offers the service and carries no `config.queries` entry
     // is a producer defect, and the fetcher says so per key without a request.
     const cfg = resolveFetchConfigs(authored(), opts({ queries: null })).get('members')
-    expect(cfg.door).toBe('/_records/ask/en')
+    expect(cfg.ask).toBe('/_records/ask/en')
     expect(cfg.schema).toBeNull()
     expect(cfg.path).toBeUndefined()
     expect(cfg).not.toHaveProperty('endpoint')
@@ -73,11 +73,11 @@ describe('a query resolves to the door when the host stamps one AND the payload 
 
   it('falls back to the compiled file when no lane is declared at all — CONTROL', () => {
     const cfg = resolveFetchConfigs(authored(), { queries: QUERIES }).get('members')
-    expect(cfg.door).toBeUndefined()
+    expect(cfg.ask).toBeUndefined()
     expect(cfg.path).toBe('/data/members.json')
   })
 
-  it('a door config is keyed by the QUESTION, and two locales never share an entry', () => {
+  it('an asked config is keyed by the QUESTION, and two locales never share an entry', () => {
     const en = resolveFetchConfigs(authored(), opts()).get('members')
     const fr = resolveFetchConfigs(authored(), opts({ locale: 'fr' })).get('members')
     expect(deriveCacheKey(en)).not.toBe(deriveCacheKey(fr))
@@ -85,18 +85,18 @@ describe('a query resolves to the door when the host stamps one AND the payload 
     expect(deriveCacheKey(en)).not.toBe(deriveCacheKey(other))
   })
 
-  it('a door config keeps scope as the door\'s own field — no fold into where', () => {
+  it('an asked config keeps scope as the door\'s own field — no fold into where', () => {
     const cfg = resolveFetchConfigs(authored({ scope: 'research' }), opts()).get('members')
     expect(cfg.scope).toBe('research')
     expect(cfg.where).toEqual({ published: true })
   })
 })
 
-describe('the record on a door is the same question, narrowed by the handle, in full', () => {
+describe('the record on the service is the same question, narrowed by the handle, in full', () => {
   it('binds the route param under the handle key beside the authored where, drops sort and limit', () => {
     const list = resolveFetchConfigs(authored({ limit: 5 }), opts()).get('members')
     const rec = buildDetailConfig(list, { paramName: 'slug', paramValue: 'ada' })
-    expect(rec.door).toBe('/_records/ask/en')
+    expect(rec.ask).toBe('/_records/ask/en')
     expect(rec.schema).toBe('@std/person')
     expect(rec.where).toEqual({ published: true, [ROUTE_HANDLE_KEY]: 'ada' })
     expect(rec.depth).toBe('full')

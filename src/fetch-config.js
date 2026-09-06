@@ -28,7 +28,7 @@
  */
 
 import { queryDataUrl, isDataUrl, recordDataUrl } from './data-paths.js'
-import { resolveQueryDoor } from './query-address.js'
+import { resolveRecordsService } from './records-service.js'
 
 /**
  * Is this fetch declaration a per-instance *refinement* of an ancestor's
@@ -97,12 +97,12 @@ function localizeConfig(cfg, locale, defaultLocale) {
  * @param {Object|null} queries - the site's `config.queries` map
  * @returns {Object} the original config, or a copy carrying `detail`
  */
-function applyDeferredDetail(cfg, queries, records) {
+function applyDeferredDetail(cfg, queries) {
   if (cfg.detail !== undefined) return cfg
 
-  // A question door answers a RECORD by the same question narrowed to it, so
-  // every door config has a detail source; `buildDetailConfig` composes it.
-  if (cfg.door) return { ...cfg, detail: true }
+  // The records service answers a RECORD by the same question narrowed to it,
+  // so every asked config has a detail source; `buildDetailConfig` composes it.
+  if (cfg.ask) return { ...cfg, detail: true }
 
 
   // ⛔ **`config.queries` is keyed by QUERY NAME, so look it up by the query.**
@@ -141,14 +141,15 @@ function applyDeferredDetail(cfg, queries, records) {
  * The author names a query; this decides where its records live, and there are
  * exactly two answers:
  *
- *   - a host declared a question door (`config.records.query`) → a `door`, and
- *     the whole query goes to it (`schema` from the payload's `config.queries`;
- *     a door with no Model ref is a loud per-key error, never a fallthrough);
- *   - nobody did → the `path` of the artifact the build emitted.
+ *   - a host offers the `records` service (`config.services.records`) → an
+ *     `ask` address, and the whole query goes to it (`schema` from the
+ *     payload's `config.queries`; an `ask` with no Model ref is a loud per-key
+ *     error, never a fallthrough);
+ *   - nobody does → the `path` of the artifact the build emitted.
  *
- * ⛔ There is no third answer. The ADDRESS door — `config.records.list` /
- * `.record`, a GET lane the runtime evaluated the query over locally — was
- * retired 2026-09-04 by ruling (`query-address.js` says why).
+ * ⛔ There is no third answer, and there has not been one since the GET lane
+ * the runtime evaluated locally was retired (2026-09-04). `records-service.js`
+ * says why the wrapper it lived in went with it.
  *
  * ⭐ The second is not a fallback in the apologetic sense. It is the answer for
  * every site with no backend, which is the framework's default rather than a
@@ -161,32 +162,31 @@ function applyDeferredDetail(cfg, queries, records) {
  * `query`, ignoring any `path`), so the two agree rather than disagreeing on a
  * shape nobody hand-writes.
  */
-function resolveQuerySource(cfg, records, { queries = null, locale = null, defaultLocale = null } = {}) {
+function resolveQuerySource(cfg, services, { queries = null, locale = null, defaultLocale = null } = {}) {
   if (typeof cfg.query !== 'string' || cfg.query.length === 0) return cfg
 
-  // ⭐ THE QUESTION DOOR FIRST. A host that answers questions gets the whole
-  // query — `schema`, `scope`, `where`, `sort`, `limit`, `depth` — and composes
-  // no per-query address at all (the records door's contract, §2). It
-  // needs the query's MODEL REF, which lives on the site's `config.queries`
-  // declaration; a payload that carries the door but not the declaration
-  // cannot ask, and falls through to the address door below. ⚠️ Dark until a
-  // host stamps the door; see `resolveQueryDoor`.
-  const door = resolveQueryDoor(records, locale ?? defaultLocale)
-  if (door) {
+  // ⭐ THE SERVICE FIRST. A host that answers questions gets the whole query —
+  // `schema`, `scope`, `where`, `sort`, `limit`, `depth` — and composes no
+  // per-query address at all (the records contract, §2). It needs the query's
+  // MODEL REF, which lives on the site's `config.queries` declaration; a
+  // payload that offers the service but carries no declaration cannot ask, and
+  // says so. ⚠️ Dark until a host stamps the row; see `resolveRecordsService`.
+  const ask = resolveRecordsService(services, locale ?? defaultLocale)
+  if (ask) {
     const decl = queries && typeof queries === 'object' ? queries[cfg.query] : null
     const schema = typeof decl?.schema === 'string' && decl.schema ? decl.schema : null
     // Drop the transitional `path`: two addresses on one request is an
     // ambiguity the fetcher would have to break by accident of field order.
     const { path, url, ...rest } = cfg
     if (!schema) {
-      // ⛔ LOUD, not a fallthrough. A payload that stamps a door and carries no
+      // ⛔ LOUD, not a fallthrough. A payload that offers the service and carries no
       // Model ref for the query cannot ask, and reading the compiled file
       // instead would turn a producer defect into a 404 that names the wrong
-      // thing. The fetcher refuses a door request with no `schema` before any
+      // thing. The fetcher refuses an asked request with no `schema` before any
       // request is made, and the block's `dataError` says exactly this.
-      return { ...rest, door, schema: null }
+      return { ...rest, ask, schema: null }
     }
-    const asked = { ...rest, door, schema }
+    const asked = { ...rest, ask, schema }
     // A saved query's own narrowing applies unless the fetch overrides it.
     if (asked.scope === undefined && typeof decl.scope === 'string') asked.scope = decl.scope
     if (asked.where === undefined && decl.where && typeof decl.where === 'object') asked.where = decl.where
@@ -248,9 +248,9 @@ function bindingKey(cfg) {
  * @param {string|null} [options.locale] - the locale being rendered
  * @param {string|null} [options.defaultLocale] - the site's default locale
  * @param {Object|null} [options.queries] - the site's `config.queries`
- * @param {Object|null} [options.records] - the site's `config.records`, a host's
- *   live-records lane. Absent means the compiled artifact answers, which is
- *   the whole of what a site with no backend needs.
+ * @param {Object|null} [options.services] - the site's `config.services`. The
+ *   `records` row is a host's live-records lane; absent means the compiled
+ *   artifact answers, which is the whole of what a site with no backend needs.
  * @param {Object|null} [options.variables] - the route's variables on a template
  *   page (`{ path, dir, slug }` under `[...path]`, the capture under `[slug]`);
  *   a `:path` / `:dir` / `:slug` placeholder in `where:` or `scope:` binds to
@@ -263,7 +263,7 @@ export function resolveFetchConfigs(sources, options = {}) {
     locale = null,
     defaultLocale = null,
     queries = null,
-    records = null,
+    services = null,
     variables = null,
   } = options
 
@@ -280,10 +280,10 @@ export function resolveFetchConfigs(sources, options = {}) {
       if (!collectAll && !schemas.includes(key)) continue
       // Address first: localization and deferred-detail both key on `path`,
       // which a query ref does not have until this runs.
-      const sourced = resolveQuerySource(cfg, records, { queries, locale, defaultLocale })
+      const sourced = resolveQuerySource(cfg, services, { queries, locale, defaultLocale })
       const localized = localizeConfig(sourced, locale, defaultLocale)
       const bound = foldScope(bindRouteVariables(localized, variables))
-      configs.set(key, stampDepthAndLocale(applyDeferredDetail(bound, queries, records), locale, defaultLocale))
+      configs.set(key, stampDepthAndLocale(applyDeferredDetail(bound, queries), locale, defaultLocale))
     }
   }
 
@@ -305,8 +305,8 @@ const ROUTE_VARIABLE = /^:(path|dir|slug)$/
  * the list page and the detail page: `where: { tag: :dir }` narrows on
  * `/blog/rust/my-post` and vanishes on `/blog`, where there is no `:dir`. A
  * variable bound to an empty string (`:dir` on a single-segment capture) is
- * bound, and binds the empty value. Backend's records door states the same
- * rule from its side (the records door's contract, §6b).
+ * bound, and binds the empty value. The backend answering the records service
+ * states the same rule from its side (the records contract, §6b).
  *
  * ⚠️ The price, stated where it is paid: a MISSPELLED variable is byte-identical
  * to an intentional list page. Only an authoring surface can catch that; this
@@ -372,17 +372,17 @@ function bindWhere(where, variables) {
 }
 
 /**
- * `scope:` on a lane that cannot be ASKED — the compiled file, an address door —
- * is the same question as `where: { path: { under: scope } }`: a record's
+ * `scope:` on a lane that cannot be ASKED — the compiled file — is the same
+ * question as `where: { path: { under: scope } }`: a record's
  * `path` is the folder `records.yml` placed it in, and the evaluator's `under`
  * is segment-aware containment. Folding it keeps the language the INTERSECTION
  * of both lanes: an author
  * writes `scope: :dir` once and it means the same branch on a static site and
- * on a door that takes `scope` natively. A config addressed to a question door
- * (`door`) keeps `scope` as the door's own field.
+ * on a service that takes `scope` natively. A config carrying `ask` keeps
+ * `scope` as the service's own field.
  */
 function foldScope(cfg) {
-  if (typeof cfg.scope !== 'string' || cfg.scope === '' || cfg.door) return cfg
+  if (typeof cfg.scope !== 'string' || cfg.scope === '' || cfg.ask) return cfg
   const { scope, ...rest } = cfg
   const under = { path: { under: scope } }
   const where = cfg.where && typeof cfg.where === 'object' && Object.keys(cfg.where).length
@@ -398,20 +398,20 @@ function foldScope(cfg) {
  * a list with a separate record address is a list of partial records: a live
  * lane answers a list at brief depth and a record in full, and a `deferred:`
  * query's compiled file is the stripped list. `full` otherwise. An explicit
- * `depth` on the config wins (a question door's client sets it).
+ * `depth` on the config wins (the records service's client sets it).
  *
- * `locale` — stamped on a DOOR config only. A compiled path already carries its
- * locale (`/fr/data/…`); a door is asked in one locale (it is in the route), and
- * two locales' answers must not share a cache entry.
+ * `locale` — stamped on an ASKED config only. A compiled path already carries
+ * its locale (`/fr/data/…`); the service is asked in one locale (it is in the
+ * route), and two locales' answers must not share a cache entry.
  */
 function stampDepthAndLocale(cfg, locale, defaultLocale) {
   let out = cfg
   if (out.depth !== 'brief' && out.depth !== 'full') {
     out = { ...out, depth: out.detail ? 'brief' : 'full' }
   }
-  // A door is asked in exactly one locale — it is in the route — so the config
+  // The service is asked in exactly one locale — it is in the route — so the config
   // carries it whatever the locale is; two locales' answers never share an entry.
-  if (out.door && out.locale === undefined) {
+  if (out.ask && out.locale === undefined) {
     const asked = locale ?? defaultLocale
     if (asked) out = { ...out, locale: asked }
   }

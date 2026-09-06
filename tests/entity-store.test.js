@@ -814,7 +814,7 @@ describe('refine order rides the shared sort', () => {
 describe('R1 on a detail page — a record held in full is delivered, not fetched again', () => {
   // On the question door (the one live lane): the list question answers briefs,
   // the same question narrowed by `$name` answers the record in full.
-  const RECORDS = { query: '/_records/ask/{locale}' }
+  const SERVICES = { records: '/_records/ask/{locale}' }
   const QUERIES = { members: { schema: '@std/person' } }
   const briefs = [{ $uuid: 'u1', $name: 'ada', title: 'Ada' }, { $uuid: 'u2', $name: 'lin', title: 'Lin' }]
   const fullAda = { $uuid: 'u1', $name: 'ada', title: 'Ada', bio: 'Full bio' }
@@ -822,7 +822,7 @@ describe('R1 on a detail page — a record held in full is delivered, not fetche
 
   function liveHarness(fetcherImpl) {
     const h = makeHarness({ fetcherImpl })
-    h.website.config = { records: RECORDS, queries: QUERIES, defaultLanguage: 'en' }
+    h.website.config = { services: SERVICES, queries: QUERIES, defaultLanguage: 'en' }
     return h
   }
   const detailPage = () => {
@@ -881,7 +881,7 @@ describe('R1 on a detail page — a record held in full is delivered, not fetche
 })
 
 describe('on a question door a detail page asks list and record TOGETHER — no scan gates the fetch', () => {
-  const LANE = { list: '/_records/{path}', record: '/_records/{path}/{param}', query: '/_records/ask/{locale}' }
+  const SERVICES = { records: '/_records/ask/{locale}' }
   const QUERIES = { members: { name: 'members', schema: '@std/person' } }
 
   it('dispatches both at once; the record\'s own answer is delivered, `[]` when none', async () => {
@@ -893,7 +893,7 @@ describe('on a question door a detail page asks list and record TOGETHER — no 
         return Promise.resolve({ data: [{ $uuid: 'u1', $name: 'ada', name: 'Ada' }], meta: { depth: 'brief' } })
       },
     })
-    website.config = { records: LANE, queries: QUERIES }
+    website.config = { services: SERVICES, queries: QUERIES }
     const dynamicContext = { paramName: 'slug', paramValue: 'ada', schema: 'members' }
     const parent = makePage({ fetch: { query: 'members', as: 'members' } })
     const page = makePage({ parent, dynamicContext })
@@ -914,7 +914,7 @@ describe('on a question door a detail page asks list and record TOGETHER — no 
         ? Promise.resolve({ data: [], meta: { depth: 'full' } })
         : Promise.resolve({ data: [], error: 'HTTP 502' }),
     })
-    website.config = { records: LANE, queries: QUERIES }
+    website.config = { services: SERVICES, queries: QUERIES }
     const dynamicContext = { paramName: 'slug', paramValue: 'nope', schema: 'members' }
     const page = makePage({ parent: makePage({ fetch: { query: 'members', as: 'members' } }), dynamicContext })
     const result = await entityStore.fetch(makeBlock({ page }, website), {})

@@ -242,7 +242,7 @@ export function joinPathCapture({ dir, slug } = {}) {
  * A record's PLACEMENT HANDLE — the segment its folder entry is named by, which is
  * what a `[slug]` route (or the last segment of a `[...path]` one) matches.
  *
- * ⭐ Two lanes spell it differently and mean one thing. A host's records door
+ * ⭐ Two lanes spell it differently and mean one thing. A host's records service
  * serves the entry's handle as `$name` — `$`-namespaced because a Model may
  * declare its own `name` or `slug` field (five of eight seeded briefs do), and
  * the placement must not be shadowed by one. The file lane derives it from the

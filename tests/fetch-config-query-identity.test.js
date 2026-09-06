@@ -28,7 +28,7 @@ import { resolveFetchConfigs } from '../src/fetch-config.js'
  */
 
 // What a host declares when it answers queries live.
-const RECORDS = { query: '/_api/q/{locale}' }
+const SERVICES = { records: '/_api/q/{locale}' }
 const QUERIES = { articles: { schema: '@x/article', deferred: ['body'] } }
 const LOCALE = { locale: 'en', defaultLocale: 'en' }
 
@@ -44,16 +44,16 @@ const buildLane = (over = {}) => ({
 
 describe('a host that declares a live lane', () => {
   it('⭐ asks the live door from the BUILD lane, not just the sync lane', () => {
-    const cfg = resolveFetchConfigs([buildLane()], { queries: QUERIES, records: RECORDS, ...LOCALE })
+    const cfg = resolveFetchConfigs([buildLane()], { queries: QUERIES, services: SERVICES, ...LOCALE })
       .get('articles')
-    expect(cfg.door).toBe('/_api/q/en')
+    expect(cfg.ask).toBe('/_api/q/en')
     expect(cfg.schema).toBe('@x/article')
   })
 
   it('drops the compiled path once the door answers', () => {
     // Two addresses on one request is an ambiguity the fetcher would break by
     // accident of field order.
-    const cfg = resolveFetchConfigs([buildLane()], { queries: QUERIES, records: RECORDS, ...LOCALE })
+    const cfg = resolveFetchConfigs([buildLane()], { queries: QUERIES, services: SERVICES, ...LOCALE })
       .get('articles')
     expect(cfg.path).toBeUndefined()
   })
@@ -62,7 +62,7 @@ describe('a host that declares a live lane', () => {
     // The escape hatch, and the default for every site with no backend — which
     // is the framework's normal case, not a degraded one.
     const cfg = resolveFetchConfigs([buildLane()], { queries: QUERIES, ...LOCALE }).get('articles')
-    expect(cfg.door).toBeUndefined()
+    expect(cfg.ask).toBeUndefined()
     expect(cfg.path).toBe('/data/articles.json')
   })
 })
@@ -109,9 +109,9 @@ describe('a source-shape fetch, which has no query at all', () => {
     // identity the author never declared.
     const cfg = resolveFetchConfigs(
       [{ path: '/data/articles.json', as: 'articles' }],
-      { queries: QUERIES, records: RECORDS, ...LOCALE }
+      { queries: QUERIES, services: SERVICES, ...LOCALE }
     ).get('articles')
-    expect(cfg.door).toBeUndefined()
+    expect(cfg.ask).toBeUndefined()
     expect(cfg.path).toBe('/data/articles.json')
   })
 })

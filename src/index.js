@@ -20,10 +20,8 @@ export { default as ObservableState } from './observable-state.js'
 
 // Utilities
 export { substitutePlaceholders } from './substitute-placeholders.js'
-// `resolveQueryDoor` / `QUERY_DOOR_KEY` are NOT re-exported here: `./fetch-config.js`
-// reads them and a consumer that needs them imports `@uniweb/core/query-address`.
-// (The address door's `resolveQueryAddress` / `resolveRecordAddressPattern` were
-// deleted 2026-09-04 with the lane they addressed.)
+// `resolveRecordsService` / `RECORDS_SERVICE` are NOT re-exported here: `./fetch-config.js`
+// reads them and a consumer that needs them imports `@uniweb/core/records-service`.
 export { resolveFetchConfigs } from './fetch-config.js'
 export { buildDetailConfig, ROUTE_HANDLE_KEY } from './detail-url.js'
 // `isWildcardLanguages` is likewise internal — `./locale-config.js` reads it

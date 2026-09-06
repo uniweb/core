@@ -7,11 +7,11 @@
  * entity store's refine-order sort — and two of them split on commas and honoured
  * several keys while the one shipped wire dialect documented the same, so a site
  * authoring `sort: order asc, title asc` worked on the static lane and would have
- * been refused by the records door, which takes one key. The language is the
+ * been refused by the records service, which takes one key. The language is the
  * INTERSECTION of what both lanes honour, so a comma is refused here rather than
  * half-honoured somewhere.
  *
- * Author spelling, unchanged: `date`, `date asc`, `date desc`. The records door's
+ * Author spelling, unchanged: `date`, `date asc`, `date desc`. The records service's
  * spelling is `date` / `-date`; `-date` is accepted on the way in so a value that
  * came off the wire round-trips, and `sortToWire` produces it on the way out.
  *
@@ -67,7 +67,7 @@ export function parseSort(sort) {
 }
 
 /**
- * The door's spelling of a sort: `date` ascending, `-date` descending.
+ * The service's spelling of a sort: `date` ascending, `-date` descending.
  *
  * @param {string|{field:string, desc?:boolean}|null|undefined} sort
  * @returns {string|null}

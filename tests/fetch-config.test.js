@@ -158,7 +158,7 @@ describe('resolveFetchConfigs — deferred detail', () => {
 
 describe('resolving a query reference to an address', () => {
   const decl = [{ query: 'articles', as: 'articles' }]
-  const lane = { query: '/_records/_query/{locale}' }
+  const services = { records: '/_records/_query/{locale}' }
   const queries = { articles: { schema: '@x/article' } }
   const get = (options) => resolveFetchConfigs(decl, { defaultLocale: 'en', ...options }).get('articles')
 
@@ -166,12 +166,12 @@ describe('resolving a query reference to an address', () => {
     // Not a degraded mode — this is the answer for every site with no backend,
     // which is the framework's default rather than a special case.
     expect(get({})).toMatchObject({ path: '/data/articles.json', as: 'articles' })
-    expect(get({}).door).toBeUndefined()
+    expect(get({}).ask).toBeUndefined()
   })
 
   it('asks the host\'s door when one is declared and the payload carries the Model ref', () => {
-    expect(get({ records: lane, queries })).toMatchObject({ door: '/_records/_query/en', schema: '@x/article' })
-    expect(get({ records: lane, queries }).path).toBeUndefined()
+    expect(get({ services: services, queries })).toMatchObject({ ask: '/_records/_query/en', schema: '@x/article' })
+    expect(get({ services: services, queries }).path).toBeUndefined()
   })
 
   it('locale-prefixes the artifact, and asks the door in that locale', () => {
@@ -179,7 +179,7 @@ describe('resolving a query reference to an address', () => {
     // part of its path. A door is asked in one locale — it is in its route.
     const opts = { locale: 'fr', defaultLocale: 'en' }
     expect(get(opts).path).toBe('/fr/data/articles.json')
-    expect(get({ ...opts, records: lane, queries }).door).toBe('/_records/_query/fr')
+    expect(get({ ...opts, services: services, queries }).ask).toBe('/_records/_query/fr')
   })
 
   it('⛔ the retired address patterns declare no lane', () => {
@@ -191,8 +191,8 @@ describe('resolving a query reference to an address', () => {
     // `path` for one that cannot. Two addresses on one request would leave the
     // fetcher to break the tie by field order.
     const both = [{ query: 'articles', path: '/data/articles.json', as: 'articles' }]
-    const out = resolveFetchConfigs(both, { records: lane, queries, defaultLocale: 'en' }).get('articles')
-    expect(out.door).toBe('/_records/_query/en')
+    const out = resolveFetchConfigs(both, { services: services, queries, defaultLocale: 'en' }).get('articles')
+    expect(out.ask).toBe('/_records/_query/en')
     expect(out.path).toBeUndefined()
   })
 
@@ -203,23 +203,23 @@ describe('resolving a query reference to an address', () => {
 
   it('leaves a config carrying no collection untouched', () => {
     const plain = [{ path: '/data/team.json', as: 'team' }]
-    expect(resolveFetchConfigs(plain, { records: lane }).get('team')).toMatchObject({
+    expect(resolveFetchConfigs(plain, { services: services }).get('team')).toMatchObject({
       path: '/data/team.json',
     })
   })
 })
 
 describe('a door answers the record as the list\'s own question — so every door config has a detail source', () => {
-  const RECORDS = { query: '/_records/_query/{locale}' }
+  const SERVICES = { records: '/_records/_query/{locale}' }
   const QUERIES = { articles: { schema: '@x/article' } }
   const get = (opts) => resolveFetchConfigs([{ query: 'articles', as: 'articles' }], { defaultLocale: 'en', ...opts }).get('articles')
 
   it('a door config carries `detail: true` — the record is the same question narrowed by its handle', () => {
-    expect(get({ records: RECORDS, queries: QUERIES })).toMatchObject({ door: '/_records/_query/en', detail: true, depth: 'brief' })
+    expect(get({ services: SERVICES, queries: QUERIES })).toMatchObject({ ask: '/_records/_query/en', detail: true, depth: 'brief' })
   })
 
   it('an explicit detail on the config is left alone', () => {
-    const cfg = resolveFetchConfigs([{ query: 'articles', as: 'articles', detail: false }], { records: RECORDS, queries: QUERIES, defaultLocale: 'en' }).get('articles')
+    const cfg = resolveFetchConfigs([{ query: 'articles', as: 'articles', detail: false }], { services: SERVICES, queries: QUERIES, defaultLocale: 'en' }).get('articles')
     expect(cfg.detail).toBe(false)
   })
 
@@ -237,9 +237,9 @@ describe('a door answers the record as the list\'s own question — so every doo
 })
 
 describe('resolution says what a config will GET — depth, and the locale a door is asked in', () => {
-  const RECORDS = { query: '/_records/_query/{locale}' }
+  const SERVICES = { records: '/_records/_query/{locale}' }
   const QUERIES = { members: { schema: '@std/person' } }
-  const door = (extra = {}) => resolveFetchConfigs([{ query: 'members', as: 'members', ...extra.cfg }], { records: RECORDS, queries: QUERIES, defaultLocale: 'en', ...extra.opts }).get('members')
+  const door = (extra = {}) => resolveFetchConfigs([{ query: 'members', as: 'members', ...extra.cfg }], { services: SERVICES, queries: QUERIES, defaultLocale: 'en', ...extra.opts }).get('members')
 
   it('a config with a per-record source is a list of BRIEFS', () => {
     expect(door().depth).toBe('brief')
@@ -259,8 +259,8 @@ describe('resolution says what a config will GET — depth, and the locale a doo
   })
 
   it('a door config carries the locale it is asked in — always; a compiled path does not need to', () => {
-    expect(door({ opts: { locale: 'fr' } })).toMatchObject({ door: '/_records/_query/fr', locale: 'fr' })
-    expect(door({ opts: { locale: 'en' } })).toMatchObject({ door: '/_records/_query/en', locale: 'en' })
+    expect(door({ opts: { locale: 'fr' } })).toMatchObject({ ask: '/_records/_query/fr', locale: 'fr' })
+    expect(door({ opts: { locale: 'en' } })).toMatchObject({ ask: '/_records/_query/en', locale: 'en' })
     const file = resolveFetchConfigs([{ query: 'members', path: '/data/members.json', as: 'members' }], { locale: 'fr', defaultLocale: 'en' }).get('members')
     expect(file.path).toBe('/fr/data/members.json')
     expect(file.locale).toBeUndefined()

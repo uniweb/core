@@ -152,10 +152,11 @@ export default class EntityStore {
         // after the payload key was renamed — a dead option name, silently: the
         // resolver simply saw no queries and stopped injecting `detail:`.
         queries: website?.config?.queries ?? null,
-        // A host's live-records lane. Absent on every static site and on
-        // local dev, which is why `resolveQuerySource` treats absence as
-        // the ordinary case and reads the compiled artifact without comment.
-        records: website?.config?.records ?? null,
+        // The host's services; its `records` row is the live-records lane.
+        // Absent on every static site and on local dev, which is why
+        // `resolveQuerySource` treats absence as the ordinary case and reads
+        // the compiled artifact without comment.
+        services: website?.config?.services ?? null,
         variables,
       },
     )
@@ -259,8 +260,8 @@ export default class EntityStore {
         } else {
           allCached = false
         }
-      } else if (isRouteQuery && cfg.door) {
-        // A question door: the record's own answer is cached under its own key.
+      } else if (isRouteQuery && cfg.ask) {
+        // The records service: the record's own answer is cached under its own key.
         const detailCfg = this._buildDetailConfig(cfg, dynamicContext)
         const detailCached = detailCfg ? dispatcher?.peek(detailCfg, ctx) : null
         if (detailCached) {
@@ -390,8 +391,8 @@ export default class EntityStore {
           : (records ?? [])
         if (order) filtered = this._sortItems(filtered, order)
         data[schema] = limit && Array.isArray(filtered) ? filtered.slice(0, limit) : filtered
-      } else if (isRouteQuery && cfg.door) {
-        // ⭐ A QUESTION DOOR needs no list to find the record: the record is the
+      } else if (isRouteQuery && cfg.ask) {
+        // ⭐ THE RECORDS SERVICE needs no list to find the record: the record is the
         // same question narrowed by the route's handle, so list and record are
         // asked together — one round trip, and no client-side scan gating the
         // fetch (F13, the live half). The list is asked too, because sections

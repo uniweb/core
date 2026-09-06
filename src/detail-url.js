@@ -91,12 +91,12 @@ function paramContext(paramName, paramValue, record) {
  */
 /**
  * The key a route param narrows a QUESTION by — the entry's own handle, which
- * a records door guarantees unique among siblings (the records door's contract
+ * the records service guarantees unique among siblings (the records contract
  * §1b: `$name`, "addressed AND filtered"). ⚠️ One constant, because the spelling
  * moved four times in one day (`path_segment` → `$slug` → `$name` → `meta::name`
- * → `$name`); the door is dark until a host stamps it, so this is the one place
- * to change if it moves again. Not read by the file lane or the address door,
- * which narrow by the route's own param (`item[paramName]`).
+ * → `$name`); the service is dark until a host stamps it, so this is the one
+ * place to change if it moves again. Not read by the file lane, which narrows
+ * by the route's own param (`item[paramName]`).
  */
 export const ROUTE_HANDLE_KEY = '$name'
 
@@ -106,13 +106,13 @@ export function buildDetailConfig(queryConfig, dynamicContext) {
   const { paramName, paramValue, record = null } = dynamicContext
   if (!paramName || paramValue === undefined) return null
 
-  // ⭐ A QUESTION DOOR: the record is the list's own question, narrowed to one
-  // entry by its handle and asked in full — the list page and the detail page
-  // are the same query, differing only by whether the parameter is bound
-  // (the records door's contract, §1a). `sort` and `limit` are the
-  // list's and drop; `scope` and the authored `where` stay, so a scoped query
-  // cannot be escaped through the URL.
-  if (queryConfig.door) {
+  // ⭐ THE RECORDS SERVICE: the record is the list's own question, narrowed to
+  // one entry by its handle and asked in full — the list page and the detail
+  // page are the same query, differing only by whether the parameter is bound
+  // (the records contract, §1a). `sort` and `limit` are the list's and drop;
+  // `scope` and the authored `where` stay, so a scoped query cannot be escaped
+  // through the URL.
+  if (queryConfig.ask) {
     const { sort, limit, detail: _detail, ...rest } = queryConfig
     return {
       ...rest,
@@ -124,14 +124,14 @@ export function buildDetailConfig(queryConfig, dynamicContext) {
 
   // Two address kinds, and the detail request comes back as the SAME kind as
   // the list: a `url` the author wrote stays a `url`, a compiled `path` stays a
-  // `path`. (A third kind, the host's address door, was retired 2026-09-04.)
+  // `path`.
   const baseUrl = queryConfig.url || queryConfig.path
   if (!baseUrl) return null
   const addressKey = queryConfig.url ? 'url' : 'path'
 
   // What every detail config carries beside its address:
   //   `as`             — the binding key, so the record lands where the list did;
-  //   `query`          — the query it is one record of (identity on a door);
+  //   `query`          — the query it is one record of (identity when asked);
   //   `depth: 'full'`  — what it asks for, and what the record index files it as;
   //   `dynamicContext` — the route param, which the default fetcher already keys
   //                      a SINGLE-RECORD response on (`envelope.item`, body

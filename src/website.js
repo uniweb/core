@@ -615,8 +615,8 @@ export default class Website {
       //
       // ⛔ RESOLVED THE WAY THE ENTITY STORE RESOLVES IT, not the raw declaration.
       // Until 2026-09-04 this peeked `parentPage.fetch` as authored — `{ query,
-      // path, as }` — while the store writes under the RESOLVED config: on a door
-      // lane that carries `door` and no `path`, and on a non-default locale a
+      // path, as }` — while the store writes under the RESOLVED config: on the
+      // asked lane that carries `ask` and no `path`, and on a non-default locale a
       // `/fr/data/…` path. Two different keys for one dataset, so the probe
       // missed on exactly those lanes: no title, no not-found, and the page was
       // never cached (`recordsLoaded` false on every visit). Silent, on a
@@ -635,7 +635,7 @@ export default class Website {
           locale: this.getActiveLocale(),
           defaultLocale: this.getDefaultLocale(),
           queries: this.config?.queries ?? null,
-          records: this.config?.records ?? null,
+          services: this.config?.services ?? null,
           variables,
         }).get(pluralSchema)
         if (fetchConfig) {
@@ -649,7 +649,7 @@ export default class Website {
             ? buildDetailConfig(fetchConfig, { paramName, paramValue })
             : null
           const detailCached = detailCfg ? this.fetcher.peek(detailCfg, ctx) : null
-          // A door answers the record question as a list of one (a question's
+          // The service answers the record question as a list of one (a question's
           // answer is always a list); a per-record file answers the bare record.
           const raw = detailCached?.data
           const record = Array.isArray(raw) ? raw[0] : raw

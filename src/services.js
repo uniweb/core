@@ -96,7 +96,7 @@ const ABSOLUTE_URL_RE = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i
  * @param {*} declaration
  * @returns {string} the endpoint, or '' when there is none
  */
-function readEndpoint(declaration) {
+export function readEndpoint(declaration) {
   if (typeof declaration === 'string') return declaration.trim()
   if (typeof declaration?.endpoint === 'string') return declaration.endpoint.trim()
   return ''

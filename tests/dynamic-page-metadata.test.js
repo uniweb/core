@@ -20,13 +20,13 @@ import { resolveFetchConfigs } from '../src/fetch-config.js'
 import { buildDetailConfig } from '../src/detail-url.js'
 
 // The one live lane: the question door, with the query's Model ref on the payload.
-const RECORDS = { query: '/_records/_query/{locale}' }
+const SERVICES = { records: '/_records/_query/{locale}' }
 const QUERIES = { articles: { schema: '@x/article' } }
-const LIVE = { records: RECORDS, queries: QUERIES }
+const LIVE = { services: SERVICES, queries: QUERIES }
 // The keys the entity store writes on that lane — computed by the same rule, never
 // hand-written, so the probe and the store cannot disagree.
 const listCfg = (w) => resolveFetchConfigs([{ query: 'articles', path: '/data/articles.json', as: 'articles' }], {
-  records: RECORDS, queries: QUERIES,
+  services: SERVICES, queries: QUERIES,
   locale: w.getActiveLocale?.() ?? null, defaultLocale: w.getDefaultLocale?.() ?? null,
 }).get('articles')
 const listKey = (w) => deriveCacheKey(listCfg(w))

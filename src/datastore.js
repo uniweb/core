@@ -30,15 +30,15 @@
  * asking for `{ path, as }` must hit the entry the page's declaration filled —
  * that shared cache is a documented property of `useFetched`.
  *
- * An ADDRESS-LESS request — a QUESTION sent to a records door — is identified by
- * the question: `query`, `schema`, `scope`, `where`, `sort`, `limit`, `depth`.
+ * An ADDRESS-LESS request — a QUESTION sent to the records service — is
+ * identified by the question: `query`, `schema`, `scope`, `where`, `sort`, `limit`, `depth`.
  * ⛔ The reason: with no per-query address, two pages
  * binding one `as` to two queries would otherwise share an entry, and a list
  * (brief) and a record (full) of one query would collide — the one defect on
  * this path that delivers WRONG data rather than none.
  *
  * `locale` is hashed on both when present: two locales' answers must not share
- * an entry, and a door config always carries the locale it was asked in.
+ * an entry, and an asked config always carries the locale it was asked in.
  *
  * @param {Object} request - Normalized request (or fetch config)
  * @returns {string} A stable JSON string usable as a cache-Map key
