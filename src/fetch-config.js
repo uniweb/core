@@ -14,12 +14,30 @@
  *
  * INTENTIONALLY A LEAF: safe to load anywhere — including environments with no
  * DOM, no filesystem, and a hard bundle-size ceiling. The rule that protects
- * that is **no transitive graph**: import nothing from the package root (which
- * pulls semantic-parser and theming) and nothing that itself imports. A
- * zero-dependency sibling leaf is admissible and `./data-paths.js` is the only
- * one taken — the path convention it holds has to be identical here and in the
- * build that emits the files, and a second copy of that string is precisely
- * the drift this module exists to prevent.
+ * that is **import nothing from the package root** (which pulls semantic-parser
+ * and theming) and nothing that reaches it transitively.
+ *
+ * ⚠️ **This said "and nothing that itself imports — `./data-paths.js` is the
+ * only one taken", and both halves had stopped being true.** `query-address.js`
+ * was added as an import and itself imports; on 2026-09-06 it became
+ * `records-service.js` and the chain grew again. **The admissible set, named
+ * rather than counted:**
+ *
+ *     fetch-config → data-paths                                    (leaf)
+ *                  → records-service → substitute-placeholders     (leaf)
+ *                                    → services → base-path        (leaf)
+ *
+ * Every module in it is pure JS with no `node:*`, no DOM and no package-root
+ * import — the property that actually matters. "Depth 1" was a proxy for it
+ * that stopped holding without anything failing, which is why the rule is now
+ * stated as the property.
+ *
+ * ⛔ **Two edges are deliberate and must not be inlined**, for one reason:
+ * `data-paths.js` holds the `/data/<name>.json` convention, which has to be
+ * identical here and in the build that emits the files; `services.js` holds
+ * `readEndpoint`, the ONE rule for reading a service declaration. A second copy
+ * of either is precisely the drift this module exists to prevent. ⇒ **If you
+ * add an edge, say here why it holds.**
  *
  * WHAT THIS DOES NOT OWN: where the sources come from. A caller holding a live
  * object graph reads them off the graph; a caller holding a content document
