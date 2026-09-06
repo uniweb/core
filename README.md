@@ -26,7 +26,7 @@ const uniweb = getUniweb()
 // Work with the active website
 const website = uniweb.activeWebsite
 const page = website.getPage('/about')
-const language = website.getLanguage()
+const locale = website.getActiveLocale()
 ```
 
 ## API

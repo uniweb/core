@@ -1231,24 +1231,6 @@ export default class Website {
     return `${this.basePath || ''}${path}`
   }
 
-  /**
-   * Get search data for all pages
-   * @deprecated Use getSearchConfig() and fetch the search index instead
-   */
-  getSearchData() {
-    return this.pages.map((page) => ({
-      id: page.id,
-      title: page.title,
-      href: page.route,
-      route: page.route,
-      description: page.description,
-      content: page
-        .getPageBlocks()
-        .map((b) => b.title)
-        .filter(Boolean)
-        .join('\n')
-    }))
-  }
 
   // ─────────────────────────────────────────────────────────────────
   // Page Hierarchy API (for navigation components)
