@@ -239,7 +239,7 @@ describe('what a detail config carries beside its address', () => {
       transform: undefined,
       query: 'members',
       locale: 'fr',
-      depth: 'full',
+      whole: true,
       dynamicContext: { paramName: 'slug', paramValue: 'ada' },
     })
   })
@@ -248,6 +248,6 @@ describe('what a detail config carries beside its address', () => {
     const out = buildDetailConfig({ url: 'https://api.test/a', as: 'a', detail: 'rest' }, ctx)
     expect('query' in out).toBe(false)
     expect('locale' in out).toBe(false)
-    expect(out.depth).toBe('full')
+    expect(out.whole).toBe(true)
   })
 })

@@ -117,7 +117,7 @@ export function buildDetailConfig(queryConfig, dynamicContext) {
     return {
       ...rest,
       where: { ...(queryConfig.where && typeof queryConfig.where === 'object' ? queryConfig.where : {}), [ROUTE_HANDLE_KEY]: String(paramValue) },
-      depth: 'full',
+      whole: true,
       dynamicContext: { paramName, paramValue },
     }
   }
@@ -142,7 +142,7 @@ export function buildDetailConfig(queryConfig, dynamicContext) {
   const common = {
     as: queryConfig.as,
     transform: queryConfig.transform,
-    depth: 'full',
+    whole: true,
     dynamicContext: { paramName, paramValue },
   }
   if (typeof queryConfig.query === 'string') common.query = queryConfig.query

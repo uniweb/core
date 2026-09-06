@@ -152,7 +152,7 @@ describe('resolveFetchConfigs — deferred detail', () => {
     const configs = resolveFetchConfigs([cfg], { collections: null })
     // `depth` is the one field resolution always adds (what the fetch will GET,
     // for the record index); everything authored is untouched.
-    expect(configs.get('articles')).toEqual({ ...cfg, depth: 'full' })
+    expect(configs.get('articles')).toEqual({ ...cfg, whole: true })
   })
 })
 
@@ -215,7 +215,7 @@ describe('a door answers the record as the list\'s own question — so every doo
   const get = (opts) => resolveFetchConfigs([{ query: 'articles', as: 'articles' }], { defaultLocale: 'en', ...opts }).get('articles')
 
   it('a door config carries `detail: true` — the record is the same question narrowed by its handle', () => {
-    expect(get({ services: SERVICES, queries: QUERIES })).toMatchObject({ ask: '/_records/_query/en', detail: true, depth: 'brief' })
+    expect(get({ services: SERVICES, queries: QUERIES })).toMatchObject({ ask: '/_records/_query/en', detail: true, whole: false })
   })
 
   it('an explicit detail on the config is left alone', () => {
@@ -226,7 +226,7 @@ describe('a door answers the record as the list\'s own question — so every doo
   it('CONTROL — with no lane a non-deferred query has no detail source and is FULL', () => {
     const cfg = get({ queries: QUERIES })
     expect(cfg.detail).toBeUndefined()
-    expect(cfg.depth).toBe('full')
+    expect(cfg.whole).toBe(true)
   })
 
   it('⛔ the retired record pattern injects nothing', () => {
@@ -242,20 +242,20 @@ describe('resolution says what a config will GET — depth, and the locale a doo
   const door = (extra = {}) => resolveFetchConfigs([{ query: 'members', as: 'members', ...extra.cfg }], { services: SERVICES, queries: QUERIES, defaultLocale: 'en', ...extra.opts }).get('members')
 
   it('a config with a per-record source is a list of BRIEFS', () => {
-    expect(door().depth).toBe('brief')
+    expect(door().whole).toBe(false)
     const deferred = resolveFetchConfigs([{ query: 'articles', path: '/data/articles.json', as: 'articles' }], {
       queries: { articles: { deferred: ['body'] } },
     }).get('articles')
-    expect(deferred.depth).toBe('brief')
+    expect(deferred.whole).toBe(false)
   })
 
   it('a config with no per-record source is FULL', () => {
     const cfg = resolveFetchConfigs([{ query: 'articles', path: '/data/articles.json', as: 'articles' }], {}).get('articles')
-    expect(cfg.depth).toBe('full')
+    expect(cfg.whole).toBe(true)
   })
 
   it('an explicit depth on the config wins', () => {
-    expect(door({ cfg: { depth: 'full' } }).depth).toBe('full')
+    expect(door({ cfg: { whole: true } }).whole).toBe(true)
   })
 
   it('a door config carries the locale it is asked in — always; a compiled path does not need to', () => {

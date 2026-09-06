@@ -836,8 +836,8 @@ describe('R1 on a detail page — a record held in full is delivered, not fetche
     const { entityStore, website } = liveHarness((req) => {
       calls.push(isRecord(req) ? 'record' : 'list')
       return isRecord(req)
-        ? Promise.resolve({ data: [fullAda], meta: { depth: 'full' } })
-        : Promise.resolve({ data: briefs, meta: { depth: 'brief' } })
+        ? Promise.resolve({ data: [fullAda], meta: { whole: true } })
+        : Promise.resolve({ data: briefs, meta: { whole: false } })
     })
     const first = await entityStore.fetch(makeBlock({ page: detailPage() }, website), {})
     expect(first.data.members).toEqual([fullAda])
@@ -855,8 +855,8 @@ describe('R1 on a detail page — a record held in full is delivered, not fetche
   it('the list page then sees the upgraded record too — R3, through the index', async () => {
     const { entityStore, website } = liveHarness((req) =>
       isRecord(req)
-        ? Promise.resolve({ data: [fullAda], meta: { depth: 'full' } })
-        : Promise.resolve({ data: briefs, meta: { depth: 'brief' } }),
+        ? Promise.resolve({ data: [fullAda], meta: { whole: true } })
+        : Promise.resolve({ data: briefs, meta: { whole: false } }),
     )
     await entityStore.fetch(makeBlock({ page: detailPage() }, website), {})
     const list = await entityStore.fetch(makeBlock({ page: makePage({ fetch: { query: 'members', as: 'members' } }) }, website), {})
@@ -870,8 +870,8 @@ describe('R1 on a detail page — a record held in full is delivered, not fetche
     const { entityStore, website } = liveHarness((req) => {
       calls.push(isRecord(req) ? 'record' : 'list')
       return isRecord(req)
-        ? Promise.resolve({ data: [{ $name: 'ada', bio: 'x' }], meta: { depth: 'full' } })
-        : Promise.resolve({ data: noIds, meta: { depth: 'brief' } })
+        ? Promise.resolve({ data: [{ $name: 'ada', bio: 'x' }], meta: { whole: true } })
+        : Promise.resolve({ data: noIds, meta: { whole: false } })
     })
     const first = await entityStore.fetch(makeBlock({ page: detailPage() }, website), {})
     expect(first.data.members).toEqual([{ $name: 'ada', bio: 'x' }])
@@ -888,9 +888,9 @@ describe('on a question door a detail page asks list and record TOGETHER — no 
     const asked = []
     const { entityStore, website } = makeHarness({
       fetcherImpl: (req) => {
-        asked.push({ depth: req.depth, where: req.where })
-        if (req.depth === 'full') return Promise.resolve({ data: [{ $uuid: 'u1', $name: 'ada', name: 'Ada', bio: 'Full' }], meta: { depth: 'full' } })
-        return Promise.resolve({ data: [{ $uuid: 'u1', $name: 'ada', name: 'Ada' }], meta: { depth: 'brief' } })
+        asked.push({ whole: req.whole, where: req.where })
+        if (req.whole === true) return Promise.resolve({ data: [{ $uuid: 'u1', $name: 'ada', name: 'Ada', bio: 'Full' }], meta: { whole: true } })
+        return Promise.resolve({ data: [{ $uuid: 'u1', $name: 'ada', name: 'Ada' }], meta: { whole: false } })
       },
     })
     website.config = { services: SERVICES, queries: QUERIES }
@@ -901,7 +901,7 @@ describe('on a question door a detail page asks list and record TOGETHER — no 
     const result = await entityStore.fetch(makeBlock({ page }, website), {})
     expect(result.data.members).toEqual([{ $uuid: 'u1', $name: 'ada', name: 'Ada', bio: 'Full' }])
     expect(asked).toHaveLength(2)
-    expect(asked.find((a) => a.depth === 'full').where).toEqual({ $name: 'ada' })
+    expect(asked.find((a) => a.whole === true).where).toEqual({ $name: 'ada' })
     // second visit: the record's answer is cached under its own key; the sync path delivers it
     const resolved = entityStore.resolve(makeBlock({ page }, website), {})
     expect(resolved.status).toBe('ready')
@@ -910,8 +910,8 @@ describe('on a question door a detail page asks list and record TOGETHER — no 
 
   it('an empty answer is not-found, and a failed answer is absent with an error', async () => {
     const { entityStore, website } = makeHarness({
-      fetcherImpl: (req) => req.depth === 'full'
-        ? Promise.resolve({ data: [], meta: { depth: 'full' } })
+      fetcherImpl: (req) => req.whole === true
+        ? Promise.resolve({ data: [], meta: { whole: true } })
         : Promise.resolve({ data: [], error: 'HTTP 502' }),
     })
     website.config = { services: SERVICES, queries: QUERIES }

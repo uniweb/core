@@ -60,8 +60,8 @@ export function deriveCacheKey(request) {
     // the rename inside the one function whose job is to be canonical.
     return JSON.stringify({ path, url, as, transform, method, body, locale })
   }
-  const { query, schema, scope, where, sort, limit, depth } = request || {}
-  return JSON.stringify({ query, schema, scope, where, sort, limit, depth, as, transform, locale })
+  const { query, schema, scope, where, sort, limit, whole } = request || {}
+  return JSON.stringify({ query, schema, scope, where, sort, limit, whole, as, transform, locale })
 }
 
 /**
@@ -77,12 +77,21 @@ export function recordIdentity(record) {
   return typeof id === 'string' && id.length > 0 ? id : null
 }
 
-/** Which of two depths holds MORE of a record. */
-const DEPTH_RANK = { brief: 1, full: 2 }
-
-function indexableDepth(entry) {
-  const depth = entry?.meta?.depth
-  return depth === 'brief' || depth === 'full' ? depth : null
+/**
+ * Did this entry deliver WHOLE records, or briefs?
+ *
+ * ⛔ **This was `DEPTH_RANK = { brief: 1, full: 2 }` and a `'brief'|'full'` string
+ * until 2026-09-06.** A rank over exactly two values is a boolean with ceremony,
+ * and the only consumer outside this file already tested `=== 'full'`. The word
+ * went with it: the brief is a *Section*, so nothing here is nested and `depth`
+ * implied a continuum that never existed. The wire says `whole` now, and so does
+ * this — one vocabulary from the door to the record index.
+ *
+ * `null` means the entry says nothing about it and is not indexable by identity.
+ */
+function indexableWhole(entry) {
+  const whole = entry?.meta?.whole
+  return typeof whole === 'boolean' ? whole : null
 }
 
 /**
@@ -116,7 +125,7 @@ export default class DataStore {
     this._listeners = new Set()
     // Key-scoped listeners: key → Set<Function>
     this._keyedListeners = new Map()
-    // $uuid → { depth, record } — the record index
+    // $uuid → { whole, record } — the record index
     this._records = new Map()
     // bumps on every index write, so a materialized list knows it is stale
     this._recordsVersion = 0
@@ -229,36 +238,36 @@ export default class DataStore {
    * @param {'brief'|'full'} depth
    * @returns {Object}
    */
-  upsertRecord(record, depth) {
+  upsertRecord(record, whole) {
     const id = recordIdentity(record)
-    if (!id || !DEPTH_RANK[depth]) return record
+    if (!id || typeof whole !== 'boolean') return record
     const held = this._records.get(id)
     if (!held) {
-      this._records.set(id, { depth, record })
+      this._records.set(id, { whole, record })
       this._recordsVersion += 1
       return record
     }
-    if (DEPTH_RANK[depth] < DEPTH_RANK[held.depth]) return held.record // R2
-    const next = DEPTH_RANK[depth] > DEPTH_RANK[held.depth]
-      ? { ...held.record, ...record } // R3 — merge on upgrade
-      : record // same depth: the fresher copy
-    this._records.set(id, { depth, record: next })
+    // R2 — a brief never displaces a whole record.
+    if (!whole && held.whole) return held.record
+    // R3 — a whole record merges over a brief; same kind takes the fresher copy.
+    const next = whole && !held.whole ? { ...held.record, ...record } : record
+    this._records.set(id, { whole, record: next })
     this._recordsVersion += 1
     return next
   }
 
   _index(entry) {
-    const depth = indexableDepth(entry)
-    if (!depth || !entry || entry.ids) return entry
+    const whole = indexableWhole(entry)
+    if (whole === null || !entry || entry.ids) return entry
     const { data } = entry
     if (Array.isArray(data)) {
       if (data.length === 0 || !data.every((r) => recordIdentity(r))) return entry
       const ids = data.map((r) => recordIdentity(r))
-      for (const r of data) this.upsertRecord(r, depth)
+      for (const r of data) this.upsertRecord(r, whole)
       return { ids, meta: entry.meta, _at: -1, _data: null }
     }
     if (recordIdentity(data)) {
-      this.upsertRecord(data, depth)
+      this.upsertRecord(data, whole)
       return { ids: [recordIdentity(data)], single: true, meta: entry.meta, _at: -1, _data: null }
     }
     return entry

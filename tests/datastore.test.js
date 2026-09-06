@@ -146,13 +146,13 @@ describe('deriveCacheKey — a door question and the compiled artifact are diffe
   it('separates two queries asked at one door', () => {
     // Without the question in the key these collapse to one entry and the second
     // query reads the first one's records out of the cache.
-    const a = deriveCacheKey({ ask: '/_records/_query/en', query: 'articles', schema: '@x/article', as: 'articles', depth: 'brief' })
-    const b = deriveCacheKey({ ask: '/_records/_query/en', query: 'news', schema: '@x/news', as: 'news', depth: 'brief' })
+    const a = deriveCacheKey({ ask: '/_records/_query/en', query: 'articles', schema: '@x/article', as: 'articles', whole: false })
+    const b = deriveCacheKey({ ask: '/_records/_query/en', query: 'news', schema: '@x/news', as: 'news', whole: false })
     expect(a).not.toBe(b)
   })
 
   it('separates the door question from the artifact for one collection', () => {
-    const asked = deriveCacheKey({ ask: '/_records/_query/en', query: 'articles', schema: '@x/article', as: 'articles', depth: 'brief' })
+    const asked = deriveCacheKey({ ask: '/_records/_query/en', query: 'articles', schema: '@x/article', as: 'articles', whole: false })
     const file = deriveCacheKey({ path: '/data/articles.json', as: 'articles' })
     expect(asked).not.toBe(file)
   })

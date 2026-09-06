@@ -287,7 +287,7 @@ export default class EntityStore {
             // ⭐ Held in full already? Then it IS the record — no detail probe.
             // The list is materialized from the record index, so `match` is the
             // record at its latest depth; the index says which depth that is.
-            const held = heldInFull(dispatcher, match)
+            const held = heldWhole(dispatcher, match)
             const detailCfg = held ? null : this._buildDetailConfig(cfg, { ...dynamicContext, record: match })
             const detailCached = detailCfg ? dispatcher?.peek(detailCfg, ctx) : null
             if (held) {
@@ -433,7 +433,7 @@ export default class EntityStore {
           continue
         }
 
-        const held = cfg.detail ? heldInFull(dispatcher, match) : null
+        const held = cfg.detail ? heldWhole(dispatcher, match) : null
         if (held) {
           // R1: the record index holds it in full — a detail fetch would only
           // re-fetch what the page already has.
@@ -516,11 +516,11 @@ function reportFetchFailure(dev, block, key, cfg, message) {
  * A record with no identity (`$uuid`) is never indexed, so the answer for it is
  * null and the detail fetch proceeds as before.
  */
-function heldInFull(dispatcher, match) {
+function heldWhole(dispatcher, match) {
   const id = match?.$uuid
   if (typeof id !== 'string' || !id || typeof dispatcher?.peekRecord !== 'function') return null
   const held = dispatcher.peekRecord(id)
-  return held?.depth === 'full' ? held.record : null
+  return held?.whole === true ? held.record : null
 }
 
 /**

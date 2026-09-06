@@ -424,8 +424,8 @@ function foldScope(cfg) {
  */
 function stampDepthAndLocale(cfg, locale, defaultLocale) {
   let out = cfg
-  if (out.depth !== 'brief' && out.depth !== 'full') {
-    out = { ...out, depth: out.detail ? 'brief' : 'full' }
+  if (typeof out.whole !== 'boolean') {
+    out = { ...out, whole: !out.detail }
   }
   // The service is asked in exactly one locale — it is in the route — so the config
   // carries it whatever the locale is; two locales' answers never share an entry.

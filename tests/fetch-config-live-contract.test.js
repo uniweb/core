@@ -54,9 +54,9 @@ describe('resolveFetchConfigs — the live-pinned surface', () => {
     expect(cfg.path).toBe('/data/members.json')
   })
 
-  it('the RETURN keys are `ask`, `schema`, `detail` and `depth` — and `path` is dropped once the service answers', () => {
+  it('the RETURN keys are `ask`, `schema`, `detail` and `whole` — and `path` is dropped once the service answers', () => {
     const [cfg] = [...resolveFetchConfigs(authored({ query: 'members' }), { services: SERVICES, queries: QUERIES, ...LOCALE }).values()]
-    expect(Object.keys(cfg), WHO).toEqual(expect.arrayContaining(['ask', 'schema', 'detail', 'depth', 'locale']))
+    expect(Object.keys(cfg), WHO).toEqual(expect.arrayContaining(['ask', 'schema', 'detail', 'whole', 'locale']))
     expect(cfg.path).toBeUndefined()
     // ⛔ and never `endpoint`: the retired GET lane is gone
     expect(cfg).not.toHaveProperty('endpoint')
