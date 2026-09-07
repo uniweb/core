@@ -30,7 +30,17 @@ export {
   normalizeLanguageList,
   resolveDefaultLocale,
   resolvePublishableLocales,
-  validateLanguageConfig
+  validateLanguageConfig,
+  // Display helpers, on the index because `@uniweb/kit` renders with them.
+  //
+  // ⛔ A package that a foundation BUNDLES — kit, api — must reach core through
+  // the bare `@uniweb/core`, never a subpath. Rollup's `external` matcher is
+  // exact-string, so only the bare specifier is dropped from the bundle; a leaf
+  // import compiles a SECOND copy of core into every foundation that uses it,
+  // which on a runtime-linked site puts two versions of core on one page.
+  // ⇒ Anything such a package needs belongs here, not only behind a subpath.
+  LOCALE_DISPLAY_NAMES,
+  localeLabel
 } from './locale-config.js'
 export {
   DATA_DIR,
