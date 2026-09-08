@@ -45,7 +45,28 @@ import { applyBasePath } from './base-path.js'
  * with the same job, which is the defect `@uniweb/core/route-match` exists to
  * prevent.
  *
- * ⇒ **Foundations import from `@uniweb/kit`.** This path is the framework's own.
+ * ## ⛔ WHO MAY IMPORT THIS SUBPATH — the leaf is not for everyone
+ *
+ * ⭐ **The leaf exists for consumers that must NOT pull core's index**: the
+ * runtime (`wire-foundation.js`, `script-loader.js`), which resolves a service
+ * address and cannot reach kit at all, and anything keeping its import graph
+ * small on purpose — `@uniweb/projections` imports leaves to stay Worker-safe.
+ *
+ * ⛔ **A package that a foundation BUNDLES must import the bare `@uniweb/core`
+ * instead — kit and api.** A foundation build externalizes `@uniweb/core`, and
+ * Rollup's `external` list is matched by **string equality**: the bare specifier
+ * is dropped from the bundle and `@uniweb/core/services` is not. So a leaf import
+ * from kit compiles a second copy of this file into every foundation that uses
+ * it, beside the real core the runtime loads — the same class of trap that put
+ * `react-dom/server` on that list separately.
+ *
+ * ⚠️ **Measured 2026-09-07 and now guarded:** this file (9,898 B) and
+ * `base-path.js` (2,316 B) were inside a built foundation with `@uniweb/core`
+ * externalized the whole time, because kit re-exported from the subpath. Both are
+ * pure functions, so the symptom was weight — `@uniweb/core/datastore` is not.
+ *
+ * ⇒ **Foundations import from `@uniweb/kit`; kit imports the bare `@uniweb/core`.**
+ * Anything kit needs belongs on core's index, not only behind a subpath.
  *
  * ## What this deliberately does not model
  *
