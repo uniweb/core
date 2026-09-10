@@ -5,11 +5,11 @@
  * service at all; only `Website.isSearchEnabled` checked it. On a static site,
  * `submit: false` and `submit: { endpoint, enabled: false }` drew the form.
  *
- * ⭐ AND THE PRECEDENCE THAT GOES WITH IT. A site's own ADDRESS outranks the
- * host's. A HOST'S OFFER outranks a site's refusal: a host that returns an
- * address is the authority on what a hosted site is given, and a hosted service
- * is turned off where the host provides it. A site's refusal therefore decides
- * only where no host offers — which on a static site is always.
+ * ⭐ AND THE PRECEDENCE THAT GOES WITH IT. A HOST'S OFFER outranks everything a
+ * site declares — its own address and its off switch alike: a host that returns
+ * an address is the authority on what a hosted site is given. A site's own
+ * address and its refusal decide only where no host offers the service — which
+ * on a static site is always.
  */
 import { resolveService, readEndpoint } from '../src/services.js'
 import { resolveRecordsService } from '../src/records-service.js'
@@ -43,8 +43,13 @@ describe('who wins', () => {
     expect(resolveService(w, 'submit')).toEqual({ url: '/host-forms', source: 'host' })
   })
 
-  test("the site's own address outranks the host's", () => {
+  test("⭐ the host's offer outranks the site's own address", () => {
     const w = site({ submit: '/my-forms', services: { submit: '/host-forms' } })
+    expect(resolveService(w, 'submit')).toEqual({ url: '/host-forms', source: 'host' })
+  })
+
+  test("the site's own address is used for a service the host does not provide", () => {
+    const w = site({ submit: '/my-forms', services: { tracking: '/_e' } })
     expect(resolveService(w, 'submit')).toEqual({ url: '/my-forms', source: 'site' })
   })
 

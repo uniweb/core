@@ -1140,8 +1140,8 @@ export default class Website {
    * @returns {boolean}
    */
   isSearchEnabled() {
-    // ⭐ THE ORDER IS resolveService's, the same for every service: the site's
-    // own endpoint, then the host's offer, then the site's `false` /
+    // ⭐ THE ORDER IS resolveService's, the same for every service: the host's
+    // offer, then the site's own endpoint, then the site's `false` /
     // `{ enabled: false }` — which decides only where no host offers search. So
     // an author's `search: false` turns the local index off on a static site
     // and does not hide search a host provides; a hosted service is turned off
@@ -1166,9 +1166,9 @@ export default class Website {
     // error, and any text a visitor reads is site content — authored and
     // localized — never a string a service layer invents.
     //
-    // A site's OWN `search.endpoint` still wins: `resolveService` answers from
-    // the site tier first, so self-hosted search on a host that does not sell
-    // it is untouched.
+    // A site's own `search.endpoint` still works where the host does not offer
+    // search, so self-hosted search on a host that does not sell it is
+    // untouched. Where the host offers search, its offer wins.
     const { url, source } = resolveService(this, 'search')
     // An address from anyone — the site's own endpoint, or a host's offer.
     if (url) return true

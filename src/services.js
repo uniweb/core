@@ -12,10 +12,14 @@ import { applyBasePath } from './base-path.js'
  * address comes from configuration, and there are exactly two places it can
  * come from:
  *
- *   1. **The site**, authored — `search:`, `submit:`, `assistant:`, `tracking:`
- *      in site.yml. The operator's own declaration, and it wins.
- *   2. **The host**, served — `config.services.<name>` in the payload. What the
- *      deployment offers, which the site never had to know about.
+ *   1. **The host**, served — `config.services.<name>` in the payload. What the
+ *      deployment offers, which the site never had to know about. When a host
+ *      offers a service, that is the answer: it is the authority on what a
+ *      hosted site is given.
+ *   2. **The site**, authored — `search:`, `submit:`, `assistant:`, `tracking:`
+ *      in site.yml. The operator's own declaration — used for anything the host
+ *      does not provide, and on a static site, where no host speaks, the whole
+ *      answer.
  *
  * Absent from both means the site has no such service, and the caller acts on
  * that rather than guessing an address. That is the same rule for every service,
@@ -198,26 +202,31 @@ export function resolveServiceUrl(endpoint, basePath = '') {
  * @param {string} name - service name, e.g. 'submit' · 'search' · 'tracking'
  * @returns {{ url: string|null, source: 'site'|'host'|null }}
  *   `url` is the whole answer for acting. `source` says which declaration
- *   answered — a diagnostic, and the thing to check when a host's value appears
- *   not to be taking effect. `'host'` with a null `url` means the host answered
+ *   answered — a diagnostic, and the thing to check when a value you set
+ *   appears not to be taking effect. `'host'` with a null `url` means the host answered
  *   and offered no address; `null` means nothing declared the service at all.
  */
 export function resolveService(website, name) {
   const config = website?.config
   const basePath = website?.basePath
 
-  // 1 — the site's own ADDRESS wins. An operator who named an endpoint
-  // means it, including on a host that offers one.
-  const authored = readEndpoint(config?.[name])
-  if (authored) {
-    return { url: resolveServiceUrl(authored, basePath), source: 'site' }
-  }
-
-  // 2 — what the host says it offers.
+  // 1 — what the host OFFERS. A host that returns an address is the authority
+  // on what a hosted site is given: nothing the site declares overrides it —
+  // not its own address (step 2), not its off switch (step 3).
   const hostDeclaration = config?.services?.[name]
   const hostEndpoint = readEndpoint(hostDeclaration)
   if (hostEndpoint) {
     return { url: resolveServiceUrl(hostEndpoint, basePath), source: 'host' }
+  }
+
+  // 2 — the site's own ADDRESS, for a service the host does not provide: an
+  // operator bringing their own provider — a form service, self-hosted search
+  // on a host that does not sell it — keeps working. On a static site no host
+  // speaks, so this is the whole answer. (Until 2026-09-10 it came first and
+  // outranked a host's offer too.)
+  const authored = readEndpoint(config?.[name])
+  if (authored) {
+    return { url: resolveServiceUrl(authored, basePath), source: 'site' }
   }
 
   // 3 — ⛔ A SITE THAT SWITCHED THE SERVICE OFF — but only where no host offers

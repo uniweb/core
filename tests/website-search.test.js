@@ -171,7 +171,7 @@ describe('isSearchEnabled — the host declines the service', () => {
   it('⭐ a site OWN endpoint survives a host decline', () => {
     // The case worth re-running if this is ever edited: an operator running
     // self-hosted search on a host that does not sell it must keep working.
-    // `resolveService` answers from the site tier first.
+    // The host offers no address, so `resolveService` falls to the site's own.
     const w = hosted({ tracking: {} }, { search: { endpoint: '/my-own-search' } })
 
     expect(w.isSearchEnabled()).toBe(true)
