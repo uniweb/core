@@ -17,6 +17,18 @@ import { buildDetailConfig } from './detail-url.js'
 import { resolveService } from './services.js'
 
 /**
+ * Services whose provider is not simply an address, keyed by name.
+ *
+ * ⭐ **Only `search` is here, and only because it has a LOCAL provider** — the
+ * prebuilt index answers with no address at all. Everything else resolves to
+ * `resolveService(website, name).url !== null`, so an entry here is the
+ * exception rather than the pattern. Read by `Website.isServiceEnabled`.
+ */
+const SERVICE_RESOLVERS = {
+  search: (website) => website.isSearchEnabled(),
+}
+
+/**
  * Website — orchestration root for a single site instance.
  *
  * Accepts the site content payload plus the primary foundation and any
@@ -1161,6 +1173,47 @@ export default class Website {
     // Enabled by default — absent means enabled, and a host that publishes no
     // services block at all has declined nothing (the static-host path).
     return true
+  }
+
+  /**
+   * Is there a provider for this service?
+   *
+   * ⭐ **The one question a foundation asks before rendering UI for a service**,
+   * and the single implementation behind `@uniweb/kit`'s no-argument predicates
+   * (`isSearchEnabled()`, `isSubmitEnabled()`, …). Those resolve the active
+   * website and call this; they add no logic of their own.
+   *
+   * ⛔ **"Is there a provider", not "is there an address".** For every service
+   * but one those are the same question, because the only possible provider is
+   * reached at an address. **Search has two** — an address, or the prebuilt
+   * index that needs none (`search.provider: index`) — so `search` resolves
+   * through `isSearchEnabled()` above, which also honours the author's switch
+   * and a host's decline. ⇒ A service is enabled when *something* provides it.
+   *
+   * ⚖️ That is a branch in a generic function on purpose. If it lived in the
+   * callers instead, `isServiceEnabled('search')` would be a legal call
+   * returning `false` on a static site carrying an index — the wrong answer for
+   * rendering, on the standalone lane, reachable by anyone using the general
+   * form. Here no caller can reach the wrong answer.
+   *
+   * ⛔ **No explanatory string, ever.** `false` means draw nothing — not a
+   * disabled control and not an apology. Not-provisioned is not an error, and
+   * any wording would be ours to invent, in one language, for a visitor with no
+   * stake in it (`core/src/services.js`).
+   *
+   * The registry is open: any name resolves, whether or not the framework ships
+   * a client for it.
+   *
+   * @param {string} name - the service name — `search`, `submit`, `api`, …
+   * @returns {boolean}
+   */
+  isServiceEnabled(name) {
+    if (typeof name !== 'string' || !name) return false
+    // A map rather than an `if`, so the next service to gain a local provider is
+    // an entry rather than a second branch.
+    const special = SERVICE_RESOLVERS[name]
+    if (special) return special(this)
+    return resolveService(this, name).url !== null
   }
 
   /**
