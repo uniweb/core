@@ -1140,13 +1140,15 @@ export default class Website {
    * @returns {boolean}
    */
   isSearchEnabled() {
-    const search = this.config?.search
-    if (typeof search === 'boolean') {
-      if (!search) return false
-    } else if (search?.enabled === false) {
-      return false
-    }
-
+    // ⭐ THE ORDER IS resolveService's, the same for every service: the site's
+    // own endpoint, then the host's offer, then the site's `false` /
+    // `{ enabled: false }` — which decides only where no host offers search. So
+    // an author's `search: false` turns the local index off on a static site
+    // and does not hide search a host provides; a hosted service is turned off
+    // where the host provides it. Until 2026-09-10 this method read the
+    // author's switch FIRST, so `search: false` beat a host's offer — the one
+    // service where it did, and the opposite of every other.
+    //
     // ⭐ THE HOST GETS A SAY, and this is the half that reaches an already-
     // published foundation. A foundation bundles its own frozen copy of
     // `@uniweb/kit`, so a fix made in kit never reaches one built before it.
@@ -1168,10 +1170,14 @@ export default class Website {
     // the site tier first, so self-hosted search on a host that does not sell
     // it is untouched.
     const { url, source } = resolveService(this, 'search')
-    if (source === 'host' && !url) return false
+    // An address from anyone — the site's own endpoint, or a host's offer.
+    if (url) return true
+    // 'site': switched off, with no host offering it. 'host': the host declines.
+    if (source) return false
 
-    // Enabled by default — absent means enabled, and a host that publishes no
-    // services block at all has declined nothing (the static-host path).
+    // Nobody spoke: enabled by default — absent means enabled, and a host that
+    // publishes no services block at all has declined nothing (the static-host
+    // path, where the build emits the local index).
     return true
   }
 

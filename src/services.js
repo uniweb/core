@@ -122,15 +122,16 @@ const ABSOLUTE_URL_RE = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i
  *
  * ⭐ `false`, or an object with `enabled: false` — on either tier, for every
  * name. It is the spelling `search` has always honoured
- * (`Website.isSearchEnabled`), and backend's file contract has honoured it for
- * every service in its own `$services` rows since 2026-09-08.
+ * (`Website.isSearchEnabled`), now read for every service.
  *
  * ⛔ **Until 2026-09-10 this module read it for NO service** — so the same
- * spelling behaved two ways. `search: false` turned search off; `submit: false`
- * did nothing, and `submit: { enabled: false }` lost outright to a host that
- * offered submit, drawing a form the author had refused. On a static site the
- * authored key is the only place a service can be declared, so there the switch
- * worked for search alone.
+ * spelling behaved two ways: `search: false` turned search off, while
+ * `submit: false` or `submit: { endpoint, enabled: false }` drew the form
+ * anyway. On a static site the authored key is the only place a service can be
+ * declared, so there the switch worked for search alone.
+ *
+ * ⚖️ **A site's refusal does not override a host's offer** — step 3 of
+ * `resolveService` says why.
  *
  * Module-private on purpose: it is a rule of the two readers below, not a
  * question a caller should ask. `resolveService` is the question.
@@ -205,14 +206,7 @@ export function resolveService(website, name) {
   const config = website?.config
   const basePath = website?.basePath
 
-  // 0 — ⛔ A SITE THAT SWITCHED THE SERVICE OFF IS ANSWERING, and it wins over
-  // any host exactly as its address would. Without this the refusal read as
-  // "no address", fell through, and a host's offer drew the control the site
-  // refused. `source: 'site'` is the diagnostic: the reason a host's value is
-  // not taking effect is the site's own switch.
-  if (isServiceRefused(config?.[name])) return { url: null, source: 'site' }
-
-  // 1 — the site's own declaration wins. An operator who named an endpoint
+  // 1 — the site's own ADDRESS wins. An operator who named an endpoint
   // means it, including on a host that offers one.
   const authored = readEndpoint(config?.[name])
   if (authored) {
@@ -225,6 +219,15 @@ export function resolveService(website, name) {
   if (hostEndpoint) {
     return { url: resolveServiceUrl(hostEndpoint, basePath), source: 'host' }
   }
+
+  // 3 — ⛔ A SITE THAT SWITCHED THE SERVICE OFF — but only where no host offers
+  // it. A host that returns an address is the authority on what a hosted site
+  // is given: the site asked for the service where the host manages it, and a
+  // hosted service is turned off there — not with a second switch here that
+  // would hide a service the host is still providing. On a static site no host
+  // speaks, so this is the only switch there is, and it decides. (It briefly
+  // ran first, on 2026-09-10, and beat a host's offer — the wrong way round.)
+  if (isServiceRefused(config?.[name])) return { url: null, source: 'site' }
 
   // A host may declare the name while offering no address — a decline. It is
   // still the host answering, which is all a caller can use: any *wording* for

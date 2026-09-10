@@ -183,9 +183,20 @@ describe('isSearchEnabled — the host declines the service', () => {
     expect(new Website({ content: content() }).isSearchEnabled()).toBe(true)
   })
 
-  it('an explicit site-level disable still wins over a host that offers it', () => {
+  it("⭐ a host's offer outranks the author's `search: false`", () => {
+    // Reversed 2026-09-10. This was the only place a site-level disable was
+    // made to beat a host's offer, and it was a control for the 2026-08-25
+    // host-decline change rather than a ruling. The order is now
+    // resolveService's, the same for every service: a hosted service is turned
+    // off where the host provides it, and the author's switch decides only
+    // where no host offers search.
     expect(
       hosted({ search: { endpoint: '/_search' } }, { search: false }).isSearchEnabled(),
-    ).toBe(false)
+    ).toBe(true)
+  })
+
+  it("CONTROL: the author's `search: false` still wins where no host offers search", () => {
+    expect(hosted({ tracking: { endpoint: '/_a/e' } }, { search: false }).isSearchEnabled()).toBe(false)
+    expect(hosted({ tracking: { endpoint: '/_a/e' } }, { search: { enabled: false } }).isSearchEnabled()).toBe(false)
   })
 })
