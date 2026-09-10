@@ -117,7 +117,36 @@ const ABSOLUTE_URL_RE = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i
  * @param {*} declaration
  * @returns {string} the endpoint, or '' when there is none
  */
+/**
+ * Has this declaration switched the service OFF?
+ *
+ * ⭐ `false`, or an object with `enabled: false` — on either tier, for every
+ * name. It is the spelling `search` has always honoured
+ * (`Website.isSearchEnabled`), and backend's file contract has honoured it for
+ * every service in its own `$services` rows since 2026-09-08.
+ *
+ * ⛔ **Until 2026-09-10 this module read it for NO service** — so the same
+ * spelling behaved two ways. `search: false` turned search off; `submit: false`
+ * did nothing, and `submit: { enabled: false }` lost outright to a host that
+ * offered submit, drawing a form the author had refused. On a static site the
+ * authored key is the only place a service can be declared, so there the switch
+ * worked for search alone.
+ *
+ * Module-private on purpose: it is a rule of the two readers below, not a
+ * question a caller should ask. `resolveService` is the question.
+ */
+function isServiceRefused(declaration) {
+  return (
+    declaration === false ||
+    (declaration !== null && typeof declaration === 'object' && declaration.enabled === false)
+  )
+}
+
 export function readEndpoint(declaration) {
+  // A refused service offers no address, whatever else its block carries — so
+  // a host row with `enabled: false` reads as a decline, and the records lane
+  // (`records-service.js`) withholds its address the same way.
+  if (isServiceRefused(declaration)) return ''
   if (typeof declaration === 'string') return declaration.trim()
   if (typeof declaration?.endpoint === 'string') return declaration.endpoint.trim()
   return ''
@@ -175,6 +204,13 @@ export function resolveServiceUrl(endpoint, basePath = '') {
 export function resolveService(website, name) {
   const config = website?.config
   const basePath = website?.basePath
+
+  // 0 — ⛔ A SITE THAT SWITCHED THE SERVICE OFF IS ANSWERING, and it wins over
+  // any host exactly as its address would. Without this the refusal read as
+  // "no address", fell through, and a host's offer drew the control the site
+  // refused. `source: 'site'` is the diagnostic: the reason a host's value is
+  // not taking effect is the site's own switch.
+  if (isServiceRefused(config?.[name])) return { url: null, source: 'site' }
 
   // 1 — the site's own declaration wins. An operator who named an endpoint
   // means it, including on a host that offers one.
