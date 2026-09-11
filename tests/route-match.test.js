@@ -22,6 +22,10 @@ import { recordHandle, routeParamValue,
   fillRoutePattern,
   splitPathCapture,
   joinPathCapture,
+  routeRecordKey,
+  routeBinding,
+  routeParamName,
+  parentRouteOf,
 } from '../src/route-match.js'
 
 describe('matchDynamicRoute — what a param matches', () => {
@@ -361,5 +365,88 @@ describe('the placement handle — `$name` on a live record, `slug` on a file-la
     expect(fillRoutePattern('/team/:slug', { slug: 'ada' })).toBe('/team/ada')
     // a Model's own `slug` field does not override the placement
     expect(fillRoutePattern('/team/:slug', { $name: 'ada', slug: 'model-field' })).toBe('/team/ada')
+  })
+})
+
+describe('what a folder name matches — one map for both lanes (ruled 2026-09-11)', () => {
+  it('[slug] and [...path] are the handle, [uuid] the identity, any other the field', () => {
+    expect(routeRecordKey('slug')).toBe('$name')
+    expect(routeRecordKey('uuid')).toBe('$uuid')
+    expect(routeRecordKey('id')).toBe('id')
+    expect(routeRecordKey('username')).toBe('username')
+  })
+
+  it('[uuid] matches $uuid, else a plain uuid field — a remote source keeps routing', () => {
+    expect(routeParamValue({ $uuid: '019e', uuid: 'other' }, 'uuid')).toBe('019e')
+    expect(routeParamValue({ uuid: 'abc' }, 'uuid')).toBe('abc')
+    expect(routeParamValue({}, 'uuid')).toBeUndefined()
+  })
+
+  it('[slug] matches $name, else slug — and any other name its own field', () => {
+    expect(routeParamValue({ $name: 'ada', slug: 'x' }, 'slug')).toBe('ada')
+    expect(routeParamValue({ slug: 'x' }, 'slug')).toBe('x')
+    expect(routeParamValue({ id: 7 }, 'id')).toBe(7)
+  })
+})
+
+describe('routeBinding — the three variables under every folder form', () => {
+  it('[...path] splits its capture', () => {
+    expect(routeBinding('/blog/:path*', { path: 'rust/2025/my-post' }, 'slug')).toEqual({
+      paramName: 'slug',
+      paramValue: 'my-post',
+      variables: { path: 'rust/2025/my-post', dir: 'rust/2025', slug: 'my-post' },
+    })
+  })
+
+  it('[slug] is one segment — :slug and :path hold it, :dir is empty', () => {
+    expect(routeBinding('/blog/:slug', { slug: 'hello' }, 'slug')).toEqual({
+      paramName: 'slug',
+      paramValue: 'hello',
+      variables: { slug: 'hello', path: 'hello', dir: '' },
+    })
+  })
+
+  it('[id] keeps its capture under its own label beside the three — a query cannot reference it', () => {
+    expect(routeBinding('/products/:id', { id: '7' }, 'id').variables).toEqual({ id: '7', slug: '7', path: '7', dir: '' })
+  })
+
+  it('a page nested inside a parametric page binds its ancestor\'s param, the deepest one', () => {
+    expect(routeBinding('/members/:slug/cv', { slug: 'alice' })).toMatchObject({ paramName: 'slug', paramValue: 'alice' })
+    expect(routeParamName('/orgs/:org/members/:slug')).toBe('slug')
+  })
+
+  it('a declared param wins; [...path]\'s is slug', () => {
+    expect(routeParamName('/blog/:path*', 'slug')).toBe('slug')
+    expect(routeParamName('/blog/:path*')).toBe('slug')
+    expect(routeParamName('/orgs/:org/members/:slug', 'org')).toBe('org')
+  })
+})
+
+describe('parentRouteOf — the one rule for a page\'s parent', () => {
+  const routes = new Set(['/', '/members', '/members/:slug', '/docs'])
+  const has = (r) => routes.has(r)
+
+  it('the declared parent when it names a page', () => {
+    expect(parentRouteOf('/members/:slug', { declared: '/members', has })).toBe('/members')
+  })
+
+  it('otherwise the route minus its last segment, a :param or :path* token included', () => {
+    expect(parentRouteOf('/members/:slug', { has })).toBe('/members')
+    expect(parentRouteOf('/members/:slug/cv', { has })).toBe('/members/:slug')
+    expect(parentRouteOf('/docs/:path*', { has })).toBe('/docs')
+  })
+
+  it('a declared parent that names no page falls back to the route', () => {
+    expect(parentRouteOf('/members/:slug', { declared: '/gone', has })).toBe('/members')
+  })
+
+  it('a top-level page has none — the homepage is not everyone\'s parent', () => {
+    expect(parentRouteOf('/members', { has })).toBeNull()
+    expect(parentRouteOf('/:slug', { has })).toBeNull()
+    expect(parentRouteOf('/', { has })).toBeNull()
+  })
+
+  it('no page at the stripped route is no parent', () => {
+    expect(parentRouteOf('/blog/:slug', { has })).toBeNull()
   })
 })

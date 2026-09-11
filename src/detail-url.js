@@ -22,7 +22,7 @@
  * a matched route pattern says nothing about the record behind it.
  */
 
-import { recordHandle } from './route-match.js'
+import { recordHandle, routeRecordKey } from './route-match.js'
 import { substitutePlaceholders } from './substitute-placeholders.js'
 
 /**
@@ -90,15 +90,13 @@ function paramContext(paramName, paramValue, record) {
  * @returns {Object|null} A fetch config carrying `url` or `path`, or null.
  */
 /**
- * The key a route param narrows a QUESTION by — the entry's own handle, which
- * the records service guarantees unique among siblings (the records contract
- * §1b: `$name`, "addressed AND filtered"). ⚠️ One constant, because the spelling
- * moved four times in one day (`path_segment` → `$slug` → `$name` → `meta::name`
- * → `$name`); the service is dark until a host stamps it, so this is the one
- * place to change if it moves again. Not read by the file lane, which narrows
- * by the route's own param (`item[paramName]`).
+ * The record key a `[slug]` (or `[...path]`) route matches — the entry's own
+ * handle, which the records service guarantees unique among siblings (the
+ * records contract §1b: `$name`). Kept as the export it has been; the map from
+ * every folder name to its key is `routeRecordKey` (`./route-match.js`), whose
+ * `slug` entry this is.
  */
-export const ROUTE_HANDLE_KEY = '$name'
+export const ROUTE_HANDLE_KEY = routeRecordKey('slug')
 
 export function buildDetailConfig(queryConfig, dynamicContext) {
   const { detail } = queryConfig
@@ -106,17 +104,22 @@ export function buildDetailConfig(queryConfig, dynamicContext) {
   const { paramName, paramValue, record = null } = dynamicContext
   if (!paramName || paramValue === undefined) return null
 
-  // ⭐ THE RECORDS SERVICE: the record is the list's own question, narrowed to
-  // one entry by its handle and asked in full — the list page and the detail
-  // page are the same query, differing only by whether the parameter is bound
-  // (the records contract, §1a). `sort` and `limit` are the list's and drop;
-  // `scope` and the authored `where` stay, so a scoped query cannot be escaped
-  // through the URL.
+  // ⭐ THE RECORDS SERVICE: the record is the route query's own question, unchanged,
+  // plus `match` — the one key the page's folder names and the URL's value for it
+  // (`routeRecordKey`: `[slug]` → `$name`, `[uuid]` → `$uuid`, `[id]` → `id`) —
+  // asked in full. `sort` and `limit` are the list's and drop; `scope` and the
+  // authored `where` stay AS WRITTEN, so a query's conditions cannot be escaped
+  // through the URL (the records contract, §1a).
+  //
+  // ⛔ `where` is never touched. Until 2026-09-11 the handle was merged into it,
+  // which replaced any condition the author had on the same key; `where` is the
+  // author's and `match` is the visitor's [Diego]. The value is a string — it is a
+  // URL segment — and the service compares it as one, as the local match does.
   if (queryConfig.ask) {
-    const { sort, limit, detail: _detail, ...rest } = queryConfig
+    const { sort, limit, detail: _detail, match: _match, ...rest } = queryConfig
     return {
       ...rest,
-      where: { ...(queryConfig.where && typeof queryConfig.where === 'object' ? queryConfig.where : {}), [ROUTE_HANDLE_KEY]: String(paramValue) },
+      match: { [routeRecordKey(paramName)]: String(paramValue) },
       whole: true,
       dynamicContext: { paramName, paramValue },
     }

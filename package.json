@@ -17,7 +17,8 @@
     "./section-id": "./src/section-id.js",
     "./services": "./src/services.js",
     "./sort": "./src/sort.js",
-    "./tracker": "./src/tracker.js"
+    "./tracker": "./src/tracker.js",
+    "./scope": "./src/scope.js"
   },
   "files": [
     "src"

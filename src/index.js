@@ -22,7 +22,7 @@ export { default as ObservableState } from './observable-state.js'
 export { substitutePlaceholders } from './substitute-placeholders.js'
 // `resolveRecordsService` / `RECORDS_SERVICE` are NOT re-exported here: `./fetch-config.js`
 // reads them and a consumer that needs them imports `@uniweb/core/records-service`.
-export { resolveFetchConfigs } from './fetch-config.js'
+export { resolveFetchConfigs, routeQuery, sectionFetches, withoutRouteVariables } from './fetch-config.js'
 export { buildDetailConfig, ROUTE_HANDLE_KEY } from './detail-url.js'
 // `isWildcardLanguages` is likewise internal — `./locale-config.js` reads it
 // and nothing else does. Same subpath escape hatch: `@uniweb/core/locale-config`.
@@ -51,11 +51,24 @@ export {
   isDataUrl
 } from './data-paths.js'
 export { evaluate as evaluateWhere, match as matchWhere } from './where.js'
+// A query's `scope:` over records that carry their placement — read by the runtime's
+// default fetcher and by `@uniweb/build` when it compiles a query's file.
+export { applyScope, withinScope } from './scope.js'
 // The one sort evaluator and the one href encoder — both read by `@uniweb/build`
 // (materialization, the `route:` bake) and by `@uniweb/runtime` (the fallback),
 // which is what keeps the static and live lanes answering a query identically.
 export { parseSort, sortRecords, sortToWire } from './sort.js'
-export { fillRoutePattern, splitPathCapture, joinPathCapture, recordHandle, routeParamValue } from './route-match.js'
+export {
+  fillRoutePattern,
+  splitPathCapture,
+  joinPathCapture,
+  recordHandle,
+  routeParamValue,
+  routeRecordKey,
+  routeBinding,
+  routeParamName,
+  parentRouteOf,
+} from './route-match.js'
 export { isRichSchema } from './schemas.js'
 // ⛔ `Tracker` is NOT on the package entry. It is a FEATURE, not part of the
 // object graph this package exists to define, and putting it here made every

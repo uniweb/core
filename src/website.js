@@ -11,8 +11,8 @@ import FetcherDispatcher from './fetcher-dispatcher.js'
 import ObservableState from './observable-state.js'
 import { normalizeSeo } from './seo.js'
 import { resolveDefaultLocale, localeLabel } from './locale-config.js'
-import { matchDynamicRoute, decodeRouteValue, routePatternToRegex, splitPathCapture, routeParamValue } from './route-match.js'
-import { resolveFetchConfigs } from './fetch-config.js'
+import { matchDynamicRoute, decodeRouteValue, routeParamValue, routeBinding, routeParamName, parentRouteOf } from './route-match.js'
+import { resolveFetchConfigs, routeQuery, sectionFetches } from './fetch-config.js'
 import { buildDetailConfig } from './detail-url.js'
 import { resolveService } from './services.js'
 
@@ -382,29 +382,19 @@ export default class Website {
       pageMap.set(page.route, page)
     }
 
-    // Link pages using the declared parent route (set by build)
+    // ⭐ THE ONE PARENT RULE (`parentRouteOf`, `./route-match.js`): the declared
+    // parent route (`pages[].parent`, set by our build) when it names a page, else
+    // the route minus its last segment when a page holds that route. A top-level
+    // page (e.g. /Features) is NOT a child of the homepage. The prefetch and the
+    // static build call the same rule, so the parent a section inherits from and
+    // the parent a parametric page's route query is read from are one page in
+    // every lane — a payload that omits `parent` (published payloads may) changes
+    // nothing. Children arrays are needed for nav filtering and getNavigableRoute.
+    const has = (route) => pageMap.has(route)
     for (const page of this.pages) {
-      if (page.parentRoute) {
-        const parent = pageMap.get(page.parentRoute)
-        if (parent) {
-          parent.children.push(page)
-          page.parent = parent
-        }
-      }
-    }
-
-    // Fallback: infer parent-child from route structure for unlinked pages.
-    // The editor sets parentRoute via buildEnginePreviewPayload(), but published
-    // payloads may not include it. Infer from route nesting so children arrays
-    // are always populated (needed for nav filtering and getNavigableRoute).
-    // Only applies to nested routes (e.g., /Articles/index → parent /Articles).
-    // Top-level pages (e.g., /Features) are NOT children of the homepage.
-    for (const page of this.pages) {
-      if (page.parent || page.route === '/') continue
-      const inferredParent = page.route.replace(/\/[^/]+$/, '')
-      if (!inferredParent || inferredParent === '/' || inferredParent === page.route) continue
-      const parent = pageMap.get(inferredParent)
-      if (parent) {
+      const parentRoute = parentRouteOf(page.route, { declared: page.parentRoute, has })
+      const parent = parentRoute ? pageMap.get(parentRoute) : null
+      if (parent && parent !== page) {
         parent.children.push(page)
         page.parent = parent
       }
@@ -572,39 +562,23 @@ export default class Website {
     pageData.route = concreteRoute
     pageData.isDynamic = false // No longer a template
 
-    // ⭐ The route's variables, and the param the record is delivered by.
-    //
-    // `[slug]` — the one capture, under the folder's own label: `paramName` is
-    // that label and the record is matched on `item[paramName]`.
-    //
-    // `[...path]` — the capture is split by the rule in `route-match.js`
-    // (`:path` the whole capture · `:dir` everything before the last segment ·
-    // `:slug` the last segment); the record is delivered by `slug`, its handle,
-    // exactly as under `[slug]`, and `path` / `dir` exist for a query to bind
-    // (`scope: :dir`, `where: { tag: :dir }`). Ruled 2026-09-04 [Diego]: the
-    // variables are standard, never author-named.
-    const { catchAll } = routePatternToRegex(templatePage.route)
-    let variables = { ...params }
-    let paramName
-    let paramValue
-    if (catchAll && params[catchAll] !== undefined) {
-      const parts = splitPathCapture(params[catchAll])
-      variables = { ...params, ...parts }
-      paramName = originalData.paramName || 'slug'
-      paramValue = parts.slug
-    } else {
-      paramName = originalData.paramName || Object.keys(params)[0]
-      paramValue = params[paramName]
-    }
-    const pluralSchema = originalData.parentSchema // e.g., 'articles'
+    // ⭐ The route's binding — the param the record is matched on, its value, and
+    // the variables a query may reference — by the ONE implementation the prefetch
+    // and the static build call too (`routeBinding`, `./route-match.js`). The
+    // variables are the three standard names under every folder form (ruled
+    // 2026-09-04 and 2026-09-11 [Diego]): `[...path]` splits its capture;
+    // `[name]` is one segment, `:slug` and `:path` equal to it and `:dir` empty.
+    // A page nested inside a parametric page binds its ancestor's param.
+    const { paramName, paramValue, variables } = routeBinding(templatePage.route, params, originalData.paramName)
 
-    // Store dynamic context for components to access
+    // Store dynamic context for components to access. ⛔ No `schema`: the key the
+    // URL narrows is worked out where it is read (`EntityStore._routeKey`), from
+    // the page, never stored beside it (deleted 2026-09-11).
     pageData.dynamicContext = {
       templateRoute: templatePage.route,
       params: variables,
       paramName,
       paramValue,
-      schema: pluralSchema,
     }
 
     // Set dynamic context on sections so Block instances receive it
@@ -614,13 +588,22 @@ export default class Website {
       }
     }
 
-    // Try to resolve page metadata from DataStore
-    // Look up the parent page's fetch config to find data in the store
-    // The template's parent: the route without its `:param` — or `:path*` — tail.
-    const parentRoute = templatePage.route.replace(/\/:[\w-]+\*?$/, '') || '/'
-    const parentPage = this.pages.find(p => p.route === parentRoute || p.getNavRoute() === parentRoute)
+    // Try to resolve page metadata from DataStore: the record the page is about,
+    // from its ROUTE QUERY (`routeQuery`) — the page's own query, its parent's, the
+    // site's, or its sections' shared key — read off the same parent the entity
+    // store reads (`templatePage.parent`, linked by the one parent rule). ⛔ Until
+    // 2026-09-11 this probed only a parent found by stripping the route down to
+    // `/` (so a top-level page probed the homepage) and only that parent's fetch,
+    // so a page whose route query was its own or the site's never got its title.
+    const parentPage = templatePage.parent
+    const route = routeQuery({
+      page: originalData.fetch,
+      parent: parentPage?.fetch,
+      site: this.config?.fetch,
+      sections: sectionFetches(originalData.sections),
+    })
 
-    if (parentPage && pluralSchema) {
+    if (route && paramValue !== undefined) {
       // Find the record the page is ABOUT via the dispatcher's peek (a sync
       // cache probe), to set the page title / description / notFound flag
       // before the page instance is constructed.
@@ -633,23 +616,23 @@ export default class Website {
       // missed on exactly those lanes: no title, no not-found, and the page was
       // never cached (`recordsLoaded` false on every visit). Silent, on a
       // visitor's page — the "write key ≠ read key" failure.
-      const parentFetch = parentPage.fetch
       let items = []
       let currentItem = null
 
-      if (parentFetch && this.fetcher) {
-        // ⛔ `as` is the binding key. This matched on `schema` alone until
-        // 2026-09-02 — which, once the alias went, would have found nothing:
-        // `items` stays `[]` and the page reports "Not found" for a record that
-        // exists. Silent, and on a visitor's page.
-        const fetchConfig = resolveFetchConfigs([parentFetch], {
-          schemas: [pluralSchema],
-          locale: this.getActiveLocale(),
-          defaultLocale: this.getDefaultLocale(),
-          queries: this.config?.queries ?? null,
-          services: this.config?.services ?? null,
-          variables,
-        }).get(pluralSchema)
+      if (this.fetcher) {
+        // The same sources the store walks for a section that declares nothing,
+        // plus the declaring section's config when the key came from the sections.
+        const fetchConfig = resolveFetchConfigs(
+          [originalData.fetch, parentPage?.fetch, this.config?.fetch, route.level === 'sections' ? route.config : null],
+          {
+            schemas: [route.key],
+            locale: this.getActiveLocale(),
+            defaultLocale: this.getDefaultLocale(),
+            queries: this.config?.queries ?? null,
+            services: this.config?.services ?? null,
+            variables,
+          },
+        ).get(route.key)
         if (fetchConfig) {
           const ctx = { website: this }
           // ⭐ The page is about ONE record, so ask for that record first: a
@@ -689,10 +672,11 @@ export default class Website {
 
       // Track whether the records were available at creation time.
       // Note: the matched record and the sibling list are intentionally NOT
-      // stored on dynamicContext — nothing reads them (documented shape is
-      // { paramName, paramValue, schema }; the record reaches components via
-      // content.data, siblings via `fetch: { refine: true, detail: false }`).
-      // The local `currentItem`/`items` above drive title/description/notFound.
+      // stored on dynamicContext — nothing reads them (its shape is
+      // { templateRoute, params, paramName, paramValue }; the record reaches
+      // components via content.data, siblings via
+      // `fetch: { refine: true, detail: false }`). The local
+      // `currentItem`/`items` above drive title/description/notFound.
       pageData._recordsLoaded = items.length > 0 || currentItem !== null
     }
 
@@ -884,25 +868,39 @@ export default class Website {
   }
 
   /**
-   * The route template that renders ONE record of a binding key — `{ route,
-   * paramName }` for the `[param]` page whose parent query lands under `key`,
-   * or null when the site routes no detail page over it.
+   * The parametric page that renders ONE record of a query — `{ route, paramName }`
+   * for the page whose route query (`routeQuery`) lands under `name`, or null when
+   * the site routes no such page.
    *
-   * ⭐ This is how a caller outside a template page learns which record field
+   * ⭐ This is how a caller outside a parametric page learns which record field
    * the site's URL is built on: `kit`'s `useEntityDetail` asks it so a hover
    * card and the page it links to address the record by the SAME field. It
    * hardcoded `slug` until 2026-09-04, which was quietly wrong on any site
-   * routing `[id]`. The first template found
-   * wins, matching `parentSchema`'s own rule that one key indexes one template.
+   * routing `[id]`.
    *
-   * @param {string} key - a binding key (`content.data.<key>`)
+   * `name` may be the binding key (`content.data.<key>`) or the query's name:
+   * `useEntityDetail` holds the query name, and the two differ under an `as:`
+   * override — which this matched by binding key only until 2026-09-11. The first
+   * page found wins, and only a page whose own folder is the parameter (a page
+   * nested inside one is not the record's page).
+   *
+   * @param {string} name - a binding key or a query name
    * @returns {{ route: string, paramName: string } | null}
    */
-  detailTemplateFor(key) {
-    if (!key) return null
+  detailTemplateFor(name) {
+    if (!name) return null
     for (const data of this._dynamicPageData.values()) {
-      if (data?.parentSchema === key && data.paramName) {
-        return { route: data.route, paramName: data.paramName }
+      if (!data?.route || !/\/:[A-Za-z0-9_-]+\*?$/.test(data.route)) continue
+      const page = this.pages.find((p) => p.route === data.route)
+      const route = routeQuery({
+        page: data.fetch,
+        parent: page?.parent?.fetch,
+        site: this.config?.fetch,
+        sections: sectionFetches(data.sections),
+      })
+      if (!route) continue
+      if (route.key === name || route.config?.query === name) {
+        return { route: data.route, paramName: routeParamName(data.route, data.paramName) }
       }
     }
     return null

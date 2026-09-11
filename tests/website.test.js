@@ -248,7 +248,6 @@ describe('Website.resolveDetailPageTemplate', () => {
             id: 'article-detail',
             isDynamic: true,
             paramName: 'slug',
-            parentSchema: 'articles',
             title: 'Article',
             sections: [],
           },

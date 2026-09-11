@@ -169,7 +169,7 @@ describe('EntityStore.fetch', () => {
       fetcherImpl: () => Promise.resolve({ data: articles }),
     })
     const fetchConfig = { path: '/data/articles.json', as: 'articles' }
-    const dynamicContext = { paramName: 'slug', paramValue: 'world', schema: 'articles' }
+    const dynamicContext = { paramName: 'slug', paramValue: 'world' }
     const page = makePage({ fetch: fetchConfig })
     const block = makeBlock({ page, dynamicContext }, website)
 
@@ -197,7 +197,7 @@ describe('EntityStore.fetch', () => {
       as: 'articles',
       detail: 'rest',
     }
-    const dynamicContext = { paramName: 'slug', paramValue: 'my-post', schema: 'articles' }
+    const dynamicContext = { paramName: 'slug', paramValue: 'my-post' }
     const parent = makePage({ fetch: fetchConfig })
     const page = makePage({ parent, dynamicContext })
     const block = makeBlock({ page }, website)
@@ -229,7 +229,7 @@ describe('EntityStore.fetch', () => {
       as: 'articles',
       detail: 'query',
     }
-    const dynamicContext = { paramName: 'slug', paramValue: 'my-post', schema: 'articles' }
+    const dynamicContext = { paramName: 'slug', paramValue: 'my-post' }
     const parent = makePage({ fetch: fetchConfig })
     const page = makePage({ parent, dynamicContext })
     const block = makeBlock({ page }, website)
@@ -259,7 +259,7 @@ describe('EntityStore.fetch', () => {
       as: 'articles',
       detail: 'https://api.example.com/article/{slug}',
     }
-    const dynamicContext = { paramName: 'slug', paramValue: 'my-post', schema: 'articles' }
+    const dynamicContext = { paramName: 'slug', paramValue: 'my-post' }
     const parent = makePage({ fetch: fetchConfig })
     const page = makePage({ parent, dynamicContext })
     const block = makeBlock({ page }, website)
@@ -288,7 +288,7 @@ describe('EntityStore.fetch', () => {
     }
     dataStore.set(deriveCacheKey(fetchConfig), { data: articles })
 
-    const dynamicContext = { paramName: 'slug', paramValue: 'my-post', schema: 'articles' }
+    const dynamicContext = { paramName: 'slug', paramValue: 'my-post' }
     const parent = makePage({ fetch: fetchConfig })
     const page = makePage({ parent, dynamicContext })
     const block = makeBlock({ page }, website)
@@ -326,7 +326,7 @@ describe('EntityStore.fetch', () => {
       fetcherImpl: () => Promise.resolve({ data: articles }),
     })
     const fetchConfig = { url: 'https://api.example.com/articles', as: 'articles' }
-    const dynamicContext = { paramName: 'slug', paramValue: 'my-post', schema: 'articles' }
+    const dynamicContext = { paramName: 'slug', paramValue: 'my-post' }
     const parent = makePage({ fetch: fetchConfig })
     const page = makePage({ parent, dynamicContext })
     const block = makeBlock({ page }, website)
@@ -513,7 +513,7 @@ describe('EntityStore.fetch', () => {
         as: 'articles',
         detail: 'rest',
       }
-      const dynamicContext = { paramName: 'slug', paramValue: 'b', schema: 'articles' }
+      const dynamicContext = { paramName: 'slug', paramValue: 'b' }
       const parent = makePage({ fetch: parentConfig })
       const page = makePage({ parent, dynamicContext })
       const block = makeBlock(
@@ -607,7 +607,6 @@ describe('EntityStore + real Website: end-to-end detailPage resolution', () => {
             id: 'article-detail',
             isDynamic: true,
             paramName: 'slug',
-            parentSchema: 'articles',
             title: 'Article',
             sections: [],
           },
@@ -722,7 +721,7 @@ describe('⛔ a failed fetch delivers NOTHING under its key, and says so', () =>
         : Promise.resolve({ data: [], error: 'HTTP 500' }),
     })
     const fetchConfig = { url: 'https://api.example.com/articles', as: 'articles', detail: 'rest' }
-    const dynamicContext = { paramName: 'slug', paramValue: 'my-post', schema: 'articles' }
+    const dynamicContext = { paramName: 'slug', paramValue: 'my-post' }
     const parent = makePage({ fetch: fetchConfig })
     const page = makePage({ parent, dynamicContext })
     const block = makeBlock({ page }, website)
@@ -737,7 +736,7 @@ describe('⛔ a failed fetch delivers NOTHING under its key, and says so', () =>
       fetcherImpl: () => Promise.resolve({ data: [], error: 'down' }),
     })
     const fetchConfig = { url: 'https://api.example.com/articles', as: 'articles' }
-    const dynamicContext = { paramName: 'slug', paramValue: 'my-post', schema: 'articles' }
+    const dynamicContext = { paramName: 'slug', paramValue: 'my-post' }
     const parent = makePage({ fetch: fetchConfig })
     const page = makePage({ parent, dynamicContext })
     const block = makeBlock({ page }, website)
@@ -782,7 +781,7 @@ describe('the record in hand reaches the detail address', () => {
     })
     website.config = { queries: { articles: { deferred: ['body'] } } }
     const fetchConfig = { query: 'articles', path: '/data/articles.json', as: 'articles' }
-    const dynamicContext = { paramName: 'id', paramValue: '7', schema: 'articles' }
+    const dynamicContext = { paramName: 'id', paramValue: '7' }
     const parent = makePage({ fetch: fetchConfig })
     const page = makePage({ parent, dynamicContext })
     const block = makeBlock({ page }, website)
@@ -818,7 +817,8 @@ describe('R1 on a detail page — a record held in full is delivered, not fetche
   const QUERIES = { members: { schema: '@std/person' } }
   const briefs = [{ $uuid: 'u1', $name: 'ada', title: 'Ada' }, { $uuid: 'u2', $name: 'lin', title: 'Lin' }]
   const fullAda = { $uuid: 'u1', $name: 'ada', title: 'Ada', bio: 'Full bio' }
-  const isRecord = (req) => req.where && req.where.$name !== undefined
+  // The record question carries `match`; the list question does not.
+  const isRecord = (req) => req.match && req.match.$name !== undefined
 
   function liveHarness(fetcherImpl) {
     const h = makeHarness({ fetcherImpl })
@@ -826,7 +826,7 @@ describe('R1 on a detail page — a record held in full is delivered, not fetche
     return h
   }
   const detailPage = () => {
-    const dynamicContext = { paramName: 'slug', paramValue: 'ada', schema: 'members' }
+    const dynamicContext = { paramName: 'slug', paramValue: 'ada' }
     const parent = makePage({ fetch: { query: 'members', as: 'members' } })
     return makePage({ parent, dynamicContext })
   }
@@ -888,20 +888,22 @@ describe('on a question door a detail page asks list and record TOGETHER — no 
     const asked = []
     const { entityStore, website } = makeHarness({
       fetcherImpl: (req) => {
-        asked.push({ whole: req.whole, where: req.where })
+        asked.push({ whole: req.whole, where: req.where, match: req.match })
         if (req.whole === true) return Promise.resolve({ data: [{ $uuid: 'u1', $name: 'ada', name: 'Ada', bio: 'Full' }], meta: { whole: true } })
         return Promise.resolve({ data: [{ $uuid: 'u1', $name: 'ada', name: 'Ada' }], meta: { whole: false } })
       },
     })
     website.config = { services: SERVICES, queries: QUERIES }
-    const dynamicContext = { paramName: 'slug', paramValue: 'ada', schema: 'members' }
+    const dynamicContext = { paramName: 'slug', paramValue: 'ada' }
     const parent = makePage({ fetch: { query: 'members', as: 'members' } })
     const page = makePage({ parent, dynamicContext })
 
     const result = await entityStore.fetch(makeBlock({ page }, website), {})
     expect(result.data.members).toEqual([{ $uuid: 'u1', $name: 'ada', name: 'Ada', bio: 'Full' }])
     expect(asked).toHaveLength(2)
-    expect(asked.find((a) => a.whole === true).where).toEqual({ $name: 'ada' })
+    // ⭐ the record is the same question plus `match` — the author's `where` untouched
+    expect(asked.find((a) => a.whole === true).match).toEqual({ $name: 'ada' })
+    expect(asked.find((a) => a.whole === true).where).toBeUndefined()
     // second visit: the record's answer is cached under its own key; the sync path delivers it
     const resolved = entityStore.resolve(makeBlock({ page }, website), {})
     expect(resolved.status).toBe('ready')
@@ -915,7 +917,7 @@ describe('on a question door a detail page asks list and record TOGETHER — no 
         : Promise.resolve({ data: [], error: 'HTTP 502' }),
     })
     website.config = { services: SERVICES, queries: QUERIES }
-    const dynamicContext = { paramName: 'slug', paramValue: 'nope', schema: 'members' }
+    const dynamicContext = { paramName: 'slug', paramValue: 'nope' }
     const page = makePage({ parent: makePage({ fetch: { query: 'members', as: 'members' } }), dynamicContext })
     const result = await entityStore.fetch(makeBlock({ page }, website), {})
     expect(result.data.members).toEqual([])

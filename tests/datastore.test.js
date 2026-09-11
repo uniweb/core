@@ -134,10 +134,17 @@ describe('DataStore', () => {
         .toEqual(deriveCacheKey({ as: 'x', path: '/a' }))
     })
 
-    it('ignores post-processing fields', () => {
-      const a = deriveCacheKey({ path: '/a', as: 'x', limit: 3 })
-      const b = deriveCacheKey({ path: '/a', as: 'x', limit: 99 })
-      expect(a).toEqual(b)
+    it('⭐ keys an address by the VIEW it takes too — scope, where, sort, limit (2026-09-11)', () => {
+      // These are evaluated over the file before the dispatcher stores the answer,
+      // so two views of one file sharing a key meant whoever asked first decided
+      // what everyone got. The file itself is read once, by the default fetcher.
+      const base = deriveCacheKey({ path: '/a', as: 'x' })
+      expect(deriveCacheKey({ path: '/a', as: 'x', limit: 3 })).not.toBe(base)
+      expect(deriveCacheKey({ path: '/a', as: 'x', where: { t: 1 } })).not.toBe(base)
+      expect(deriveCacheKey({ path: '/a', as: 'x', scope: 'field' })).not.toBe(base)
+      expect(deriveCacheKey({ path: '/a', as: 'x', sort: '-date' })).not.toBe(base)
+      // …and one view is one key, whatever the field order
+      expect(deriveCacheKey({ limit: 3, as: 'x', path: '/a' })).toBe(deriveCacheKey({ path: '/a', as: 'x', limit: 3 }))
     })
   })
 })

@@ -260,15 +260,36 @@ export function recordHandle(record) {
 }
 
 /**
- * The value a record carries for a route param. `slug` — the default param, and
- * the last segment of a `[...path]` route — is the placement handle
- * (`recordHandle`); any other param is a field the site chose to route by.
+ * The record field a route param is matched on — ONE MAP, read by the local match
+ * (`routeParamValue`, below) and by the records service's record question (`match`,
+ * `./detail-url.js`), so the two lanes cannot disagree about what a folder's name
+ * means. Ruled 2026-09-11 [Diego]:
+ *
+ *     [slug], [...path]  →  $name   the record's handle (a `[...path]` page's param is `slug`)
+ *     [uuid]             →  $uuid   the record's identity
+ *     [anything]         →  anything, the record's own field of that name
+ *
+ * @param {string} paramName
+ * @returns {string}
+ */
+export function routeRecordKey(paramName) {
+  if (paramName === 'slug') return '$name'
+  if (paramName === 'uuid') return '$uuid'
+  return paramName
+}
+
+/**
+ * The value a record carries for a route param, by `routeRecordKey`'s map. The two
+ * built-in keys fall back to the plain field a source without them carries: the
+ * handle to `slug` (`recordHandle`), the identity to `uuid` — so a remote API that
+ * routes `[uuid]` on its own `uuid` field keeps matching (ruled 2026-09-11).
  *
  * ⛔ Every reader that matches a delivered record to a route param goes through
- * this — the entity store, the website's dynamic page, the kit's detail hook,
- * the href encoder below. Until 2026-09-04 each read `item[paramName]` directly,
- * so a record served with `$name` and no `slug` matched nothing: a template page
- * on a live lane rendered `[]` and a list linked to no record.
+ * this — the entity store, the website's parametric page, the static build's
+ * expansion, the kit's detail hook, the href encoder below. Until 2026-09-04 each
+ * read `item[paramName]` directly, so a record served with `$name` and no `slug`
+ * matched nothing: a template page on a live lane rendered `[]` and a list linked
+ * to no record.
  *
  * @param {Object} record
  * @param {string} paramName
@@ -277,7 +298,97 @@ export function recordHandle(record) {
 export function routeParamValue(record, paramName) {
   if (!record || typeof record !== 'object') return undefined
   if (paramName === 'slug') return recordHandle(record)
+  if (paramName === 'uuid') {
+    const id = record.$uuid
+    return typeof id === 'string' && id.length ? id : record.uuid
+  }
   return record[paramName]
+}
+
+/**
+ * A parametric page's route binding — the param the record is matched on, its
+ * value, and the route VARIABLES a query may reference. ONE implementation, for
+ * the SPA (`Website._createDynamicPage`), the prefetch and the static build.
+ *
+ * The variables are always the three standard names (ruled 2026-09-04 and
+ * 2026-09-11 [Diego]; no others):
+ *
+ *   - `[...path]` splits its capture — `:path` the whole of it, `:dir` all but the
+ *     last segment, `:slug` the last (`splitPathCapture`);
+ *   - any other param is ONE segment used as is: `:slug` holds it, `:path` equals
+ *     it, and `:dir` is empty — which drops a clause that binds it.
+ *
+ * The raw params ride along under their own names, for a component reading
+ * `block.dynamicContext.params`; a query cannot reference them.
+ *
+ * `paramName` is the page's declared one when it has it. A page nested inside a
+ * parametric page (`/members/:slug/cv`) has no bracket of its own and binds the
+ * DEEPEST param of its route — its nearest parametric ancestor's.
+ *
+ * @param {string} pattern - the page's route pattern (`/members/:slug`, `/docs/:path*`)
+ * @param {Record<string,string>} params - what `matchDynamicRoute` captured
+ * @param {string|null} [paramName] - the page's declared param
+ * @returns {{ paramName: string|null, paramValue: string|undefined, variables: Object }}
+ */
+export function routeBinding(pattern, params = {}, paramName = null) {
+  const { catchAll } = routePatternToRegex(pattern)
+  const name = routeParamName(pattern, paramName)
+  if (catchAll && params[catchAll] !== undefined) {
+    const parts = splitPathCapture(params[catchAll])
+    return { paramName: name, paramValue: parts.slug, variables: { ...params, ...parts } }
+  }
+  const value = name ? params[name] : undefined
+  if (value === undefined) return { paramName: name, paramValue: undefined, variables: { ...params } }
+  return { paramName: name, paramValue: value, variables: { ...params, path: value, dir: '', slug: value } }
+}
+
+/**
+ * The param a parametric page's record is matched on: the page's declared one;
+ * else `slug` under `[...path]` (the record is its handle, the capture's last
+ * segment); else the route's DEEPEST param — a page nested inside a parametric
+ * page binds its nearest parametric ancestor's.
+ *
+ * @param {string} pattern
+ * @param {string|null} [declared]
+ * @returns {string|null}
+ */
+export function routeParamName(pattern, declared = null) {
+  const { paramNames, catchAll } = routePatternToRegex(pattern)
+  if (declared && paramNames.includes(declared)) return declared
+  if (catchAll) return declared || 'slug'
+  if (declared && !paramNames.length) return declared
+  return paramNames.length ? paramNames[paramNames.length - 1] : (declared || null)
+}
+
+/**
+ * The page a page's data inherits from — THE ONE RULE for a page's parent, used by
+ * the object graph (`Website.buildPageHierarchy`), the prefetch and the static
+ * build, so what a section inherits and what a parametric page's URL narrows are
+ * read off the same parent in every lane.
+ *
+ * The declared parent (`pages[].parent`, which our collector writes) when it names
+ * a page; otherwise the route minus its last segment — a `:param` or `:path*` token
+ * included — when a page holds that route. A top-level page has none: the homepage
+ * is not everyone's parent.
+ *
+ * ⛔ Measured 2026-09-11, before this existed: the prefetch read the declared field
+ * only, so on a payload without it `/members/alice` resolved no configs at all,
+ * while the SPA inferred `/members` and fetched the list and the record itself.
+ *
+ * @param {string} route
+ * @param {Object} options
+ * @param {string|null} [options.declared] - the parent route the payload declares
+ * @param {(route: string) => boolean} options.has - whether a page holds a route
+ * @returns {string|null} the parent's route, or null
+ */
+export function parentRouteOf(route, { declared = null, has } = {}) {
+  if (typeof has !== 'function' || typeof route !== 'string') return null
+  if (typeof declared === 'string' && declared && declared !== route && has(declared)) return declared
+  const r = normalizeRoute(route)
+  const cut = r.lastIndexOf('/')
+  if (cut <= 0) return null
+  const up = r.slice(0, cut)
+  return has(up) ? up : null
 }
 
 /**

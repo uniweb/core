@@ -14,7 +14,7 @@
  * and in-flight dedup.
  */
 
-import { isFetchRefinement, resolveFetchConfigs } from './fetch-config.js'
+import { isFetchRefinement, resolveFetchConfigs, routeQuery, sectionFetches } from './fetch-config.js'
 import { fillRoutePattern, routeParamValue } from './route-match.js'
 import { sortRecords } from './sort.js'
 
@@ -130,11 +130,19 @@ export default class EntityStore {
     const page = block.page
     const website = block.website
     const dynamicContext = block.dynamicContext || page?.dynamicContext
-    // The route's variables, for a query that binds `:path` / `:dir` / `:slug`.
-    // A baked page carries `params` when it has more than the one capture;
-    // otherwise the capture itself is the only variable.
+    // The route's variables, for a query that binds `:path` / `:dir` / `:slug` —
+    // `routeBinding`'s, carried as `params` by every parametric page this runtime
+    // or its build makes. A page that carries only its capture gets the same three
+    // names from it: one segment is `:slug` and `:path`, with no `:dir`.
     const variables = dynamicContext
-      ? (dynamicContext.params ?? { [dynamicContext.paramName]: dynamicContext.paramValue })
+      ? (dynamicContext.params ?? (dynamicContext.paramValue !== undefined
+          ? {
+              [dynamicContext.paramName]: dynamicContext.paramValue,
+              path: dynamicContext.paramValue,
+              dir: '',
+              slug: dynamicContext.paramValue,
+            }
+          : null))
       : null
 
     return resolveFetchConfigs(
@@ -160,6 +168,33 @@ export default class EntityStore {
         variables,
       },
     )
+  }
+
+  /**
+   * The binding key whose records a parametric page's URL narrows to one — its
+   * ROUTE QUERY (`routeQuery`, `./fetch-config.js`), worked out from the same
+   * sources `_findFetchConfigs` walks: the page's fetch, its parent's, the site's,
+   * and, when none of those declares one, the key the page's sections share. So
+   * what a section receives and what the URL narrows are read off one walk and
+   * cannot disagree.
+   *
+   * ⛔ This was `dynamicContext.schema`, stored on the page by whoever built it —
+   * the SPA from `parentSchema`, the static build from the parent's first
+   * prerendered fetch — a stored copy of a derived answer, computed by a different
+   * rule from the one sections are fed by. Deleted 2026-09-11 [Diego].
+   *
+   * @returns {string|null} null off a parametric page, or when it has no route query
+   */
+  _routeKey(block) {
+    const dynamicContext = block.dynamicContext || block.page?.dynamicContext
+    if (!dynamicContext) return null
+    const page = block.page
+    return routeQuery({
+      page: page?.fetch,
+      parent: page?.parent?.fetch,
+      site: block.website?.config?.fetch,
+      sections: sectionFetches(page?._bodySections),
+    })?.key ?? null
   }
 
   /**
@@ -242,7 +277,7 @@ export default class EntityStore {
     const data = {}
     let allCached = true
 
-    const routeSchema = dynamicContext?.schema
+    const routeSchema = this._routeKey(block)
 
     for (const [schema, cfg] of configs) {
       const isRouteQuery = dynamicContext && schema === routeSchema
@@ -370,7 +405,7 @@ export default class EntityStore {
       reportFetchFailure(this.dev, block, key, cfg, message)
     }
 
-    const routeSchema = dynamicContext?.schema
+    const routeSchema = this._routeKey(block)
 
     for (const [schema, cfg] of configs) {
       const isRouteQuery = dynamicContext && schema === routeSchema

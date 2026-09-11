@@ -162,7 +162,8 @@ describe('deriveCacheKey — two identities (F11)', () => {
       .not.toBe(deriveCacheKey({ query: 'x', as: 'x', whole: false }))
   })
 
-  it('CONTROL — the addressed key is stable across field order and ignores post-processing', () => {
-    expect(deriveCacheKey({ path: '/a', as: 'x', limit: 3 })).toBe(deriveCacheKey({ as: 'x', path: '/a' }))
+  it('CONTROL — the addressed key is stable across field order, and a view is part of it', () => {
+    expect(deriveCacheKey({ path: '/a', as: 'x' })).toBe(deriveCacheKey({ as: 'x', path: '/a' }))
+    expect(deriveCacheKey({ path: '/a', as: 'x', limit: 3 })).not.toBe(deriveCacheKey({ as: 'x', path: '/a' }))
   })
 })

@@ -40,7 +40,7 @@ function site(config = {}) {
       pages: [
         { route: '/', isIndex: true, title: 'Home', sections: [] },
         { route: '/blog', title: 'Blog', sections: [], fetch: { query: 'articles', path: '/data/articles.json', as: 'articles' } },
-        { route: '/blog/:slug', isDynamic: true, paramName: 'slug', parentSchema: 'articles', title: 'Article', sections: [] },
+        { route: '/blog/:slug', isDynamic: true, paramName: 'slug', title: 'Article', sections: [] },
       ],
     },
   })
@@ -137,7 +137,7 @@ describe('detailTemplateFor — which field a site routes a key\'s records by', 
         pages: [
           { route: '/', isIndex: true, title: 'Home', sections: [] },
           { route: '/products', title: 'P', sections: [], fetch: { query: 'products', path: '/data/products.json', as: 'products' } },
-          { route: '/products/:id', isDynamic: true, paramName: 'id', parentSchema: 'products', title: 'Product', sections: [] },
+          { route: '/products/:id', isDynamic: true, paramName: 'id', title: 'Product', sections: [] },
         ],
       },
     })
@@ -154,7 +154,7 @@ describe('a [...path] template binds its capture to the standard variables', () 
         pages: [
           { route: '/', isIndex: true, title: 'Home', sections: [] },
           { route: '/blog', title: 'Blog', sections: [], fetch: { query: 'posts', path: '/data/posts.json', as: 'posts' } },
-          { route: '/blog/:path*', isDynamic: true, paramName: 'slug', parentSchema: 'posts', title: 'Post', sections: [] },
+          { route: '/blog/:path*', isDynamic: true, paramName: 'slug', title: 'Post', sections: [] },
         ],
       },
     })
@@ -171,8 +171,9 @@ describe('a [...path] template binds its capture to the standard variables', () 
       params: { path: 'rust/2025/my-post', dir: 'rust/2025', slug: 'my-post' },
       paramName: 'slug',
       paramValue: 'my-post',
-      schema: 'posts',
     })
+    // ⛔ no `schema`: the key the URL narrows is worked out where it is read
+    expect('schema' in page.dynamicContext).toBe(false)
     expect(page.title).toBe('Rust post')
   })
 
@@ -183,10 +184,106 @@ describe('a [...path] template binds its capture to the standard variables', () 
     expect(page.dynamicContext.paramValue).toBe('my-post')
   })
 
-  it('CONTROL — a [slug] template still binds the one capture under the folder\'s own label', () => {
+  it('a [slug] page binds the same three variables — one segment is :slug and :path, :dir empty', () => {
     const w = site()
     const page = w.getPage('/blog/hello')
-    expect(page.dynamicContext.params).toEqual({ slug: 'hello' })
+    expect(page.dynamicContext.params).toEqual({ slug: 'hello', path: 'hello', dir: '' })
     expect(page.dynamicContext.paramName).toBe('slug')
+  })
+
+  it('an [id] page keeps its capture under its own label beside the three', () => {
+    const w = new Website({
+      content: {
+        config: { name: 'T', defaultLanguage: 'en' },
+        theme: {},
+        pages: [
+          { route: '/', isIndex: true, title: 'Home', sections: [] },
+          { route: '/products', title: 'P', sections: [], fetch: { query: 'products', path: '/data/products.json', as: 'products' } },
+          { route: '/products/:id', isDynamic: true, paramName: 'id', title: 'Product', sections: [] },
+        ],
+      },
+    })
+    const page = w.getPage('/products/7')
+    expect(page.dynamicContext).toMatchObject({ paramName: 'id', paramValue: '7', params: { id: '7', slug: '7', path: '7', dir: '' } })
+  })
+})
+
+describe('the route query is chosen at the page level — the page, its parent, the site (ruled 2026-09-11)', () => {
+  const people = [{ slug: 'ada', title: 'Ada' }]
+  const withPages = (pages, config = {}) => new Website({
+    content: { config: { name: 'T', defaultLanguage: 'en', ...config }, theme: {}, pages },
+  })
+  const key = (name) => deriveCacheKey({ path: `/data/${name}.json`, as: name })
+
+  it('a query on the parametric page itself is its route query — the title is found', () => {
+    const w = withPages([
+      { route: '/', isIndex: true, title: 'Home', sections: [] },
+      { route: '/team', title: 'Team', sections: [] },
+      { route: '/team/:slug', isDynamic: true, paramName: 'slug', title: 'Person', sections: [], fetch: { query: 'people', path: '/data/people.json', as: 'people' } },
+    ])
+    w.dataStore.set(key('people'), { data: people })
+    expect(w.getPage('/team/ada').title).toBe('Ada')
+  })
+
+  it('a query only in site.yml is the route query when the page and its parent declare none', () => {
+    const w = withPages([
+      { route: '/', isIndex: true, title: 'Home', sections: [] },
+      { route: '/team', title: 'Team', sections: [] },
+      { route: '/team/:slug', isDynamic: true, paramName: 'slug', title: 'Person', sections: [] },
+    ], { fetch: { query: 'people', path: '/data/people.json', as: 'people' } })
+    w.dataStore.set(key('people'), { data: people })
+    expect(w.getPage('/team/ada').title).toBe('Ada')
+    expect(w.getPage('/team/nobody').notFound).toBe(true)
+  })
+
+  it('a top-level parametric page has no parent — the homepage\'s query is not its route query', () => {
+    // It probed the homepage until 2026-09-11, a parent the section cascade never used.
+    const w = withPages([
+      { route: '/', isIndex: true, title: 'Home', sections: [], fetch: { query: 'news', path: '/data/news.json', as: 'news' } },
+      { route: '/:slug', isDynamic: true, paramName: 'slug', title: 'Person', sections: [] },
+    ], { fetch: { query: 'people', path: '/data/people.json', as: 'people' } })
+    w.dataStore.set(key('news'), { data: [{ slug: 'ada', title: 'A news item' }] })
+    w.dataStore.set(key('people'), { data: people })
+    const page = w.getPage('/ada')
+    expect(page.parent).toBeNull()
+    expect(page.title).toBe('Ada')
+  })
+
+  it('detailTemplateFor answers by query name too — the two differ under an `as:` override', () => {
+    const w = withPages([
+      { route: '/', isIndex: true, title: 'Home', sections: [] },
+      { route: '/blog', title: 'Blog', sections: [], fetch: { query: 'articles', path: '/data/articles.json', as: 'posts' } },
+      { route: '/blog/:id', isDynamic: true, paramName: 'id', title: 'Post', sections: [] },
+    ])
+    expect(w.detailTemplateFor('posts')).toEqual({ route: '/blog/:id', paramName: 'id' })
+    expect(w.detailTemplateFor('articles')).toEqual({ route: '/blog/:id', paramName: 'id' })
+  })
+})
+
+describe('a page nested inside a parametric page is parametric too (ruled 2026-09-11)', () => {
+  function nestedSite() {
+    return new Website({
+      content: {
+        config: { name: 'T', defaultLanguage: 'en' },
+        theme: {},
+        pages: [
+          { route: '/', isIndex: true, title: 'Home', sections: [] },
+          { route: '/members', title: 'Members', sections: [], fetch: { query: 'members', path: '/data/members.json', as: 'members' } },
+          { route: '/members/:slug', isDynamic: true, paramName: 'slug', title: 'Member', sections: [], fetch: { query: 'members', path: '/data/members.json', as: 'members' } },
+          { route: '/members/:slug/cv', isDynamic: true, paramName: 'slug', parent: '/members/:slug', title: 'CV', sections: [] },
+        ],
+      },
+    })
+  }
+
+  it('routes, binds its ancestor\'s param, and inherits from the parametric page above it', () => {
+    const w = nestedSite()
+    w.dataStore.set(deriveCacheKey({ path: '/data/members.json', as: 'members' }), { data: [{ slug: 'alice', title: 'Alice' }] })
+    const page = w.getPage('/members/alice/cv')
+    expect(page.route).toBe('/members/alice/cv')
+    expect(page.dynamicContext).toMatchObject({ paramName: 'slug', paramValue: 'alice', params: { slug: 'alice', path: 'alice', dir: '' } })
+    expect(page.parent.route).toBe('/members/:slug')
+    // its route query is its parent's — the parametric page above, which declares `members`
+    expect(page.title).toBe('Alice')
   })
 })

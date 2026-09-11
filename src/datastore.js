@@ -21,21 +21,30 @@
  *
  * ⭐ TWO IDENTITIES, decided by whether the request carries an ADDRESS.
  *
- * An ADDRESSED request — `path` or `url` — is identified by where it
- * goes: the address, the binding key, the unwrap, and for a POST its method and
- * body. Post-processing fields (`limit`, `sort`, `where`) are applied after the
- * fetch over one shared copy and must not split the cache; `query` and `depth`
- * are not hashed either, because the address already carries them (a query's
- * list and its per-record file are different addresses) and because a kit hook
- * asking for `{ path, as }` must hit the entry the page's declaration filled —
- * that shared cache is a documented property of `useFetched`.
+ * An ADDRESSED request — `path` or `url` — is identified by where it goes (the
+ * address, the binding key, the unwrap, and for a POST its method and body) AND by
+ * the view it takes of what came back: `scope`, `where`, `sort`, `limit`, which
+ * the default fetcher evaluates locally over the file. `query` is not hashed: the
+ * address already carries it (a query's list and its per-record file are
+ * different addresses).
+ *
+ * ⛔ **The view was left out until 2026-09-11, on the belief that operators "are
+ * applied after the fetch over one shared copy".** They were applied BEFORE the
+ * dispatcher stored the answer, so one file with two views shared ONE entry, and
+ * whoever asked first decided what everyone got — measured: an unfiltered request
+ * received the two records a `where` had kept. Each view is now its own entry, and
+ * views asked together share one read of the file (`runtime/src/default-fetcher.js`).
+ * A kit hook asking for `{ path, as }` hits the entry of a declaration with the
+ * same view, which is the property `useFetched` documents — *"a declarative fetch
+ * for the same request."*
  *
  * An ADDRESS-LESS request — a QUESTION sent to the records service — is
- * identified by the question: `query`, `schema`, `scope`, `where`, `sort`, `limit`, `depth`.
- * ⛔ The reason: with no per-query address, two pages
+ * identified by the question: `query`, `schema`, `scope`, `where`, `match`,
+ * `sort`, `limit`, `whole`. ⛔ The reason: with no per-query address, two pages
  * binding one `as` to two queries would otherwise share an entry, and a list
- * (brief) and a record (full) of one query would collide — the one defect on
- * this path that delivers WRONG data rather than none.
+ * (brief) and a record (whole) of one query would collide — the one defect on
+ * this path that delivers WRONG data rather than none. `match` is the record a
+ * parametric page asks for; without it every record's question is one entry.
  *
  * `locale` is hashed on both when present: two locales' answers must not share
  * an entry, and an asked config always carries the locale it was asked in.
@@ -53,15 +62,15 @@ export function deriveCacheKey(request) {
     ? request.method.toUpperCase()
     : undefined
   const body = method === 'POST' ? request?.body : undefined
+  const { query, schema, scope, where, match, sort, limit, whole } = request || {}
   if (path || url) {
     // ⚠️ The field NAME is part of the hash, so renaming it moves every key ONCE.
     // In-memory stores repopulate; a consumer with a persistent cache takes one
     // cold pass. Chosen over hashing under the old name, which would have hidden
     // the rename inside the one function whose job is to be canonical.
-    return JSON.stringify({ path, url, as, transform, method, body, locale })
+    return JSON.stringify({ path, url, as, transform, method, body, locale, scope, where, sort, limit })
   }
-  const { query, schema, scope, where, sort, limit, whole } = request || {}
-  return JSON.stringify({ query, schema, scope, where, sort, limit, whole, as, transform, locale })
+  return JSON.stringify({ query, schema, scope, where, match, sort, limit, whole, as, transform, locale })
 }
 
 /**

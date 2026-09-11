@@ -42,7 +42,11 @@
  * WHAT THIS DOES NOT OWN: where the sources come from. A caller holding a live
  * object graph reads them off the graph; a caller holding a content document
  * reads them off the JSON. Both hand the same ordered array to
- * `resolveFetchConfigs`. That difference is real and stays with the caller.
+ * `resolveFetchConfigs`. That difference is real and stays with the caller —
+ * but WHICH page is the parent is not: every caller finds it by one rule,
+ * `parentRouteOf` in `./route-match.js`. ⛔ Five places found it four ways until
+ * 2026-09-11, and a prefetch that read one field while the SPA inferred the rest
+ * prefetched nothing for a parametric page.
  */
 
 import { queryDataUrl, isDataUrl, recordDataUrl } from './data-paths.js'
@@ -182,6 +186,9 @@ function applyDeferredDetail(cfg, queries) {
  */
 function resolveQuerySource(cfg, services, { queries = null, locale = null, defaultLocale = null } = {}) {
   if (typeof cfg.query !== 'string' || cfg.query.length === 0) return cfg
+  const decl = queries && typeof queries === 'object' && queries[cfg.query] && typeof queries[cfg.query] === 'object'
+    ? queries[cfg.query]
+    : null
 
   // ⭐ THE SERVICE FIRST. A host that answers questions gets the whole query —
   // `schema`, `scope`, `where`, `sort`, `limit`, `depth` — and composes no
@@ -191,7 +198,6 @@ function resolveQuerySource(cfg, services, { queries = null, locale = null, defa
   // says so. ⚠️ Dark until a host stamps the row; see `resolveRecordsService`.
   const ask = resolveRecordsService(services, locale ?? defaultLocale)
   if (ask) {
-    const decl = queries && typeof queries === 'object' ? queries[cfg.query] : null
     const schema = typeof decl?.schema === 'string' && decl.schema ? decl.schema : null
     // Drop the transitional `path`: two addresses on one request is an
     // ambiguity the fetcher would have to break by accident of field order.
@@ -212,7 +218,24 @@ function resolveQuerySource(cfg, services, { queries = null, locale = null, defa
     if (asked.limit === undefined && typeof decl.limit === 'number' && decl.limit > 0) asked.limit = decl.limit
     return asked
   }
-  return { ...cfg, path: queryDataUrl(cfg.query) }
+
+  // ⭐ THE COMPILED FILE. The build applied the named query's fixed narrowing when
+  // it wrote `/data/<query>.json`; what it could NOT apply is anything bound to the
+  // route — `scope: :dir`, `where: { tag: :dir }` — because a file is written once
+  // and the route differs per page. So those travel here and are bound per page,
+  // exactly as they are on the service (`bindRouteVariables`, below). ⛔ Until
+  // 2026-09-11 nothing travelled: a named query's `scope: :dir` was ignored on this
+  // lane and `where: { tag: :dir }` was applied at build to the literal `':dir'`,
+  // compiling to no records (measured). A fetch's own `scope` / `where` still win.
+  const out = { ...cfg, path: queryDataUrl(cfg.query) }
+  if (decl) {
+    if (out.scope === undefined && typeof decl.scope === 'string') out.scope = decl.scope
+    if (out.where === undefined) {
+      const routed = routeVariableClauses(decl.where)
+      if (routed) out.where = routed
+    }
+  }
+  return out
 }
 
 /**
@@ -269,10 +292,11 @@ function bindingKey(cfg) {
  * @param {Object|null} [options.services] - the site's `config.services`. The
  *   `records` row is a host's live-records lane; absent means the compiled
  *   artifact answers, which is the whole of what a site with no backend needs.
- * @param {Object|null} [options.variables] - the route's variables on a template
- *   page (`{ path, dir, slug }` under `[...path]`, the capture under `[slug]`);
- *   a `:path` / `:dir` / `:slug` placeholder in `where:` or `scope:` binds to
- *   them, and an unbound one drops its clause. Null off a template page.
+ * @param {Object|null} [options.variables] - the route's variables on a parametric
+ *   page (`routeBinding` in `./route-match.js`: `{ path, dir, slug }` under every
+ *   folder form); a `:path` / `:dir` / `:slug` placeholder in `where:` or
+ *   `scope:` binds to them, and an unbound or empty one drops its clause. Null
+ *   off a parametric page.
  * @returns {Map<string, Object>} schema name → resolved config
  */
 export function resolveFetchConfigs(sources, options = {}) {
@@ -300,7 +324,7 @@ export function resolveFetchConfigs(sources, options = {}) {
       // which a query ref does not have until this runs.
       const sourced = resolveQuerySource(cfg, services, { queries, locale, defaultLocale })
       const localized = localizeConfig(sourced, locale, defaultLocale)
-      const bound = foldScope(bindRouteVariables(localized, variables))
+      const bound = dropRootScope(bindRouteVariables(localized, variables))
       configs.set(key, stampDepthAndLocale(applyDeferredDetail(bound, queries), locale, defaultLocale))
     }
   }
@@ -311,27 +335,34 @@ export function resolveFetchConfigs(sources, options = {}) {
 /**
  * The three route variables a query may reference, and only these — `:path`,
  * `:dir`, `:slug` — as a VALUE in `where:` or as the whole `scope:`. Ruled
- * 2026-09-04 [Diego]: standard names, never author-chosen; a placeholder fills
- * a value, never a key or an operator, never `schema`.
+ * 2026-09-04 [Diego] and again 2026-09-11 (no `:name` under a `[name]` folder):
+ * standard names, never author-chosen; a placeholder fills a value, never a key
+ * or an operator, never `schema`.
  */
 const ROUTE_VARIABLE = /^:(path|dir|slug)$/
+
+/** A variable with no value, or an empty one, binds nothing: its clause drops. */
+function unset(value) {
+  return value === undefined || value === null || value === ''
+}
 
 /**
  * Bind a query's route placeholders from the page's variables.
  *
  * ⭐ UNBOUND ⇒ THE CLAUSE DROPS. That is what lets ONE saved query serve both
- * the list page and the detail page: `where: { tag: :dir }` narrows on
- * `/blog/rust/my-post` and vanishes on `/blog`, where there is no `:dir`. A
- * variable bound to an empty string (`:dir` on a single-segment capture) is
- * bound, and binds the empty value. The backend answering the records service
- * states the same rule from its side (the records contract, §6b).
+ * the list page and the parametric page: `where: { tag: :dir }` narrows on
+ * `/blog/rust/my-post` and vanishes on `/blog`, where there is no `:dir`. ⭐ **An
+ * EMPTY variable drops its clause too** *(ruled 2026-09-11 [Diego])* — `:dir` on a
+ * one-segment URL means "no directory", not "a directory named nothing". It bound
+ * the empty string until then, so `where: { tag: :dir }` filtered `tag == ''` on
+ * `/blog/my-post`, and `scope: :dir` split a cache entry the list page shared.
  *
  * ⚠️ The price, stated where it is paid: a MISSPELLED variable is byte-identical
  * to an intentional list page. Only an authoring surface can catch that; this
  * function cannot.
  *
  * @param {Object} cfg - a resolved config
- * @param {Object|null} variables - `{ path, dir, slug, … }` from the route, or null off a template page
+ * @param {Object|null} variables - `{ path, dir, slug, … }` from the route, or null off a parametric page
  * @returns {Object} the config, with placeholders bound or their clauses dropped
  */
 function bindRouteVariables(cfg, variables) {
@@ -340,7 +371,7 @@ function bindRouteVariables(cfg, variables) {
     const name = cfg.scope.slice(1)
     const value = variables?.[name]
     const { scope, ...rest } = out
-    out = value === undefined || value === null ? rest : { ...rest, scope: String(value) }
+    out = unset(value) ? rest : { ...rest, scope: String(value) }
   }
   if (cfg.where && typeof cfg.where === 'object') {
     const bound = bindWhere(cfg.where, variables)
@@ -372,7 +403,7 @@ function bindWhere(where, variables) {
     if (typeof value === 'string' && ROUTE_VARIABLE.test(value)) {
       const bound = variables?.[value.slice(1)]
       changed = true
-      if (bound === undefined || bound === null) continue // unbound ⇒ drop
+      if (unset(bound)) continue // unbound or empty ⇒ drop
       next[key] = String(bound)
       continue
     }
@@ -390,23 +421,153 @@ function bindWhere(where, variables) {
 }
 
 /**
- * `scope:` on a lane that cannot be ASKED — the compiled file — is the same
- * question as `where: { path: { under: scope } }`: a record's
- * `path` is the folder `records.yml` placed it in, and the evaluator's `under`
- * is segment-aware containment. Folding it keeps the language the INTERSECTION
- * of both lanes: an author
- * writes `scope: :dir` once and it means the same branch on a static site and
- * on a service that takes `scope` natively. A config carrying `ask` keeps
- * `scope` as the service's own field.
+ * ⭐ `scope:` IS ITS OWN FIELD, on both lanes. The service takes it natively; on
+ * the compiled file the evaluators apply it to each record's placement (`path`,
+ * the folder `records.yml` put it in) — `@uniweb/core`'s `applyScope`, the one the
+ * build uses too. ⛔ Until 2026-09-11 it was folded here into
+ * `where: { path: { under } }`, an authored form that is now retired in its
+ * favour [Diego]: a branch is a scope, and `where` stays the author's predicate.
+ *
+ * The root contains everything, so an empty scope is no scope — dropped rather
+ * than carried, so it cannot split a cache entry from the same query without one.
  */
-function foldScope(cfg) {
-  if (typeof cfg.scope !== 'string' || cfg.scope === '' || cfg.ask) return cfg
+function dropRootScope(cfg) {
+  if (typeof cfg.scope !== 'string' || cfg.scope.replace(/^\/+|\/+$/g, '') !== '') return cfg
   const { scope, ...rest } = cfg
-  const under = { path: { under: scope } }
-  const where = cfg.where && typeof cfg.where === 'object' && Object.keys(cfg.where).length
-    ? { and: [cfg.where, under] }
-    : under
-  return { ...rest, where }
+  return rest
+}
+
+/** Does this where-value hold a route variable anywhere inside it? */
+function holdsRouteVariable(value) {
+  if (typeof value === 'string') return ROUTE_VARIABLE.test(value)
+  if (Array.isArray(value)) return value.some(holdsRouteVariable)
+  if (value && typeof value === 'object') return Object.values(value).some(holdsRouteVariable)
+  return false
+}
+
+/**
+ * The part of a where-object that depends on the route — its top-level clauses
+ * holding a route variable anywhere inside them — or null. The compiled file's
+ * build cannot evaluate those (a file is written once; the route differs per
+ * page), so the runtime applies them, bound per page.
+ *
+ * @param {Object|null} where
+ * @returns {Object|null}
+ */
+function routeVariableClauses(where) {
+  if (!where || typeof where !== 'object' || Array.isArray(where)) return null
+  const out = {}
+  for (const [key, value] of Object.entries(where)) {
+    if (holdsRouteVariable(value)) out[key] = value
+  }
+  return Object.keys(out).length ? out : null
+}
+
+/**
+ * A named query as the BUILD can evaluate it — the top-level clauses that hold no
+ * route variable, and its `scope` unless that is routed. What remains is fixed for
+ * every page, so the build applies it when it compiles `/data/<query>.json`; the
+ * rest is exactly `routeVariableClauses`, which the runtime binds per page
+ * (`resolveQuerySource` carries it there). A clause is split at the TOP level and
+ * never inside: an `or` holding one variable goes to the runtime whole, because
+ * applying half of it at build would drop records the bound `or` keeps.
+ *
+ * @param {{ where?: Object, scope?: string }} query
+ * @returns {{ where: Object|null, scope: string|null }}
+ */
+export function withoutRouteVariables({ where = null, scope = null } = {}) {
+  let fixed = null
+  if (where && typeof where === 'object' && !Array.isArray(where)) {
+    const out = {}
+    for (const [key, value] of Object.entries(where)) {
+      if (!holdsRouteVariable(value)) out[key] = value
+    }
+    fixed = Object.keys(out).length ? out : null
+  }
+  const fixedScope = typeof scope === 'string' && !ROUTE_VARIABLE.test(scope) && scope.replace(/^\/+|\/+$/g, '') !== ''
+    ? scope
+    : null
+  return { where: fixed, scope: fixedScope }
+}
+
+/** A `fetch` as a list: one declaration, several, or none. */
+function fetchList(fetch) {
+  if (!fetch) return []
+  return Array.isArray(fetch) ? fetch.filter(Boolean) : [fetch]
+}
+
+/**
+ * Every section-level `fetch` on a page, nested sections included — the input
+ * `routeQuery` falls back to. Plain data, so a caller holding a content document
+ * and a caller holding the object graph (`page._bodySections`) pass the same thing.
+ *
+ * @param {Array<Object>|undefined} sections - a page's raw sections
+ * @returns {Array<Object|Object[]>}
+ */
+export function sectionFetches(sections) {
+  const out = []
+  const walk = (list) => {
+    for (const s of list || []) {
+      if (!s || typeof s !== 'object') continue
+      if (s.fetch) out.push(s.fetch)
+      if (Array.isArray(s.subsections)) walk(s.subsections)
+    }
+  }
+  walk(sections)
+  return out
+}
+
+/**
+ * ⭐ THE ROUTE QUERY of a parametric page — the query its URL names ONE record of,
+ * and so the binding key the record is delivered under. The rule, ruled
+ * 2026-09-11 [Diego]:
+ *
+ *   1. the page's own query, else its parent page's, else the site's — the first
+ *      `as` of the closest of those that declares one;
+ *   2. if none does, the key the page's own sections declare, when they all
+ *      declare the same one;
+ *   3. otherwise none: the page has no record, and nothing narrows.
+ *
+ * ⭐ WHY THE PAGE LEVEL CHOOSES, not each section: which URLs exist, the page's
+ * title, not-found, the static build's expansion and a host's record index each
+ * need ONE answer per page. Who RECEIVES the record is the four-level cascade: a
+ * section the route key reaches — its own declaration of that key included —
+ * gets the record, and its own query under another key is left as declared.
+ *
+ * ⛔ This replaces `parentSchema`, which our build computed from the closest
+ * ancestor page with a query at ANY depth and never from the page's own query or
+ * the site's — a different rule from the one sections are fed by, so the URL
+ * narrowed nothing, or a key no section received (measured 2026-09-10).
+ *
+ * Plain data in, so every lane — the entity store, the SPA's parametric page, the
+ * prefetch, the static build, a host — calls this and computes no copy.
+ *
+ * @param {Object} levels
+ * @param {Object|Object[]|null} [levels.page] - the page's own `fetch`
+ * @param {Object|Object[]|null} [levels.parent] - its parent page's `fetch` (by `parentRouteOf`)
+ * @param {Object|Object[]|null} [levels.site] - the site's `fetch`
+ * @param {Array<Object|Object[]>} [levels.sections] - the page's section `fetch`es (`sectionFetches`)
+ * @returns {{ key: string, config: Object, level: 'page'|'parent'|'site'|'sections' } | null}
+ */
+export function routeQuery({ page = null, parent = null, site = null, sections = [] } = {}) {
+  for (const [level, fetch] of [['page', page], ['parent', parent], ['site', site]]) {
+    for (const cfg of fetchList(fetch)) {
+      if (isFetchRefinement(cfg)) continue
+      const key = bindingKey(cfg)
+      if (key) return { key, config: cfg, level }
+    }
+  }
+  let found = null
+  for (const fetch of sections || []) {
+    for (const cfg of fetchList(fetch)) {
+      if (isFetchRefinement(cfg)) continue
+      const key = bindingKey(cfg)
+      if (!key) continue
+      if (found && found.key !== key) return null // the sections disagree: no route query
+      if (!found) found = { key, config: cfg, level: 'sections' }
+    }
+  }
+  return found
 }
 
 /**

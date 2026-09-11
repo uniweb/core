@@ -93,12 +93,15 @@ describe('a query resolves to the service when the host offers one AND the paylo
 })
 
 describe('the record on the service is the same question, narrowed by the handle, in full', () => {
-  it('binds the route param under the handle key beside the authored where, drops sort and limit', () => {
+  it('asks the route query unchanged plus `match` — the authored where untouched, sort and limit dropped', () => {
     const list = resolveFetchConfigs(authored({ limit: 5 }), opts()).get('members')
     const rec = buildDetailConfig(list, { paramName: 'slug', paramValue: 'ada' })
     expect(rec.ask).toBe('/_records/ask/en')
     expect(rec.schema).toBe('@std/person')
-    expect(rec.where).toEqual({ published: true, [ROUTE_HANDLE_KEY]: 'ada' })
+    // ⭐ `where` is the author's and `match` the visitor's (ruled 2026-09-11) —
+    // the handle was merged into `where` until then, replacing a condition there
+    expect(rec.where).toEqual({ published: true })
+    expect(rec.match).toEqual({ [ROUTE_HANDLE_KEY]: 'ada' })
     expect(rec.whole).toBe(true)
     expect(rec.dynamicContext).toEqual({ paramName: 'slug', paramValue: 'ada' })
     expect(rec.sort).toBeUndefined()
@@ -111,5 +114,26 @@ describe('the record on the service is the same question, narrowed by the handle
 
   it('the handle key is ONE constant — the spelling moved four times in a day', () => {
     expect(ROUTE_HANDLE_KEY).toBe('$name')
+  })
+
+  it('the folder name picks the key — [slug] the handle, [uuid] the identity, any other the field', () => {
+    const list = resolveFetchConfigs(authored({}), opts()).get('members')
+    expect(buildDetailConfig(list, { paramName: 'slug', paramValue: 'ada' }).match).toEqual({ $name: 'ada' })
+    expect(buildDetailConfig(list, { paramName: 'uuid', paramValue: '019e' }).match).toEqual({ $uuid: '019e' })
+    expect(buildDetailConfig(list, { paramName: 'id', paramValue: 42 }).match).toEqual({ id: '42' })
+  })
+
+  it('a condition the author put on the same key stays — the URL cannot replace it', () => {
+    const list = resolveFetchConfigs(authored({ where: { $name: { in: ['ada', 'lin'] } } }), opts()).get('members')
+    const rec = buildDetailConfig(list, { paramName: 'slug', paramValue: 'zed' })
+    expect(rec.where).toEqual({ $name: { in: ['ada', 'lin'] } })
+    expect(rec.match).toEqual({ $name: 'zed' })
+  })
+
+  it('two records of one query are two cache entries — `match` is part of the question', () => {
+    const list = resolveFetchConfigs(authored({}), opts()).get('members')
+    const ada = buildDetailConfig(list, { paramName: 'slug', paramValue: 'ada' })
+    const lin = buildDetailConfig(list, { paramName: 'slug', paramValue: 'lin' })
+    expect(deriveCacheKey(ada)).not.toBe(deriveCacheKey(lin))
   })
 })

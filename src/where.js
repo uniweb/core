@@ -36,7 +36,6 @@
  *   nin     Value is not in the listed array.
  *   like    Glob match (`*` any run, `?` one char). String fields only.
  *   exists  Field is truthy (boolean toggle).
- *   under   Path containment at SEGMENT boundaries. String fields only.
  *
  * Composition keys:
  *
@@ -44,22 +43,11 @@
  *   or      Array of sub-predicates; at least one must match.
  *   not     Single sub-predicate; must not match.
  *
- * `under` is for fields holding a slash-separated location — a record's
- * position inside the folder, a category path, a docs section. It matches
- * the value itself and anything below it, and it respects segment boundaries so
- * a sibling with a shared prefix does not match:
- *
- *   { path: { under: '2024' } }   matches '2024' and '2024/spring'
- *                                 does NOT match '2024b'
- *   { path: { under: '' } }       matches everything (the root contains all)
- *   { path: '2024' }              plain equality — that level only
- *
- * ⭐ Why this is an operator and not a separate `recursive:` flag on a fetch
- * declaration: the architecture holds that a query says WHICH records the
- * author wants, and who evaluates it is a capability question. Recursion is
- * then the difference between `eq` and `under` — no new vocabulary above the
- * predicate, and a source free to satisfy `under` by walking one branch instead
- * of scanning is doing query planning, which is its business.
+ * ⛔ **`under` is retired (2026-09-11 [Diego]).** It existed for `where: { path:
+ * { under: X } }` — a folder branch, written before a query had `scope:`. A branch
+ * is a scope now, on both lanes (`./scope.js`), and the build refuses `under` with
+ * a message naming `scope:`. An operator object carrying it is no longer an
+ * operator object here, so it matches nothing: the build's refusal is the guard.
  *
  * Dotted paths descend into nested objects: `tenure.start: { gte: 2015 }`.
  *
@@ -71,7 +59,7 @@
 
 const COMPOSITION_KEYS = new Set(['and', 'or', 'not'])
 const OPERATORS = new Set([
-  'eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'in', 'nin', 'like', 'exists', 'under',
+  'eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'in', 'nin', 'like', 'exists',
 ])
 
 /**
@@ -138,30 +126,6 @@ function evaluateClause(key, value, record) {
   return matchEqual(fieldValue, value)
 }
 
-/**
- * Path containment at segment boundaries.
- *
- * Both sides are compared with leading and trailing `/` trimmed, so an author
- * who writes `'/2024'` or `'2024/'` gets what they meant. An empty ancestor is
- * the root and contains everything — which is what makes "the whole pool"
- * expressible as a predicate rather than as the absence of one.
- *
- * ⛔ The `+ '/'` is the whole point: a plain `startsWith` would match `2024b`
- * against `2024`, which is the classic prefix bug and silently returns records
- * from a sibling the author never named.
- */
-function matchUnder(fieldValue, ancestor) {
-  if (typeof fieldValue !== 'string' || typeof ancestor !== 'string') return false
-  const a = trimSlashes(ancestor)
-  if (a === '') return true
-  const f = trimSlashes(fieldValue)
-  return f === a || f.startsWith(a + '/')
-}
-
-function trimSlashes(s) {
-  return s.replace(/^\/+/, '').replace(/\/+$/, '')
-}
-
 function isOperatorObject(value) {
   if (value == null || typeof value !== 'object' || Array.isArray(value)) return false
   // An operator-object's keys are all in OPERATORS. If even one key isn't
@@ -206,8 +170,6 @@ function evaluateOperator(op, opValue, fieldValue) {
       return globMatch(opValue, fieldValue)
     case 'exists':
       return Boolean(fieldValue) === Boolean(opValue)
-    case 'under':
-      return matchUnder(fieldValue, opValue)
     default:
       // Unknown operator → fail closed.
       return false
