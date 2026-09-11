@@ -924,3 +924,51 @@ describe('on a question door a detail page asks list and record TOGETHER — no 
     expect(result.errors).toEqual({ members: 'HTTP 502' })
   })
 })
+
+describe('the route query names the key a parametric page narrows — at every level (ruled 2026-09-11)', () => {
+  const members = [{ slug: 'alice', name: 'Alice' }, { slug: 'bob', name: 'Bob' }]
+  const pubs = [{ slug: 'p1' }, { slug: 'p2' }]
+  const membersFetch = { path: '/data/members.json', as: 'members' }
+  const pubsFetch = { path: '/data/pubs.json', as: 'pubs' }
+  const dynamicContext = { paramName: 'slug', paramValue: 'alice', params: { slug: 'alice', path: 'alice', dir: '' } }
+  const harness = () => makeHarness({
+    fetcherImpl: (req) => Promise.resolve({ data: req.path === membersFetch.path ? members : pubs }),
+  })
+
+  it('the site\'s query, on a parametric page whose page and parent declare none', async () => {
+    const { entityStore, website } = harness()
+    website.config = { fetch: membersFetch }
+    const result = await entityStore.fetch(makeBlock({ page: makePage({ dynamicContext }) }, website), {})
+    expect(result.data.members).toEqual([members[0]])
+  })
+
+  it('the key the page\'s sections share, when no page, parent or site declares one — narrowed in the section that declares it', async () => {
+    const { entityStore, website } = harness()
+    const page = makePage({ dynamicContext, _bodySections: [{ fetch: membersFetch }, { fetch: membersFetch }] })
+    const result = await entityStore.fetch(makeBlock({ page, fetch: membersFetch }, website), {})
+    expect(result.data.members).toEqual([members[0]])
+  })
+
+  it('sections that declare different keys name no route query — nothing narrows', async () => {
+    const { entityStore, website } = harness()
+    const page = makePage({ dynamicContext, _bodySections: [{ fetch: membersFetch }, { fetch: pubsFetch }] })
+    const result = await entityStore.fetch(makeBlock({ page, fetch: membersFetch }, website), {})
+    expect(result.data.members).toEqual(members)
+  })
+
+  it('a section\'s own query under ANOTHER key is delivered as declared; the route key still reaches it narrowed', async () => {
+    const { entityStore, website } = harness()
+    const page = makePage({ dynamicContext, fetch: membersFetch })
+    const result = await entityStore.fetch(makeBlock({ page, fetch: pubsFetch }, website), {})
+    expect(result.data.pubs).toEqual(pubs)
+    expect(result.data.members).toEqual([members[0]])
+  })
+
+  it('CONTROL — the page level chooses: its query wins over the key its sections share', async () => {
+    const { entityStore, website } = harness()
+    const page = makePage({ dynamicContext, fetch: membersFetch, _bodySections: [{ fetch: pubsFetch }] })
+    const result = await entityStore.fetch(makeBlock({ page, fetch: pubsFetch }, website), {})
+    expect(result.data.pubs).toEqual(pubs)
+    expect(result.data.members).toEqual([members[0]])
+  })
+})

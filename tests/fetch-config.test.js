@@ -353,8 +353,8 @@ describe('scope: is its own field on both lanes — `where.path.under` is retire
 describe('a named query\'s routed clauses reach the compiled file\'s config — and are bound per page', () => {
   // ⛔ Measured before this existed: a named query's `scope: :dir` was ignored on
   // the file lane, and `where: { tag: :dir }` was applied at build to the literal
-  // `':dir'`, compiling to no records. The build now applies only the fixed part;
-  // the routed part travels here and binds.
+  // `':dir'`, compiling to no records. The build now applies only the fixed
+  // `where`; the query's scope and its routed clauses travel here and bind.
   const vars = { path: 'field/river', dir: 'field', slug: 'river' }
   const ref = (extra = {}) => [{ query: 'posts', path: '/data/posts.json', as: 'posts', ...extra }]
 
@@ -374,6 +374,12 @@ describe('a named query\'s routed clauses reach the compiled file\'s config — 
     expect('where' in list).toBe(false)
   })
 
+  it('carries a FIXED scope too — the build never applies scope, so a page\'s own can replace it', () => {
+    const queries = { posts: { schema: '@/post', scope: 'field' } }
+    expect(resolveFetchConfigs(ref(), { queries }).get('posts')).toMatchObject({ path: '/data/posts.json', scope: 'field' })
+    expect(resolveFetchConfigs(ref({ scope: 'lab' }), { queries }).get('posts').scope).toBe('lab')
+  })
+
   it('a fetch\'s own scope and where win over the named query\'s', () => {
     const queries = { posts: { schema: '@/post', scope: ':dir', where: { tag: ':dir' } } }
     const cfg = resolveFetchConfigs(ref({ scope: 'lab', where: { pinned: true } }), { queries, variables: vars }).get('posts')
@@ -382,7 +388,7 @@ describe('a named query\'s routed clauses reach the compiled file\'s config — 
   })
 })
 
-describe('withoutRouteVariables — what the build can apply when it writes a query\'s file', () => {
+describe('withoutRouteVariables — a named query\'s narrowing that is fixed for every page', () => {
   it('keeps the fixed clauses and a fixed scope, drops what the route binds', () => {
     expect(withoutRouteVariables({ where: { tag: ':dir', published: true }, scope: 'field' }))
       .toEqual({ where: { published: true }, scope: 'field' })

@@ -219,14 +219,15 @@ function resolveQuerySource(cfg, services, { queries = null, locale = null, defa
     return asked
   }
 
-  // ⭐ THE COMPILED FILE. The build applied the named query's fixed narrowing when
-  // it wrote `/data/<query>.json`; what it could NOT apply is anything bound to the
-  // route — `scope: :dir`, `where: { tag: :dir }` — because a file is written once
-  // and the route differs per page. So those travel here and are bound per page,
-  // exactly as they are on the service (`bindRouteVariables`, below). ⛔ Until
-  // 2026-09-11 nothing travelled: a named query's `scope: :dir` was ignored on this
-  // lane and `where: { tag: :dir }` was applied at build to the literal `':dir'`,
-  // compiling to no records (measured). A fetch's own `scope` / `where` still win.
+  // ⭐ THE COMPILED FILE. The build applied the named query's fixed `where` when it
+  // wrote `/data/<query>.json`; what it could NOT apply is a clause bound to the
+  // route (`where: { tag: :dir }`) — a file is written once and the route differs
+  // per page — and it never applies `scope`, fixed or routed. So those travel here
+  // and are bound per page, exactly as they are on the service
+  // (`bindRouteVariables`, below). A fetch's own `scope` / `where` win, as they do
+  // there. ⛔ Until 2026-09-11 nothing travelled: a named query's `scope: :dir` was
+  // ignored on this lane and `where: { tag: :dir }` was applied at build to the
+  // literal `':dir'`, compiling to no records (measured).
   const out = { ...cfg, path: queryDataUrl(cfg.query) }
   if (decl) {
     if (out.scope === undefined && typeof decl.scope === 'string') out.scope = decl.scope
@@ -464,13 +465,14 @@ function routeVariableClauses(where) {
 }
 
 /**
- * A named query as the BUILD can evaluate it — the top-level clauses that hold no
- * route variable, and its `scope` unless that is routed. What remains is fixed for
- * every page, so the build applies it when it compiles `/data/<query>.json`; the
- * rest is exactly `routeVariableClauses`, which the runtime binds per page
- * (`resolveQuerySource` carries it there). A clause is split at the TOP level and
- * never inside: an `or` holding one variable goes to the runtime whole, because
- * applying half of it at build would drop records the bound `or` keeps.
+ * A named query's narrowing that is FIXED for every page — the top-level `where`
+ * clauses that hold no route variable, and its `scope` unless that is routed. The
+ * build applies the `where` part when it compiles `/data/<query>.json` (it leaves
+ * `scope` to the runtime, so a page's own can replace it); the rest is exactly
+ * `routeVariableClauses`, which the runtime binds per page (`resolveQuerySource`
+ * carries it there). A clause is split at the TOP level and never inside: an `or`
+ * holding one variable goes to the runtime whole, because applying half of it at
+ * build would drop records the bound `or` keeps.
  *
  * @param {{ where?: Object, scope?: string }} query
  * @returns {{ where: Object|null, scope: string|null }}
