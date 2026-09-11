@@ -104,7 +104,7 @@ export default class Page {
     // Scroll position memory (for navigation restoration)
     this.scrollY = 0
 
-    // Fetch configuration (from page.yml data: field)
+    // Fetch configuration (page.yml's `fetch:`, or its `query:` shorthand, desugared at build)
     // Preserved at runtime so EntityStore can walk the page hierarchy
     this.fetch = pageData.fetch || null
 
