@@ -71,6 +71,7 @@ export {
   routeParamName,
   parentRouteOf,
   recordRouteBase,
+  findPageForRoute,
 } from './route-match.js'
 export { isRichSchema } from './schemas.js'
 // ⛔ `Tracker` is NOT on the package entry. It is a FEATURE, not part of the

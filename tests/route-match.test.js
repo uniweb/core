@@ -14,6 +14,7 @@
 
 import { recordHandle, routeParamValue, routeParamValues, matchesRouteParam, recordRouteBase,
   matchDynamicRoute,
+  findPageForRoute,
   routePatternToRegex,
   normalizeRoute,
   isDynamicRoute,
@@ -514,5 +515,66 @@ describe('recordRouteBase — which page addresses ONE record, and at what base'
     expect(recordRouteBase('/blog/:slug/')).toBe('/blog')
     expect(recordRouteBase(null)).toBe(null)
     expect(recordRouteBase(undefined)).toBe(null)
+  })
+})
+
+describe('findPageForRoute — the resolution rule itself, not its parts', () => {
+  // ⭐ Lifted out of `@uniweb/runtime`'s prefetch 2026-09-12 so a caller imports the RULE
+  // instead of composing our leaves into a copy of it. The drift it prevents: a matcher
+  // hand-spelled `:(\w+)` accepts a different param alphabet than `[A-Za-z0-9_-]+`, so a
+  // hyphenated slug resolves in one copy and 404s in the other, silently.
+  const PAGES = [
+    { route: '/' },
+    { route: '/about' },
+    { route: '/blog' },
+    { route: '/blog/:slug' },
+    { route: '/blog/:slug/cv' },
+    { route: '/docs/:path*' },
+  ]
+
+  it('takes the pages array, or a payload that holds them', () => {
+    expect(findPageForRoute(PAGES, '/about').page.route).toBe('/about')
+    expect(findPageForRoute({ pages: PAGES }, '/about').page.route).toBe('/about')
+  })
+
+  it('an exact route beats a pattern that would also match it', () => {
+    expect(findPageForRoute(PAGES, '/blog').page.route).toBe('/blog')
+  })
+
+  it('a parametric page matches, and yields its params decoded', () => {
+    expect(findPageForRoute(PAGES, '/blog/my-post')).toMatchObject({
+      page: { route: '/blog/:slug' },
+      params: { slug: 'my-post' },
+    })
+    expect(findPageForRoute(PAGES, '/blog/caf%C3%A9').params).toEqual({ slug: 'caf\u00e9' })
+  })
+
+  it('a page NESTED under a parameter matches by its route, never by a flag', () => {
+    expect(findPageForRoute(PAGES, '/blog/ada/cv').page.route).toBe('/blog/:slug/cv')
+  })
+
+  it('a catch-all takes the rest of the URL', () => {
+    expect(findPageForRoute(PAGES, '/docs/a/b/c').params).toEqual({ path: 'a/b/c' })
+  })
+
+  it('⭐ a trailing slash is the SAME route, on both branches', () => {
+    // `Website#getPage` has always normalized this; the prefetch copy compared raw
+    // strings and so disagreed with the SPA about `/about/`.
+    expect(findPageForRoute(PAGES, '/about/').page.route).toBe('/about')
+    expect(findPageForRoute(PAGES, '/blog/my-post/').page.route).toBe('/blog/:slug')
+  })
+
+  it('CONTROL — an unknown route resolves to nothing, without throwing', () => {
+    expect(findPageForRoute(PAGES, '/nope')).toEqual({ page: null, params: {} })
+    expect(findPageForRoute(null, '/about')).toEqual({ page: null, params: {} })
+    expect(findPageForRoute({}, '/about')).toEqual({ page: null, params: {} })
+  })
+
+  it('CONTROL — a param is ONE segment, so a deeper URL is not that page', () => {
+    expect(findPageForRoute(PAGES, '/blog/a/b').page).toBe(null)
+  })
+
+  it('CONTROL — an empty route is the root, per `normalizeRoute`', () => {
+    expect(findPageForRoute(PAGES, '').page.route).toBe('/')
   })
 })

@@ -556,3 +556,49 @@ export function stripLocalePrefix(route, activeLocale, defaultLocale) {
   if (route.startsWith(`${prefix}/`)) return route.slice(prefix.length)
   return route
 }
+
+/**
+ * ⭐ **THE PAGE A ROUTE NAMES — one rule, for every lane that asks the question.**
+ *
+ * Exact match first, then the parametric pages in page order, which is the order
+ * `Website#getPage` uses in the SPA. Captured params are decoded by
+ * `matchDynamicRoute` (a catch-all per segment), so the values are what a site's
+ * query binds against.
+ *
+ * ⛔ **Why this is a leaf rather than a thing each lane composes.** More than one
+ * lane asks *which page does this path name* — the SPA, the runtime's server-side
+ * prefetch, and a host's router. Our leaves (`normalizeRoute`, `isDynamicRoute`,
+ * `routePatternToRegex`) were importable and the RULE was not, so a consumer
+ * imported the parts and wrote the composition itself. **A renamed export breaks
+ * loudly; a re-implemented rule drifts silently.** A hand-written matcher spelled
+ * `:(\w+)` accepts a different param alphabet than our `[A-Za-z0-9_-]+`, so a
+ * hyphenated slug resolves in one copy and 404s in the other, with nothing failing
+ * anywhere. Import this; do not rebuild it.
+ *
+ * ⚠️ **A trailing slash is the same route, on BOTH branches** (`normalizeRoute`),
+ * which is what `Website#getPage` has always done. The runtime's own prefetch copy
+ * compared raw strings until 2026-09-12 and so disagreed with the SPA about
+ * `/about/` — the exact class of split this function exists to end.
+ *
+ * ⚖️ Matching is not resolving: a hit means the ROUTE exists. Whether the record
+ * behind a parametric page exists is a data question answered later.
+ *
+ * @param {Array<Object>|{pages?: Array<Object>}} source - the pages, or a payload holding them
+ * @param {string} route - the concrete path
+ * @returns {{ page: Object|null, params: Record<string,string> }} `page` is null when nothing matches
+ */
+export function findPageForRoute(source, route) {
+  const pages = Array.isArray(source) ? source : source?.pages
+  const list = Array.isArray(pages) ? pages : []
+  const wanted = normalizeRoute(route)
+
+  for (const page of list) {
+    if (typeof page?.route === 'string' && normalizeRoute(page.route) === wanted) return { page, params: {} }
+  }
+  for (const page of list) {
+    if (typeof page?.route !== 'string' || !isDynamicRoute(page.route)) continue
+    const hit = matchDynamicRoute(page.route, wanted)
+    if (hit) return { page, params: hit.params }
+  }
+  return { page: null, params: {} }
+}
