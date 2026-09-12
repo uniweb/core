@@ -306,6 +306,58 @@ export function routeParamValue(record, paramName) {
 }
 
 /**
+ * Every value a record offers for a route's param, as strings — one for a scalar,
+ * one per member for a `multi` field.
+ *
+ * ⭐ A `multi` FIELD MATCHES MEMBER-WISE (ruled 2026-09-12 [Diego]: *"if the code is
+ * natural for backend, I think it can be useful to match member-wise"*), and the
+ * case it is for is not tag pages: it is a Model field TYPED `multi` that holds one
+ * value — `department: ['biology']` — which an author routes as `[department]` and
+ * thinks of as a scalar. Matched whole, that page silently renders not-found.
+ *
+ * ⛔ A ROUTE FIELD THAT IS NOT UNIQUE MAKES TIES NORMAL. Two records holding `'a'`
+ * both claim `/tags/a`; the first wins, and *which* is first is this lane's order —
+ * the build's record order here, the service's storage order on a hosted site. They
+ * can differ, with no error on either. The static build warns when two records claim
+ * one route; `docs/reference/dynamic-routes.md` says it plainly.
+ *
+ * Empty and duplicate members drop, so a record can never claim `/tags/` or the same
+ * route twice. ⚠️ `undefined` drops too — it used to stringify to `'undefined'` and
+ * match a URL segment spelled that way.
+ *
+ * @param {Object} record
+ * @param {string} paramName
+ * @returns {string[]} the values, in the record's own order
+ */
+export function routeParamValues(record, paramName) {
+  const raw = routeParamValue(record, paramName)
+  const out = []
+  for (const value of Array.isArray(raw) ? raw : [raw]) {
+    if (value === undefined || value === null || value === '') continue
+    const text = String(value)
+    if (text === '' || out.includes(text)) continue
+    out.push(text)
+  }
+  return out
+}
+
+/**
+ * Does this record answer to this value for the route's param? The one comparison
+ * every lane makes — the SPA, the prefetch, the static build — so a URL that finds a
+ * record in one cannot miss it in another. Compared as STRINGS: a URL segment is
+ * text, so `'42'` matches a field holding `42`.
+ *
+ * @param {Object} record
+ * @param {string} paramName
+ * @param {string|number} value - the URL segment
+ * @returns {boolean}
+ */
+export function matchesRouteParam(record, paramName, value) {
+  const target = String(value)
+  return routeParamValues(record, paramName).some((held) => held === target)
+}
+
+/**
  * A parametric page's route binding — the param the record is matched on, its
  * value, and the route VARIABLES a query may reference. ONE implementation, for
  * the SPA (`Website._createDynamicPage`), the prefetch and the static build.
@@ -437,12 +489,15 @@ export function fillRoutePattern(pattern, values) {
     head = pattern.slice(0, tail.index)
   }
   const href = head.replace(new RegExp(`:(${PARAM_NAME})`, 'g'), (_, name) => {
-    const value = routeParamValue(values, name)
-    if (value === undefined || value === null || value === '') {
+    // ⭐ THE FIRST MEMBER of a `multi` field — a record has ONE canonical href, and
+    // every member routes to it (`routeParamValues`). Baked whole, a `['a','b']`
+    // field produced `/tags/a%2Cb`, a URL no lane matches.
+    const [value] = routeParamValues(values, name)
+    if (value === undefined) {
       missing = true
       return ''
     }
-    return encodeURIComponent(String(value))
+    return encodeURIComponent(value)
   })
   return missing ? null : href + tailHref
 }

@@ -972,3 +972,28 @@ describe('the route query names the key a parametric page narrows — at every l
     expect(result.data.members).toEqual([members[0]])
   })
 })
+
+describe('a parametric page over a `multi` field delivers the record a member matches', () => {
+  const people = [
+    { slug: 'ada', dept: ['biology'] },
+    { slug: 'lin', dept: ['geology', 'biology'] },
+  ]
+  const fetchConfig = { path: '/data/people.json', as: 'people' }
+  const harness = () => makeHarness({ fetcherImpl: () => Promise.resolve({ data: people }) })
+
+  it('a member of the field, not the whole array', async () => {
+    const { entityStore, website } = harness()
+    const page = makePage({ fetch: fetchConfig })
+    const dynamicContext = { paramName: 'dept', paramValue: 'geology', params: { slug: 'geology', path: 'geology', dir: '' } }
+    const result = await entityStore.fetch(makeBlock({ page, dynamicContext }, website), {})
+    expect(result.data.people).toEqual([people[1]])
+  })
+
+  it('several records hold the value — the first wins, as it does for any ambiguity', async () => {
+    const { entityStore, website } = harness()
+    const page = makePage({ fetch: fetchConfig })
+    const dynamicContext = { paramName: 'dept', paramValue: 'biology', params: { slug: 'biology', path: 'biology', dir: '' } }
+    const result = await entityStore.fetch(makeBlock({ page, dynamicContext }, website), {})
+    expect(result.data.people).toEqual([people[0]])
+  })
+})

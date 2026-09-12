@@ -12,7 +12,7 @@
  * a caller can rely on. A host matching identically depends on all of it.
  */
 
-import { recordHandle, routeParamValue,
+import { recordHandle, routeParamValue, routeParamValues, matchesRouteParam,
   matchDynamicRoute,
   routePatternToRegex,
   normalizeRoute,
@@ -448,5 +448,41 @@ describe('parentRouteOf — the one rule for a page\'s parent', () => {
 
   it('no page at the stripped route is no parent', () => {
     expect(parentRouteOf('/blog/:slug', { has })).toBeNull()
+  })
+})
+
+describe('a `multi` field matches member-wise (ruled 2026-09-12 [Diego])', () => {
+  // ⭐ The case the rule is for is NOT tag pages: it is a Model field TYPED `multi`
+  // holding one value — `department: ['biology']` — which an author routes as
+  // `[department]` and thinks of as a scalar. Matched whole it renders not-found,
+  // silently.
+  it('every value a record answers to — one for a scalar, one per member', () => {
+    expect(routeParamValues({ tag: 'x' }, 'tag')).toEqual(['x'])
+    expect(routeParamValues({ tag: ['x', 'y'] }, 'tag')).toEqual(['x', 'y'])
+    expect(routeParamValues({ department: ['biology'] }, 'department')).toEqual(['biology'])
+    expect(routeParamValues({ id: 42 }, 'id')).toEqual(['42'])
+  })
+
+  it('empty and duplicate members drop — a record cannot claim `/tags/`, or one route twice', () => {
+    expect(routeParamValues({ tag: ['x', '', null, 'x', undefined] }, 'tag')).toEqual(['x'])
+    expect(routeParamValues({}, 'tag')).toEqual([])
+  })
+
+  it('⛔ a missing field no longer matches the literal segment "undefined"', () => {
+    // `String(undefined)` is `'undefined'`, so /tags/undefined used to find a record
+    // that has no such field at all.
+    expect(matchesRouteParam({}, 'tag', 'undefined')).toBe(false)
+  })
+
+  it('matches a member, a scalar, and compares as strings', () => {
+    expect(matchesRouteParam({ tag: ['x', 'y'] }, 'tag', 'y')).toBe(true)
+    expect(matchesRouteParam({ tag: ['x', 'y'] }, 'tag', 'z')).toBe(false)
+    expect(matchesRouteParam({ id: 42 }, 'id', '42')).toBe(true)
+    expect(matchesRouteParam({ $name: 'ada' }, 'slug', 'ada')).toBe(true)
+  })
+
+  it('a record still has ONE canonical href — the first member', () => {
+    expect(fillRoutePattern('/tags/:tag', { tag: ['x', 'y'] })).toBe('/tags/x')
+    expect(fillRoutePattern('/tags/:tag', { tag: [] })).toBe(null)
   })
 })

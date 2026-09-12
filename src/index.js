@@ -64,6 +64,8 @@ export {
   joinPathCapture,
   recordHandle,
   routeParamValue,
+  routeParamValues,
+  matchesRouteParam,
   routeRecordKey,
   routeBinding,
   routeParamName,
