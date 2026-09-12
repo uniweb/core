@@ -95,6 +95,8 @@ export function isDynamicRoute(route) {
 
 /** The catch-all token, only as a pattern's final segment: `/:path*`. */
 const CATCH_ALL = new RegExp(`/:(${PARAM_NAME})\\*$`)
+/** A route whose LAST segment is a parameter — the page that addresses one record. */
+const RECORD_ROUTE = new RegExp(`/:(${PARAM_NAME})\\*?$`)
 
 /**
  * Compile a route pattern to an anchored regex plus its param names.
@@ -441,6 +443,35 @@ export function parentRouteOf(route, { declared = null, has } = {}) {
   if (cut <= 0) return null
   const up = r.slice(0, cut)
   return has(up) ? up : null
+}
+
+/**
+ * The base route a record's URL composes onto, for a page that ADDRESSES ONE RECORD —
+ * or null when the page is not one.
+ *
+ * `/blog/:slug` → `/blog` · `/docs/:path*` → `/docs` · `/:slug` → `/`.
+ *
+ * ⭐ **The selection is the point, not the slicing.** A page addresses a record only
+ * when its route ENDS in a parameter. ⛔ A page nested inside a parametric one —
+ * `/members/:slug/cv` — does not, and returns null: composing a record onto it would
+ * produce `/members/:slug/alice`, a URL that ranks in an index and 404s on click
+ * (the failure hosting measured in their own fixture, 2026-09-12). A static page
+ * returns null too, so a page that merely fetches to render itself contributes
+ * nothing to a record index.
+ *
+ * Written for `@uniweb/projections`' `recordRoutes`, which pairs it with
+ * `routeQuery` to answer *which of a site's queries become detail pages, and at what
+ * base URL* — one mapping a consumer can call instead of re-deriving from page data.
+ *
+ * @param {string} route - a page's route, parametric or not
+ * @returns {string|null} the base route, or null when the page addresses no record
+ */
+export function recordRouteBase(route) {
+  if (typeof route !== 'string') return null
+  const r = normalizeRoute(route)
+  if (!RECORD_ROUTE.test(r)) return null
+  const cut = r.lastIndexOf('/')
+  return cut <= 0 ? '/' : r.slice(0, cut)
 }
 
 /**

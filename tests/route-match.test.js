@@ -12,7 +12,7 @@
  * a caller can rely on. A host matching identically depends on all of it.
  */
 
-import { recordHandle, routeParamValue, routeParamValues, matchesRouteParam,
+import { recordHandle, routeParamValue, routeParamValues, matchesRouteParam, recordRouteBase,
   matchDynamicRoute,
   routePatternToRegex,
   normalizeRoute,
@@ -484,5 +484,35 @@ describe('a `multi` field matches member-wise (ruled 2026-09-12 [Diego])', () =>
   it('a record still has ONE canonical href — the first member', () => {
     expect(fillRoutePattern('/tags/:tag', { tag: ['x', 'y'] })).toBe('/tags/x')
     expect(fillRoutePattern('/tags/:tag', { tag: [] })).toBe(null)
+  })
+})
+
+describe('recordRouteBase — which page addresses ONE record, and at what base', () => {
+  // The selection is the point: a base that still holds a `:param` composes a URL
+  // that ranks in a search index and 404s on click.
+  it('a route ending in a parameter — the base is that route minus the segment', () => {
+    expect(recordRouteBase('/blog/:slug')).toBe('/blog')
+    expect(recordRouteBase('/docs/:path*')).toBe('/docs')
+    expect(recordRouteBase('/a/b/:id')).toBe('/a/b')
+  })
+
+  it('⛔ a page NESTED inside a parametric one addresses no record', () => {
+    expect(recordRouteBase('/members/:slug/cv')).toBe(null)
+    expect(recordRouteBase('/docs/:path*/edit')).toBe(null)
+  })
+
+  it('a static page addresses none either — a page that only fetches to render itself', () => {
+    expect(recordRouteBase('/blog')).toBe(null)
+    expect(recordRouteBase('/')).toBe(null)
+  })
+
+  it('a root-level parametric page composes onto /', () => {
+    expect(recordRouteBase('/:slug')).toBe('/')
+  })
+
+  it('normalizes first, and refuses a non-string', () => {
+    expect(recordRouteBase('/blog/:slug/')).toBe('/blog')
+    expect(recordRouteBase(null)).toBe(null)
+    expect(recordRouteBase(undefined)).toBe(null)
   })
 })
