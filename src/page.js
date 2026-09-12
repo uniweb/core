@@ -604,20 +604,19 @@ export default class Page {
    * with no content of its own, and its actual landing content lives in
    * `/docs/intro` flagged `isIndex: true`.
    *
-   * ⛔ **IT HAS NO CALLER — not in this package, not anywhere in the framework,
-   * and none outside it since 2026-09-12** (scanned runtime, build, core, press,
-   * unipress). This paragraph previously named an SSR consumer that called it and
-   * said the static build "pre-handles this differently via expandDynamicPages";
-   * **both halves were wrong by then.** The consumer stopped calling it, and the
-   * static build never did — it emits a redirect to the first descendant with
-   * content (`getNavigableRoute`) rather than promoting anything.
+   * ⭐ **ONE CALLER, AND IT IS THE RULE FOR BOTH OF THE RENDERER'S TARGET FORMS:**
+   * `createPageRenderer().render()` (`@uniweb/runtime`) applies this after
+   * resolving, so a route and an already-resolved Page promote identically.
+   * Ruled 2026-09-12 [Diego], closing an asymmetry in which the same page rendered
+   * differently depending on which form the caller held — silently, with no error
+   * on either path.
    *
-   * ⚠️ **Kept rather than deleted, deliberately, and the reason is a live
-   * asymmetry:** `createPageRenderer().render()` promotes to an index child when
-   * given a ROUTE and not when given an already-resolved Page. So this method is
-   * the only expression of that one-level promotion available to a caller holding
-   * a Page. Whether the asymmetry closes in the renderer or by removing this is an
-   * open decision — **not both, and not neither.**
+   * ⚠️ **It briefly had NO caller** (2026-09-12), after an SSR consumer replaced its
+   * hand-composed sequence with `render()`. An earlier version of this paragraph
+   * named that consumer and claimed the static build "pre-handles this differently
+   * via expandDynamicPages"; **both halves were wrong** — the static build never
+   * called this at all: it emits a redirect to the first descendant with content
+   * (`getNavigableRoute`) rather than promoting anything.
    *
    * @returns {Page} The page to render — `this` or its index child.
    */
