@@ -600,11 +600,24 @@ export default class Page {
    * is "give me the page to render *here*," not "give me the next URL
    * with content."
    *
-   * Used by SSR paths (Cloudflare Worker isolate today; framework SSG
-   * pre-handles this differently via expandDynamicPages) to avoid
-   * rendering nothing when an author requests `/docs` and the page is
-   * a folder whose actual landing content lives in `/docs/intro` flagged
-   * as `isIndex: true`.
+   * The case it exists for: an author requests `/docs`, the page is a folder
+   * with no content of its own, and its actual landing content lives in
+   * `/docs/intro` flagged `isIndex: true`.
+   *
+   * ⛔ **IT HAS NO CALLER — not in this package, not anywhere in the framework,
+   * and none outside it since 2026-09-12** (scanned runtime, build, core, press,
+   * unipress). This paragraph previously named an SSR consumer that called it and
+   * said the static build "pre-handles this differently via expandDynamicPages";
+   * **both halves were wrong by then.** The consumer stopped calling it, and the
+   * static build never did — it emits a redirect to the first descendant with
+   * content (`getNavigableRoute`) rather than promoting anything.
+   *
+   * ⚠️ **Kept rather than deleted, deliberately, and the reason is a live
+   * asymmetry:** `createPageRenderer().render()` promotes to an index child when
+   * given a ROUTE and not when given an already-resolved Page. So this method is
+   * the only expression of that one-level promotion available to a caller holding
+   * a Page. Whether the asymmetry closes in the renderer or by removing this is an
+   * open decision — **not both, and not neither.**
    *
    * @returns {Page} The page to render — `this` or its index child.
    */
