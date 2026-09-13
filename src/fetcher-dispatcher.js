@@ -3,7 +3,7 @@
  *
  * Assembled by the Website from the primary foundation's named transports
  * plus any extensions'. Resolves which fetcher handles a given request by
- * name lookup — the site selects per-schema in `site.yml fetcher.transports`.
+ * name lookup — the site selects per binding key (`as`) in `site.yml fetcher.transports`.
  *
  * The dispatcher owns cache-key derivation, checks the DataStore, dedups
  * concurrent in-flight requests, and passes an AbortSignal through to the
@@ -148,8 +148,8 @@ export default class FetcherDispatcher {
    * Select the fetcher for a request.
    *
    *   1. Runtime `transport` override (editor preview) wins over everything.
-   *   2. Otherwise, look up the site's per-schema selection in
-   *      `ctx.website.config.fetcher.transports[schema]` → `.transports.default`.
+   *   2. Otherwise, look up the site's per-key selection in
+   *      `ctx.website.config.fetcher.transports[request.as]` → `.transports.default`.
    *      A named match is resolved against the registry of foundation /
    *      extension transports.
    *   3. If the site didn't pick a name (or picked one that's not in the
