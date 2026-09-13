@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { evaluate, match } from '../src/where.js'
+import { evaluate, match, whereOutsideLanguage } from '../src/where.js'
 
 const records = [
   { slug: 'darwin',  name: 'Charles Darwin',  rank: 'professor', department: 'biology', tenured: true,  start_year: 1855, tags: ['naturalist', 'theorist'] },
@@ -67,48 +67,118 @@ describe('evaluate — set membership', () => {
     expect(evaluate({ rank: { in: ['associate', 'full'] } }, records[0])).toBe(false)
   })
 
-  it('nin matches when the value is not in the array', () => {
-    expect(evaluate({ rank: { nin: ['associate', 'assistant'] } }, records[0])).toBe(true)
-    expect(evaluate({ rank: { nin: ['associate', 'assistant'] } }, records[1])).toBe(false)
+  it('not_in matches when the value is none of the listed values', () => {
+    expect(evaluate({ rank: { not_in: ['associate', 'assistant'] } }, records[0])).toBe(true)
+    expect(evaluate({ rank: { not_in: ['associate', 'assistant'] } }, records[1])).toBe(false)
   })
 
-  it('in returns false when the operator value is not an array', () => {
+  it('in with a value that is not a list is outside the language — no match', () => {
     expect(evaluate({ rank: { in: 'professor' } }, records[0])).toBe(false)
   })
 })
 
-describe('evaluate — like', () => {
-  it('matches glob patterns', () => {
-    expect(evaluate({ name: { like: 'Charles*' } }, records[0])).toBe(true)
-    expect(evaluate({ name: { like: 'Charles*' } }, records[2])).toBe(true)
-    expect(evaluate({ name: { like: 'Charles*' } }, records[1])).toBe(false)
+describe('evaluate — text operators (plain text, case-insensitive)', () => {
+  it('starts_with and ends_with', () => {
+    expect(match({ name: { starts_with: 'charles' } }, records).map((r) => r.slug)).toEqual(['darwin', 'lyell'])
+    expect(match({ name: { ends_with: 'WALLACE' } }, records).map((r) => r.slug)).toEqual(['wallace'])
   })
 
-  it('? matches a single character', () => {
-    expect(evaluate({ slug: { like: 'lyel?' } }, records[2])).toBe(true)
-    expect(evaluate({ slug: { like: 'lye?' } }, records[2])).toBe(false)
+  it('takes the argument literally — no wildcards', () => {
+    expect(match({ name: { starts_with: 'Charles*' } }, records)).toEqual([])
   })
 
-  it('escapes regex metacharacters in the literal portion', () => {
-    expect(evaluate({ name: { like: 'Charles.Darwin' } }, records[0])).toBe(false)
-    expect(evaluate({ name: { like: 'Charles*' } }, records[0])).toBe(true)
+  it('contains a piece of a text, or an item of a list', () => {
+    expect(match({ name: { contains: 'LES D' } }, records).map((r) => r.slug)).toEqual(['darwin'])
+    expect(match({ tags: { contains: 'theorist' } }, records).map((r) => r.slug)).toEqual(['darwin', 'lyell'])
   })
 
-  it('returns false for non-string fields or patterns', () => {
-    expect(evaluate({ start_year: { like: '18*' } }, records[0])).toBe(false)
+  it('an item of a list is matched whole, and a number or boolean is not text', () => {
+    expect(match({ tags: { contains: 'theor' } }, records)).toEqual([])
+    expect(match({ start_year: { contains: '18' } }, records)).toEqual([])
+    expect(match({ tenured: { starts_with: 't' } }, records)).toEqual([])
+  })
+
+  it('a list field matches starts_with when any member does', () => {
+    expect(match({ tags: { starts_with: 'nat' } }, records).map((r) => r.slug)).toEqual(['darwin', 'wallace'])
   })
 })
 
-describe('evaluate — exists', () => {
-  it('exists: true matches truthy fields', () => {
-    expect(evaluate({ tenured: { exists: true } }, records[0])).toBe(true)
-    expect(evaluate({ tenured: { exists: true } }, records[1])).toBe(false)
+describe('evaluate — exists means "has a value"', () => {
+  const vals = [
+    { id: 'zero', v: 0 },
+    { id: 'false', v: false },
+    { id: 'text', v: 'x' },
+    { id: 'empty-text', v: '' },
+    { id: 'empty-list', v: [] },
+    { id: 'null', v: null },
+    { id: 'missing' },
+  ]
+
+  it('exists: true — not missing, null, "" or []; 0 and false are values', () => {
+    expect(match({ v: { exists: true } }, vals).map((r) => r.id)).toEqual(['zero', 'false', 'text'])
   })
 
-  it('exists: false matches missing or falsy fields', () => {
-    expect(evaluate({ missing: { exists: false } }, records[0])).toBe(true)
-    expect(evaluate({ tenured: { exists: false } }, records[1])).toBe(true)
-    expect(evaluate({ tenured: { exists: false } }, records[0])).toBe(false)
+  it('exists: false — the rest', () => {
+    expect(match({ v: { exists: false } }, vals).map((r) => r.id)).toEqual(['empty-text', 'empty-list', 'null', 'missing'])
+  })
+
+  it('takes true or false only', () => {
+    expect(match({ v: { exists: 1 } }, vals)).toEqual([])
+  })
+})
+
+describe('evaluate — a list field holds a condition when any member does', () => {
+  it('ne is "does not have", not_in is "has none of"', () => {
+    expect(match({ tags: { ne: 'naturalist' } }, records).map((r) => r.slug)).toEqual(['lyell', 'humboldt'])
+    expect(match({ tags: { not_in: ['naturalist', 'theorist'] } }, records).map((r) => r.slug)).toEqual(['humboldt'])
+  })
+
+  it('a comparison holds for some member', () => {
+    const scored = [{ id: 'a', s: [1, 5] }, { id: 'b', s: [2] }]
+    expect(match({ s: { gt: 4 } }, scored).map((r) => r.id)).toEqual(['a'])
+  })
+
+  it('values stay typed', () => {
+    expect(match({ tags: 3 }, [{ tags: ['3'] }])).toEqual([])
+  })
+})
+
+describe('evaluate — a missing field', () => {
+  it('satisfies ne and not_in, and fails eq, in, contains and comparisons', () => {
+    const r = [{ id: 'x' }]
+    expect(match({ status: { ne: 'archived' } }, r)).toHaveLength(1)
+    expect(match({ status: { not_in: ['archived'] } }, r)).toHaveLength(1)
+    expect(match({ status: 'archived' }, r)).toHaveLength(0)
+    expect(match({ status: { in: ['archived'] } }, r)).toHaveLength(0)
+    expect(match({ status: { contains: 'a' } }, r)).toHaveLength(0)
+    expect(match({ status: { gt: 'a' } }, r)).toHaveLength(0)
+  })
+})
+
+describe('a where outside the language selects no records', () => {
+  it('retired operators, named with their replacement', () => {
+    expect(match({ rank: { nin: ['associate'] } }, records)).toEqual([])
+    expect(whereOutsideLanguage({ rank: { nin: ['associate'] } })).toMatch(/`nin` is spelled `not_in`/)
+    expect(match({ name: { like: 'Charles*' } }, records)).toEqual([])
+    expect(whereOutsideLanguage({ name: { like: 'Charles*' } })).toMatch(/`like` is retired/)
+  })
+
+  it('an empty and / or, an empty text argument, contains ""', () => {
+    expect(match({ and: [] }, records)).toEqual([])
+    expect(match({ or: [] }, records)).toEqual([])
+    expect(match({ name: { starts_with: '' } }, records)).toEqual([])
+    expect(match({ name: { contains: '' } }, records)).toEqual([])
+    expect(whereOutsideLanguage({ or: [] })).toMatch(/non-empty list/)
+  })
+
+  it('never widens: `not` over a condition outside the language still selects nothing', () => {
+    expect(match({ not: { rank: { like: 'x' } } }, records)).toEqual([])
+    expect(match({ not: { and: [] } }, records)).toEqual([])
+  })
+
+  it('a where inside the language says so', () => {
+    expect(whereOutsideLanguage({ a: 1, b: { in: [1] }, or: [{ c: { exists: true } }], not: { d: { starts_with: 'x' } } })).toBe(null)
+    expect(whereOutsideLanguage(null)).toBe(null)
   })
 })
 
@@ -152,7 +222,7 @@ describe('evaluate — composition', () => {
     expect(evaluate(where, records[2])).toBe(false)
   })
 
-  it('and with non-array operator value fails closed', () => {
+  it('and with a value that is not a list is outside the language — no match', () => {
     expect(evaluate({ and: 'not-an-array' }, records[0])).toBe(false)
   })
 })
@@ -169,6 +239,18 @@ describe('evaluate — dotted paths', () => {
   it('returns false / undefined for paths that hit non-object cursors', () => {
     expect(evaluate({ 'tenure.missing': 'x' }, nested)).toBe(false)
     expect(evaluate({ 'tenure.start.year': 2015 }, nested)).toBe(false)
+  })
+
+  it('descends into each item of a list, reading what it reaches as a list field', () => {
+    const cvs = [
+      { id: 'ada', education: [{ degree: 'PhD', year: 1840 }, { degree: 'BA', year: 1835 }] },
+      { id: 'alan', education: [{ degree: 'BA', year: 1934 }] },
+      { id: 'none', education: [] },
+    ]
+    expect(match({ 'education.degree': 'PhD' }, cvs).map((r) => r.id)).toEqual(['ada'])
+    expect(match({ 'education.year': { lt: 1836 } }, cvs).map((r) => r.id)).toEqual(['ada'])
+    expect(match({ 'education.degree': { ne: 'PhD' } }, cvs).map((r) => r.id)).toEqual(['alan', 'none'])
+    expect(match({ 'education.degree': { exists: false } }, cvs).map((r) => r.id)).toEqual(['none'])
   })
 })
 
@@ -199,7 +281,7 @@ describe('evaluate — edge cases', () => {
     expect(evaluate({ field: 'value' }, 'string')).toBe(false)
   })
 
-  it('unknown operator in operator-object fails closed', () => {
+  it('an unknown operator is outside the language — no match', () => {
     expect(evaluate({ rank: { unknown: 'professor' } }, records[0])).toBe(false)
   })
 })

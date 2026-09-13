@@ -50,7 +50,7 @@ export {
   queryNameFromUrl,
   isDataUrl
 } from './data-paths.js'
-export { evaluate as evaluateWhere, match as matchWhere } from './where.js'
+export { evaluate as evaluateWhere, match as matchWhere, whereOutsideLanguage } from './where.js'
 // A query's `scope:` over records that carry their placement — read by the runtime's
 // default fetcher and by `@uniweb/build` when it compiles a query's file.
 export { applyScope, withinScope } from './scope.js'
