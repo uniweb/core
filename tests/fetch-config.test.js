@@ -123,11 +123,11 @@ describe('resolveFetchConfigs — deferred detail', () => {
     expect(configs.get('articles').detail).toBe(recordDataUrl('articles', '{slug}'))
   })
 
-  it('prefers the collection-declared detailUrl for a remote source', () => {
+  it('⛔ ignores a retired `detailUrl` — the per-record file answers', () => {
     const configs = resolveFetchConfigs([cfg], {
       queries: { articles: { deferred: ['body'], detailUrl: '/api/articles/{slug}' } },
     })
-    expect(configs.get('articles').detail).toBe('/api/articles/{slug}')
+    expect(configs.get('articles').detail).toBe(recordDataUrl('articles', '{slug}'))
   })
 
   it('leaves an author-supplied detail alone', () => {
@@ -218,9 +218,9 @@ describe('a door answers the record as the list\'s own question — so every doo
     expect(get({ services: SERVICES, queries: QUERIES })).toMatchObject({ ask: '/_records/_query/en', detail: true, whole: false })
   })
 
-  it('an explicit detail on the config is left alone', () => {
+  it('⛔ a `detail` a stale binding carries is not read — the resolver decides', () => {
     const cfg = resolveFetchConfigs([{ query: 'articles', as: 'articles', detail: false }], { services: SERVICES, queries: QUERIES, defaultLocale: 'en' }).get('articles')
-    expect(cfg.detail).toBe(false)
+    expect(cfg.detail).toBe(true)
   })
 
   it('CONTROL — with no lane a non-deferred query has no detail source and is FULL', () => {
@@ -581,5 +581,52 @@ describe('othersView / othersOf — `current: exclude`', () => {
   it('currentOf reads the three modes, and `only` for anything else', () => {
     expect(['only', 'exclude', 'include', undefined, 'other'].map((current) => currentOf({ current })))
       .toEqual(['only', 'exclude', 'include', 'only', 'only'])
+  })
+})
+
+describe('an external query — a query with `url:` (ruled 2026-09-13)', () => {
+  const SERVICES = { records: '/_records/ask/{locale}' }
+  const QUERIES = {
+    items: { url: 'https://api.test/items', transform: 'results', where: { published: true }, sort: 'date desc' },
+    gql: { url: 'https://api.test/graphql', method: 'POST', body: { query: '{ items { id } }' }, transform: 'data.items' },
+    posts: { schema: '@/post' },
+  }
+  const resolve = (binding, extra = {}) =>
+    resolveFetchConfigs([{ as: binding.as ?? binding.query, ...binding }], { queries: QUERIES, locale: 'en', defaultLocale: 'en', ...extra }).get(binding.as ?? binding.query)
+
+  it('is fetched from its own address, with its transform, method and body', () => {
+    expect(resolve({ query: 'items' })).toMatchObject({ url: 'https://api.test/items', transform: 'results' })
+    expect(resolve({ query: 'gql' })).toMatchObject({ url: 'https://api.test/graphql', method: 'POST', body: { query: '{ items { id } }' }, transform: 'data.items' })
+    expect(resolve({ query: 'items' }).path).toBeUndefined()
+  })
+
+  it('⛔ is never asked of the records service — even where a host offers one', () => {
+    const cfg = resolve({ query: 'items' }, { services: SERVICES })
+    expect(cfg.ask).toBeUndefined()
+    expect(cfg.url).toBe('https://api.test/items')
+    // CONTROL — a query over the site's records is asked
+    expect(resolve({ query: 'posts' }, { services: SERVICES }).ask).toBe('/_records/ask/en')
+  })
+
+  it('a binding narrows it as it narrows any query — evaluated over what `transform` picked', () => {
+    expect(resolve({ query: 'items', where: { tag: 'x' }, limit: 3 })).toMatchObject({
+      where: { and: [{ published: true }, { tag: 'x' }] }, sort: 'date desc', limit: 3,
+    })
+  })
+
+  it('is the browser\'s to fetch unless the binding says otherwise', () => {
+    expect(resolve({ query: 'items' }).prerender).toBe(false)
+    expect(resolve({ query: 'items', prerender: true }).prerender).toBe(true)
+  })
+
+  it('⛔ a stale binding\'s own url, transform, method, body or detail is not read — the query supplies them', () => {
+    const cfg = resolve({ query: 'items', url: 'https://evil.test', transform: 'x', method: 'PUT', body: 'b', detail: 'rest', envelope: { item: 'd' } })
+    expect(cfg).toMatchObject({ url: 'https://api.test/items', transform: 'results' })
+    expect(cfg.method).toBeUndefined()
+    expect(cfg.body).toBeUndefined()
+    expect(cfg.detail).toBeUndefined()
+    expect(cfg.envelope).toBeUndefined()
+    // and on a query over the site's records, a stale transform no longer unwraps the compiled file into nothing
+    expect(resolve({ query: 'posts', transform: 'data.items' }).transform).toBeUndefined()
   })
 })

@@ -115,8 +115,8 @@ export function queryNameFromUrl(path) {
  * Whether a fetch config's `path` addresses compiled query data.
  *
  * Used to scope behavior that only makes sense for build-emitted files —
- * locale prefixing in particular, which must not touch a remote `url:`
- * source or an author-declared `detailUrl:`.
+ * locale prefixing in particular, which must not touch an external query's
+ * `url:`.
  *
  * @param {*} path - A fetch config's `path` field.
  * @returns {boolean}

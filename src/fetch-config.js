@@ -142,31 +142,23 @@ function localizeConfig(cfg, locale, defaultLocale) {
 }
 
 /**
- * Auto-inject `detail:` on a query ref whose query declares
- * `deferred:` fields.
+ * Say whether a resolved config has a PER-RECORD source — `detail` — so a
+ * parametric page asks for its record on its own rather than finding it in the list.
  *
- * A deferred query ships a lean list payload, so the full record has to
- * come from somewhere else. Two patterns, picked by what the query
- * declares:
+ *   - the records service → `true`: the record is the list's own question narrowed
+ *     by the URL's value (`buildDetailConfig`);
+ *   - an external query declaring `record:` → `true`: its own request;
+ *   - a query declaring `deferred:` → `/data/<query>/{slug}.json`, the per-record
+ *     file the build emits beside the lean list. Per-record files are keyed by the
+ *     record's slug, and are not localized.
  *
- *   - the query has `detailUrl:` → use it verbatim (a remote source);
- *   - otherwise → `/data/<schema>/{slug}.json`, the per-record file emitted
- *     alongside the lean list.
+ * ⛔ `detail:` is no longer AUTHORED (retired 2026-09-13 [Diego]; the build refuses
+ * it): its `rest`, `query`, pattern and `{ body, envelope }` forms are an external
+ * query's `record:` now, and `detailUrl:` went the same way. The field survives only
+ * as this resolved flag.
  *
- * Conventions carried from the original implementation:
- *   - Per-record sources are keyed by `item.slug`, and the injected pattern
- *     uses the `{slug}` placeholder. Substitution works when the dynamic
- *     route's paramName is `slug` (the documented convention); a route using
- *     another param name needs an explicit author-written `detail:`.
- *   - Per-record files are not currently localized. A site needing localized
- *     a deferred query writes its own `detail:` URL.
- *
- * An author-supplied `cfg.detail` always wins; this only fills the default.
- * With no `queries` map available the config passes through untouched —
- * deferred-detail injection is an enhancement, never a correctness
- * requirement, so a caller that does not have query metadata still gets
- * a usable config. That matters for hosts whose content projection may not
- * carry query metadata at all.
+ * With no `queries` map available the config passes through untouched — a caller
+ * that has no query metadata still gets a usable config.
  *
  * @param {Object} cfg
  * @param {Object|null} queries - the site's `config.queries` map
@@ -178,6 +170,8 @@ function applyDeferredDetail(cfg, queries) {
   // The records service answers a RECORD by the same question narrowed to it,
   // so every asked config has a detail source; `buildDetailConfig` composes it.
   if (cfg.ask) return { ...cfg, detail: true }
+  // An external query's `record:` request.
+  if (cfg.record && typeof cfg.record === 'object') return { ...cfg, detail: true }
 
 
   // ⛔ **`config.queries` is keyed by QUERY NAME, so look it up by the query.**
@@ -199,11 +193,26 @@ function applyDeferredDetail(cfg, queries) {
   if (!collConfig || typeof collConfig !== 'object') return cfg
   const deferred = Array.isArray(collConfig.deferred) ? collConfig.deferred : null
   if (!deferred || deferred.length === 0) return cfg
-  const pattern = typeof collConfig.detailUrl === 'string'
-    ? collConfig.detailUrl
-    : recordDataUrl(queryName, '{slug}')
-  return { ...cfg, detail: pattern }
+  return { ...cfg, detail: recordDataUrl(queryName, '{slug}') }
 }
+
+/**
+ * ⭐ AN EXTERNAL QUERY — a named query with `url:`, ruled 2026-09-13 [Diego]: *"Setting
+ * `url` would classify it as external."* A public, keyless endpoint, fetched from its
+ * own address by the visitor's browser or a host's prerender, and NEVER asked of the
+ * records service. It carries `method`, `body` and `transform`, and `record:` for one
+ * record on a parametric page. An API needing a key, headers or paging is a foundation
+ * transport, not this.
+ *
+ * @param {Object|null} decl - a query declaration
+ * @returns {boolean}
+ */
+export function isExternalQuery(decl) {
+  return Boolean(decl) && typeof decl === 'object' && typeof decl.url === 'string' && decl.url.length > 0
+}
+
+/** Keys a binding may not carry, whatever a stale payload holds — the query supplies them. */
+const QUERY_SUPPLIED = ['scope', 'url', 'method', 'body', 'transform', 'record', 'detail', 'envelope']
 
 /**
  * Resolve a query reference to something the fetcher can call.
@@ -243,12 +252,27 @@ function resolveQuerySource(cfg, services, { queries = null, locale = null, defa
     ? queries[cfg.query]
     : null
 
-  // ⛔ A BINDING'S OWN `scope` IS NOT READ — ruled 2026-09-13 [Diego]: *"it belongs
-  // to the query"*. Which folder branch a query reads decides what the query IS, so
-  // a binding adapts it with `where`, `sort` and `limit` and nothing else. The build
-  // refuses `scope` on a binding (`parseFetchConfig`); a payload that still carries
-  // one gets the query's. It REPLACED the query's until then. Dropped from a COPY on
-  // both branches below, so the config itself is read exactly as it was.
+  // ⛔ A BINDING ADAPTS ITS QUERY WITH `where`, `sort` AND `limit`, AND NOTHING ELSE —
+  // ruled 2026-09-13 [Diego]. Its own `scope` is not read (*"it belongs to the
+  // query"*; it REPLACED the query's until then), and neither is a source of its own —
+  // `url`, `method`, `body`, `transform`, a `detail` form — which an external query
+  // declares instead. The build refuses all of them on a binding; a payload that still
+  // carries one gets the query's. Dropped from a COPY on every branch below, so the
+  // config itself is read exactly as it was.
+
+  // ⭐ AN EXTERNAL QUERY answers from its own address, on every lane.
+  if (isExternalQuery(decl)) {
+    const { path, url, ...rest } = cfg
+    for (const key of QUERY_SUPPLIED) delete rest[key]
+    const out = { ...rest, url: decl.url }
+    if (typeof decl.method === 'string' && decl.method) out.method = decl.method
+    if (decl.body !== undefined && decl.body !== null) out.body = decl.body
+    if (typeof decl.transform === 'string' && decl.transform) out.transform = decl.transform
+    if (decl.record && typeof decl.record === 'object') out.record = decl.record
+    // a live endpoint is the browser's to fetch, unless the binding says otherwise
+    if (out.prerender === undefined) out.prerender = false
+    return narrowQuery(out, decl, decl.where)
+  }
 
   // ⭐ THE SERVICE FIRST. A host that answers questions gets the whole query —
   // `schema`, `scope`, `where`, `sort`, `limit`, `depth` — and composes no
@@ -262,7 +286,7 @@ function resolveQuerySource(cfg, services, { queries = null, locale = null, defa
     // Drop the transitional `path`: two addresses on one request is an
     // ambiguity the fetcher would have to break by accident of field order.
     const { path, url, ...rest } = cfg
-    delete rest.scope
+    for (const key of QUERY_SUPPLIED) delete rest[key]
     if (!schema) {
       // ⛔ LOUD, not a fallthrough. A payload that offers the service and carries no
       // Model ref for the query cannot ask, and reading the compiled file
@@ -283,7 +307,7 @@ function resolveQuerySource(cfg, services, { queries = null, locale = null, defa
   // ignored on this lane and `where: { tag: :dir }` was applied at build to the
   // literal `':dir'`, compiling to no records (measured).
   const out = { ...cfg, path: queryDataUrl(cfg.query) }
-  delete out.scope
+  for (const key of QUERY_SUPPLIED) delete out[key]
   return decl ? narrowQuery(out, decl, routeVariableClauses(decl.where)) : out
 }
 

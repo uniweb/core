@@ -3,6 +3,7 @@ import EntityStore from '../src/entity-store.js'
 import DataStore, { deriveCacheKey } from '../src/datastore.js'
 import FetcherDispatcher from '../src/fetcher-dispatcher.js'
 import Website from '../src/website.js'
+import { resolveFetchConfigs } from '../src/fetch-config.js'
 // Derived, never re-spelled: the convention is pinned once, in
 // `tests/data-paths.test.js`. See the note there before pinning it again.
 import { queryDataUrl } from '../src/data-paths.js'
@@ -184,116 +185,49 @@ describe('EntityStore.fetch', () => {
     expect(result.data.article).toBeUndefined()
   })
 
-  it('detail: rest fetches single item on template page', async () => {
+  // ⭐ An external query's `record:` is the record's own request (2026-09-13 — the
+  // authored `detail: rest | query | pattern` forms it replaces are refused).
+  const externalSite = (website, record) => {
+    website.config = { queries: { articles: { url: 'https://api.example.com/articles', transform: 'results', record } } }
+  }
+
+  it('an external query\'s record: fetches the record on its own, with its own transform', async () => {
     const collectionItem = { slug: 'my-post', title: 'My Post' }
     const detailArticle = { ...collectionItem, body: 'Full' }
     const { entityStore, fetcherSpy, website } = makeHarness({
       fetcherImpl: (req) => {
-        // The collection and the per-record detail fetch share a schema now;
-        // distinguish them by URL (the collection vs the /{slug} record).
         if (req.url === 'https://api.example.com/articles') return Promise.resolve({ data: [collectionItem] })
         return Promise.resolve({ data: detailArticle })
       },
     })
+    externalSite(website, { url: 'https://api.example.com/articles/{slug}', transform: 'data' })
 
-    const fetchConfig = {
-      url: 'https://api.example.com/articles',
-      as: 'articles',
-      detail: 'rest',
-    }
     const dynamicContext = { paramName: 'slug', paramValue: 'my-post' }
-    const parent = makePage({ fetch: fetchConfig })
+    const parent = makePage({ fetch: { query: 'articles', as: 'articles' } })
     const page = makePage({ parent, dynamicContext })
     const block = makeBlock({ page }, website)
 
     const result = await entityStore.fetch(block, { inheritData: ['articles'] })
     expect(result.data.articles).toEqual([detailArticle])
-    expect(result.data.article).toBeUndefined()
     expect(fetcherSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        url: 'https://api.example.com/articles/my-post',
-        as: 'articles',
-      }),
+      expect.objectContaining({ url: 'https://api.example.com/articles/my-post', as: 'articles', transform: 'data' }),
       expect.anything(),
     )
   })
 
-  it('detail: query builds query-param URL', async () => {
-    const collectionItem = { slug: 'my-post' }
-    const detailArticle = { ...collectionItem, body: 'Full' }
-    const { entityStore, fetcherSpy, website } = makeHarness({
-      fetcherImpl: (req) =>
-        req.as === 'articles'
-          ? Promise.resolve({ data: [collectionItem] })
-          : Promise.resolve({ data: detailArticle }),
-    })
-
-    const fetchConfig = {
-      url: 'https://api.example.com/articles',
-      as: 'articles',
-      detail: 'query',
-    }
-    const dynamicContext = { paramName: 'slug', paramValue: 'my-post' }
-    const parent = makePage({ fetch: fetchConfig })
-    const page = makePage({ parent, dynamicContext })
-    const block = makeBlock({ page }, website)
-
-    await entityStore.fetch(block, {})
-    expect(fetcherSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        url: 'https://api.example.com/articles?slug=my-post',
-        as: 'articles',
-      }),
-      expect.anything(),
-    )
-  })
-
-  it('custom detail pattern substitutes placeholders', async () => {
-    const collectionItem = { slug: 'my-post' }
-    const detailArticle = { ...collectionItem, body: 'Full' }
-    const { entityStore, fetcherSpy, website } = makeHarness({
-      fetcherImpl: (req) =>
-        req.as === 'articles'
-          ? Promise.resolve({ data: [collectionItem] })
-          : Promise.resolve({ data: detailArticle }),
-    })
-
-    const fetchConfig = {
-      url: 'https://api.example.com/articles',
-      as: 'articles',
-      detail: 'https://api.example.com/article/{slug}',
-    }
-    const dynamicContext = { paramName: 'slug', paramValue: 'my-post' }
-    const parent = makePage({ fetch: fetchConfig })
-    const page = makePage({ parent, dynamicContext })
-    const block = makeBlock({ page }, website)
-
-    await entityStore.fetch(block, {})
-    expect(fetcherSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        url: 'https://api.example.com/article/my-post',
-        as: 'articles',
-      }),
-      expect.anything(),
-    )
-  })
-
-  it('uses cached collection as gate then fetches detail', async () => {
+  it('uses the cached list as the gate, then fetches the record', async () => {
     const articles = [{ slug: 'my-post' }, { slug: 'other' }]
     const detailArticle = { slug: 'my-post', body: 'Full' }
 
     const { entityStore, fetcherSpy, dataStore, website } = makeHarness({
       fetcherImpl: () => Promise.resolve({ data: detailArticle }),
     })
-    const fetchConfig = {
-      url: 'https://api.example.com/articles',
-      as: 'articles',
-      detail: 'rest',
-    }
-    dataStore.set(deriveCacheKey(fetchConfig), { data: articles })
+    externalSite(website, { url: 'https://api.example.com/articles/{slug}' })
+    const list = resolveFetchConfigs([{ query: 'articles', as: 'articles' }], { queries: website.config.queries }).get('articles')
+    dataStore.set(deriveCacheKey(list), { data: articles })
 
     const dynamicContext = { paramName: 'slug', paramValue: 'my-post' }
-    const parent = makePage({ fetch: fetchConfig })
+    const parent = makePage({ fetch: { query: 'articles', as: 'articles' } })
     const page = makePage({ parent, dynamicContext })
     const block = makeBlock({ page }, website)
 
@@ -306,22 +240,19 @@ describe('EntityStore.fetch', () => {
     )
   })
 
-  it('skips detail when no dynamicContext', async () => {
+  it('skips the record request when no dynamicContext', async () => {
     const articles = [{ slug: 'a' }]
     const { entityStore, fetcherSpy, website } = makeHarness({
       fetcherImpl: () => Promise.resolve({ data: articles }),
     })
-    const fetchConfig = {
-      url: 'https://api.example.com/articles',
-      as: 'articles',
-      detail: 'rest',
-    }
-    const page = makePage({ fetch: fetchConfig })
+    externalSite(website, { url: 'https://api.example.com/articles/{slug}' })
+    const page = makePage({ fetch: { query: 'articles', as: 'articles' } })
     const block = makeBlock({ page }, website)
 
     const result = await entityStore.fetch(block, {})
     expect(result.data.articles).toEqual(articles)
-    expect(fetcherSpy).toHaveBeenCalledWith(expect.objectContaining(fetchConfig), expect.anything())
+    expect(fetcherSpy).toHaveBeenCalledTimes(1)
+    expect(fetcherSpy).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://api.example.com/articles' }), expect.anything())
   })
 
   it('falls back to collection fetch when detail is not defined', async () => {
@@ -775,9 +706,9 @@ describe('⛔ a failed fetch delivers NOTHING under its key, and says so', () =>
         ? Promise.resolve({ data: list })
         : Promise.resolve({ data: [], error: 'HTTP 500' }),
     })
-    const fetchConfig = { url: 'https://api.example.com/articles', as: 'articles', detail: 'rest' }
+    website.config = { queries: { articles: { url: 'https://api.example.com/articles', record: { url: 'https://api.example.com/articles/{slug}' } } } }
     const dynamicContext = { paramName: 'slug', paramValue: 'my-post' }
-    const parent = makePage({ fetch: fetchConfig })
+    const parent = makePage({ fetch: { query: 'articles', as: 'articles' } })
     const page = makePage({ parent, dynamicContext })
     const block = makeBlock({ page }, website)
 

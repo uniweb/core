@@ -1,253 +1,143 @@
 /**
- * `detail:` resolution — a cross-boundary contract.
+ * A parametric page's record request — a cross-boundary contract.
  *
  * A host that renders a detail page server-side must fetch the same record the
- * browser fetches when it hydrates over that render. The four forms below each
- * decide a different URL, so a host resolving them differently prerenders
- * record A and hydrates record B — silently, and only on the routes that have a
- * pattern. Extracted from `EntityStore#_buildDetailConfig` (which now delegates)
- * so the rule is imported rather than transcribed, the same move
- * `./route-match.js` made for routing.
+ * browser fetches when it hydrates over that render, so the request is built by
+ * one function every lane imports (`buildDetailConfig`). These tests pin its three
+ * sources — the records service (in `records-service-client.test.js`), an external
+ * query's `record:`, and a `deferred:` query's per-record file — and that nothing
+ * else builds one.
  *
- * These tests pin the *four forms*, not just the happy path, because a
- * consumer matching identically depends on all of them.
+ * ⛔ The authored `detail:` forms — `rest`, `query`, a URL pattern, `{ body, envelope }`
+ * — were retired on 2026-09-13 with inline `url:` fetches: an external query's
+ * `record:` says the same thing, on the query [Diego].
  */
 
 import { describe, it, expect } from 'vitest'
 import { buildDetailConfig } from '../src/detail-url.js'
+import { resolveFetchConfigs } from '../src/fetch-config.js'
 
 const ctx = { paramName: 'slug', paramValue: 'my-post' }
 
-describe('the four detail: forms', () => {
-  it("'rest' appends the value as a path segment", () => {
-    expect(buildDetailConfig({ url: 'https://api.test/articles', detail: 'rest' }, ctx))
-      .toMatchObject({ url: 'https://api.test/articles/my-post' })
+/** An external query's resolved binding, as `resolveFetchConfigs` makes it. */
+const external = (decl, binding = {}) =>
+  resolveFetchConfigs([{ query: 'items', as: 'items', ...binding }], { queries: { items: decl } }).get('items')
+
+describe('an external query\'s `record:` — its own request', () => {
+  it('its url, with the route\'s value substituted', () => {
+    const cfg = external({ url: 'https://api.test/items', transform: 'results', record: { url: 'https://api.test/items/{slug}' } })
+    expect(buildDetailConfig(cfg, ctx)).toMatchObject({ url: 'https://api.test/items/my-post', as: 'items', whole: true })
   })
 
-  // ⭐ DELIBERATE, and the example is the reason: a locale (or an API key, or a
-  // tenancy id) is exactly what a single-record read still needs. Dropping the
-  // query would 401 the detail request or return the wrong language.
-  // ⚠️ The cost lands on projection params — `?fields=summary` carried onto a
-  // detail request truncates the record it exists to fetch in full. Framework
-  // cannot tell the categories apart, so the custom-pattern form is the way out.
-  // Do not "fix" this by dropping the query; see src/detail-url.js.
-  it("'rest' keeps an existing query string after the appended segment", () => {
-    expect(buildDetailConfig({ url: 'https://api.test/articles?lang=en', detail: 'rest' }, ctx))
-      .toMatchObject({ url: 'https://api.test/articles/my-post?lang=en' })
+  it('⛔ the list\'s `transform` never carries over — a record response is rarely wrapped like the list', () => {
+    const cfg = external({ url: 'https://api.test/items', transform: 'results', record: { url: 'https://api.test/items/{slug}' } })
+    expect(buildDetailConfig(cfg, ctx).transform).toBeUndefined()
+    const wrapped = external({ url: 'https://api.test/items', transform: 'results', record: { url: 'https://api.test/items/{slug}', transform: 'data' } })
+    expect(buildDetailConfig(wrapped, ctx).transform).toBe('data')
   })
 
-  it("'query' appends paramName=paramValue, picking the right separator", () => {
-    expect(buildDetailConfig({ url: 'https://api.test/a', detail: 'query' }, ctx))
-      .toMatchObject({ url: 'https://api.test/a?slug=my-post' })
-    expect(buildDetailConfig({ url: 'https://api.test/a?x=1', detail: 'query' }, ctx))
-      .toMatchObject({ url: 'https://api.test/a?x=1&slug=my-post' })
-  })
-
-  it('a custom pattern substitutes {paramName}', () => {
-    expect(buildDetailConfig({ url: 'https://api.test/x', detail: '/articles/{slug}' }, ctx))
-      .toMatchObject({ url: '/articles/my-post' })
-  })
-
-  it('a custom pattern leaves an unmatched placeholder literal', () => {
-    expect(buildDetailConfig({ url: 'https://api.test/x', detail: '/a/{slug}/{other}' }, ctx))
-      .toMatchObject({ url: '/a/my-post/{other}' })
-  })
-
-  it('the object form reuses the collection URL and substitutes into the body', () => {
-    const cfg = {
+  it('url and method default to the query\'s; ⛔ body never carries over', () => {
+    const cfg = external({
       url: 'https://api.test/graphql',
       method: 'POST',
-      as: 'articles',
-      detail: { body: { variables: { slug: '{slug}' } }, envelope: { item: 'data.article' } },
-    }
+      body: { query: '{ items { id } }' },
+      transform: 'data.items',
+      record: { body: { query: 'query Item($slug: String!) { item(slug: $slug) { id } }', variables: { slug: '{slug}' } }, transform: 'data.item' },
+    })
     expect(buildDetailConfig(cfg, ctx)).toMatchObject({
       url: 'https://api.test/graphql',
       method: 'POST',
-      body: { variables: { slug: 'my-post' } },
-      envelope: { item: 'data.article' },
+      body: { query: 'query Item($slug: String!) { item(slug: $slug) { id } }', variables: { slug: 'my-post' } },
+      transform: 'data.item',
+    })
+    const noBody = external({ url: 'https://api.test/g', method: 'POST', body: { q: 'list' }, record: { url: 'https://api.test/g/{slug}' } })
+    expect(buildDetailConfig(noBody, ctx).body).toBeUndefined()
+  })
+
+  it('the value is encoded in a url, so a slug may carry reserved characters', () => {
+    const cfg = external({ url: 'https://api.test/a', record: { url: 'https://api.test/a/{slug}' } })
+    expect(buildDetailConfig(cfg, { paramName: 'slug', paramValue: 'a b/c' }).url).toBe('https://api.test/a/a%20b%2Fc')
+  })
+
+  it('the route\'s own param and the host\'s `{param}` alias resolve too', () => {
+    const cfg = external({ url: 'https://api.test/a', record: { url: 'https://api.test/a/{id}?alias={param}' } })
+    expect(buildDetailConfig(cfg, { paramName: 'id', paramValue: '42' }).url).toBe('https://api.test/a/42?alias=42')
+  })
+
+  it('carries the query, the locale, whole, and the route context beside its address', () => {
+    const cfg = { ...external({ url: 'https://api.test/a', record: { url: 'https://api.test/a/{slug}' } }), locale: 'fr' }
+    expect(buildDetailConfig(cfg, ctx)).toEqual({
+      url: 'https://api.test/a/my-post',
+      as: 'items',
+      query: 'items',
+      locale: 'fr',
+      whole: true,
+      dynamicContext: { paramName: 'slug', paramValue: 'my-post' },
     })
   })
 
-  it('the object form falls back to the collection body when detail declares none', () => {
-    const cfg = { url: 'https://api.test/g', body: { q: '{slug}' }, detail: { envelope: { item: 'd' } } }
-    expect(buildDetailConfig(cfg, ctx)).toMatchObject({ body: { q: 'my-post' } })
+  it('CONTROL — an external query with no `record:` has no separate request: its record is found in the list', () => {
+    const cfg = external({ url: 'https://api.test/a' })
+    expect(cfg.detail).toBeUndefined()
+    expect(buildDetailConfig(cfg, ctx)).toBeNull()
   })
 })
 
-describe('local path vs remote url', () => {
-  it('a path-based collection yields path, not url', () => {
-    const out = buildDetailConfig({ path: '/data/articles', detail: '/data/articles/{slug}.json' }, ctx)
-    expect(out).toMatchObject({ path: '/data/articles/my-post.json' })
+describe('⛔ the retired `detail:` forms build nothing', () => {
+  it('rest, query, a pattern and the object form, on a url', () => {
+    for (const detail of ['rest', 'query', 'https://api.test/a/{slug}', { body: { s: '{slug}' }, envelope: { item: 'd' } }]) {
+      expect(buildDetailConfig({ url: 'https://api.test/a', as: 'a', detail }, ctx)).toBeNull()
+    }
+  })
+})
+
+describe('a `deferred:` query\'s per-record file', () => {
+  const deferred = { path: '/data/articles.json', as: 'articles', detail: '/data/articles/{slug}.json' }
+
+  it('a path yields a path, not a url', () => {
+    const out = buildDetailConfig(deferred, ctx)
+    expect(out).toMatchObject({ path: '/data/articles/my-post.json', as: 'articles', whole: true })
     expect(out.url).toBeUndefined()
   })
 
-  it('a url-based collection yields url, not path', () => {
-    const out = buildDetailConfig({ url: 'https://api.test/a', detail: 'rest' }, ctx)
-    expect(out.path).toBeUndefined()
-  })
-})
-
-describe('the value is encoded, so a slug may carry reserved characters', () => {
-  it("encodes in 'rest' and 'query'", () => {
-    const odd = { paramName: 'slug', paramValue: 'a b/c' }
-    expect(buildDetailConfig({ url: 'https://api.test/a', detail: 'rest' }, odd).url)
-      .toBe('https://api.test/a/a%20b%2Fc')
-    expect(buildDetailConfig({ url: 'https://api.test/a', detail: 'query' }, odd).url)
-      .toBe('https://api.test/a?slug=a%20b%2Fc')
-  })
-})
-
-describe('returns null rather than throwing — the common case is "no detail fetch"', () => {
-  it('no detail: declared', () => {
-    expect(buildDetailConfig({ url: 'https://api.test/a' }, ctx)).toBeNull()
-  })
-
-  it('no param in the dynamic context', () => {
-    expect(buildDetailConfig({ url: 'https://api.test/a', detail: 'rest' }, {})).toBeNull()
-    expect(buildDetailConfig({ url: 'https://api.test/a', detail: 'rest' }, { paramName: 'slug' })).toBeNull()
-  })
-
-  it('neither url: nor path: to build from', () => {
-    expect(buildDetailConfig({ detail: 'rest' }, ctx)).toBeNull()
-  })
-})
-
-describe('the leaf property consumers rely on', () => {
-  it('carries schema and transform through so the fetch lands on the right key', () => {
-    const out = buildDetailConfig(
-      { url: 'https://api.test/a', detail: 'rest', as: 'articles', transform: 'unwrap' },
-      ctx,
-    )
-    expect(out).toMatchObject({ as: 'articles', transform: 'unwrap' })
-  })
-})
-
-describe('the generic {param} alias', () => {
-  const ctx = { paramName: 'slug', paramValue: 'my-post' }
-
-  // An AUTHOR knows their route and writes {slug} or {id}. A HOST publishing one
-  // record pattern for every site it serves cannot know the site's param_name,
-  // so it writes {param}. Binding both names to one value lets the two
-  // conventions coexist without a translation step between them — and a
-  // translation step is where this codebase has twice grown a second copy of a
-  // rule that then drifted.
-  it('resolves a host-written {param}', () => {
-    const out = buildDetailConfig({ url: '/_d/articles', detail: '/_d/articles/{param}' }, ctx)
-    expect(out.url).toBe('/_d/articles/my-post')
-  })
-
-  it('still resolves an author-written {paramName} — the convention is unchanged', () => {
-    const out = buildDetailConfig({ path: '/data/a.json', detail: '/data/a/{slug}.json' }, ctx)
-    expect(out.path).toBe('/data/a/my-post.json')
-  })
-
-  it('resolves {param} whatever the route calls its param', () => {
-    const out = buildDetailConfig(
-      { url: '/_d/x', detail: '/_d/x/{param}' },
-      { paramName: 'id', paramValue: '42' }
-    )
-    expect(out.url).toBe('/_d/x/42')
-  })
-
-  it('leaves an unrelated placeholder literal, as it always has', () => {
-    const out = buildDetailConfig({ path: '/a.json', detail: '/a/{other}/{slug}' }, ctx)
-    expect(out.path).toBe('/a/{other}/my-post')
-  })
-
-  it('substitutes into an object-form body too', () => {
-    const out = buildDetailConfig(
-      { url: 'https://x.example/gql', detail: { body: { vars: { s: '{param}' } } } },
-      ctx
-    )
-    expect(out.body).toEqual({ vars: { s: 'my-post' } })
-  })
-})
-
-describe('the detail request keeps the collection\'s address kind', () => {
-  const ctx = { paramName: 'slug', paramValue: 'p' }
-
-  it('path → path, url → url', () => {
-    // `rest` appends the param as a segment, so the assertion is about WHICH
-    // key carries the result, not about the URL shape that form produces.
-    const local = buildDetailConfig({ path: '/d/a', detail: 'rest' }, ctx)
-    expect(local.path).toBe('/d/a/p')
-    expect(local.url).toBeUndefined()
-
-    const remote = buildDetailConfig({ url: 'https://x.example/a', detail: 'rest' }, ctx)
-    expect(remote.url).toBe('https://x.example/a/p')
-    expect(remote.path).toBeUndefined()
-  })
-
-  it('returns null when the collection has no address at all', () => {
-    expect(buildDetailConfig({ detail: 'rest', as: 'a' }, ctx)).toBeNull()
-  })
-})
-
-describe('`{slug}` is the RECORD\'s slug, whatever the route calls its param', () => {
   // The file lane keys per-record files by `item.slug` and injects
   // `/data/<name>/{slug}.json`. A site routing `[id]` used to leave `{slug}`
   // literal — `/data/articles/{slug}.json`, a guaranteed 404 on every template
   // page with `deferred:` fields.
-  const deferred = { path: '/data/articles.json', as: 'articles', detail: '/data/articles/{slug}.json' }
-
   it('fills {slug} from the record the caller holds when the route param is something else', () => {
-    const out = buildDetailConfig(deferred, {
-      paramName: 'id',
-      paramValue: '42',
-      record: { id: 42, slug: 'design-tips' },
-    })
+    const out = buildDetailConfig(deferred, { paramName: 'id', paramValue: '42', record: { id: 42, slug: 'design-tips' } })
     expect(out.path).toBe('/data/articles/design-tips.json')
   })
 
-  it('still fills the route\'s own param and the {param} alias from the capture', () => {
-    const out = buildDetailConfig(
-      { url: 'https://api.test/a', as: 'a', detail: '/api/{id}/{param}/{slug}' },
-      { paramName: 'id', paramValue: '42', record: { id: 42, slug: 'design-tips' } },
-    )
-    expect(out.url).toBe('/api/42/42/design-tips')
-  })
-
   it('leaves {slug} literal with no record in hand — an unresolved address, not a guessed one', () => {
-    const out = buildDetailConfig(deferred, { paramName: 'id', paramValue: '42' })
-    expect(out.path).toBe('/data/articles/{slug}.json')
+    expect(buildDetailConfig(deferred, { paramName: 'id', paramValue: '42' }).path).toBe('/data/articles/{slug}.json')
   })
 
   it('CONTROL — on a [slug] route the capture is the slug, record or not', () => {
-    const withRecord = buildDetailConfig(deferred, {
-      paramName: 'slug', paramValue: 'design-tips', record: { slug: 'design-tips' },
-    })
+    const withRecord = buildDetailConfig(deferred, { paramName: 'slug', paramValue: 'design-tips', record: { slug: 'design-tips' } })
     const without = buildDetailConfig(deferred, { paramName: 'slug', paramValue: 'design-tips' })
     expect(withRecord.path).toBe('/data/articles/design-tips.json')
     expect(without.path).toBe(withRecord.path)
   })
 
   it('a record with no slug adds nothing', () => {
-    const out = buildDetailConfig(deferred, { paramName: 'id', paramValue: '42', record: { id: 42 } })
-    expect(out.path).toBe('/data/articles/{slug}.json')
-  })
-})
-
-describe('what a detail config carries beside its address', () => {
-  it('depth full, the query, the locale, and the route context the fetcher keys a single-record response on', () => {
-    const out = buildDetailConfig(
-      { url: '/_records/members', query: 'members', as: 'members', locale: 'fr', detail: '/_records/members/{param}' },
-      { paramName: 'slug', paramValue: 'ada' },
-    )
-    expect(out).toEqual({
-      url: '/_records/members/ada',
-      as: 'members',
-      transform: undefined,
-      query: 'members',
-      locale: 'fr',
-      whole: true,
-      dynamicContext: { paramName: 'slug', paramValue: 'ada' },
-    })
+    expect(buildDetailConfig(deferred, { paramName: 'id', paramValue: '42', record: { id: 42 } }).path).toBe('/data/articles/{slug}.json')
   })
 
   it('omits query and locale when the list had none', () => {
-    const out = buildDetailConfig({ url: 'https://api.test/a', as: 'a', detail: 'rest' }, ctx)
+    const out = buildDetailConfig(deferred, ctx)
     expect('query' in out).toBe(false)
     expect('locale' in out).toBe(false)
-    expect(out.whole).toBe(true)
+  })
+})
+
+describe('returns null rather than throwing — the common case is "find the record in the list"', () => {
+  it('no per-record source', () => {
+    expect(buildDetailConfig({ path: '/data/a.json', as: 'a' }, ctx)).toBeNull()
+  })
+
+  it('no param in the dynamic context', () => {
+    expect(buildDetailConfig({ path: '/data/a.json', detail: '/data/a/{slug}.json' }, {})).toBeNull()
+    expect(buildDetailConfig({ path: '/data/a.json', detail: '/data/a/{slug}.json' }, { paramName: 'slug' })).toBeNull()
   })
 })

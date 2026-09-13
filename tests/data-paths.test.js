@@ -115,7 +115,7 @@ describe('fetch-config uses the shared convention', () => {
     expect(configs.get('articles').detail).toBe(recordDataUrl('articles', '{slug}'))
   })
 
-  it('prefers an author-declared detailUrl over the per-record default', () => {
+  it('⛔ a `detailUrl:` on the query is not read — its case is `record.url` on an external query (2026-09-13)', () => {
     const configs = resolveFetchConfigs(
       [{ as: 'articles', path: queryDataUrl('articles') }],
       {
@@ -124,6 +124,6 @@ describe('fetch-config uses the shared convention', () => {
         }
       }
     )
-    expect(configs.get('articles').detail).toBe('/api/articles/{slug}')
+    expect(configs.get('articles').detail).toBe(recordDataUrl('articles', '{slug}'))
   })
 })
