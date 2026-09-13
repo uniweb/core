@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isFetchRefinement, resolveFetchConfigs, routeQuery, sectionFetches, withoutRouteVariables } from '../src/fetch-config.js'
+import { isFetchRefinement, resolveFetchConfigs, routeQuery, routeSelection, sectionFetches, withoutRouteVariables } from '../src/fetch-config.js'
 // Derived, never re-spelled: the convention is pinned once, in
 // `tests/data-paths.test.js`. See the note there before pinning it again.
 import { queryDataUrl, recordDataUrl } from '../src/data-paths.js'
@@ -276,14 +276,17 @@ describe('route variables reach a query as placeholders — and an unbound one d
     expect(cfg.where).toEqual({ tag: 'rust/2025', $name: 'my-post' })
   })
 
+  // `scope` is the query's (ruled 2026-09-13), so a routed one is declared there
+  const routedScope = { posts: { schema: '@/post', scope: ':dir' } }
+
   it('binds :dir as the whole scope — a field of its own, never folded into where', () => {
-    const cfg = resolveFetchConfigs(decl({ scope: ':dir' }), { variables: vars }).get('posts')
+    const cfg = resolveFetchConfigs(decl(), { queries: routedScope, variables: vars }).get('posts')
     expect(cfg.scope).toBe('rust/2025')
     expect('where' in cfg).toBe(false)
   })
 
   it('⭐ unbound ⇒ the clause DROPS — one saved query serves the list page and the detail page', () => {
-    const list = resolveFetchConfigs(decl({ where: { tag: ':dir', published: true }, scope: ':dir' }), {}).get('posts')
+    const list = resolveFetchConfigs(decl({ where: { tag: ':dir', published: true } }), { queries: routedScope }).get('posts')
     expect(list.where).toEqual({ published: true })
     expect('scope' in list).toBe(false)
     const only = resolveFetchConfigs(decl({ where: { tag: ':dir' } }), {}).get('posts')
@@ -294,7 +297,7 @@ describe('route variables reach a query as placeholders — and an unbound one d
     const one = { path: 'x', dir: '', slug: 'x' }
     const cfg = resolveFetchConfigs(decl({ where: { tag: ':dir', published: true } }), { variables: one }).get('posts')
     expect(cfg.where).toEqual({ published: true })
-    const scoped = resolveFetchConfigs(decl({ scope: ':dir' }), { variables: one }).get('posts')
+    const scoped = resolveFetchConfigs(decl(), { queries: routedScope, variables: one }).get('posts')
     expect('scope' in scoped).toBe(false)
   })
 
@@ -322,29 +325,30 @@ describe('route variables reach a query as placeholders — and an unbound one d
 
 describe('scope: is its own field on both lanes — `where.path.under` is retired (2026-09-11)', () => {
   const decl = (extra) => [{ query: 'posts', path: '/data/posts.json', as: 'posts', ...extra }]
+  const scoped = (scope) => ({ posts: { schema: '@/post', scope } })
 
   it('stays `scope` on a compiled query — the evaluator applies it, where is left alone', () => {
-    const cfg = resolveFetchConfigs(decl({ scope: 'field' }), {}).get('posts')
+    const cfg = resolveFetchConfigs(decl(), { queries: scoped('field') }).get('posts')
     expect(cfg.scope).toBe('field')
     expect('where' in cfg).toBe(false)
   })
 
-  it('sits beside an authored where, both as written', () => {
-    const cfg = resolveFetchConfigs(decl({ scope: 'field', where: { published: true } }), {}).get('posts')
+  it('sits beside a binding\'s where, both as written', () => {
+    const cfg = resolveFetchConfigs(decl({ where: { published: true } }), { queries: scoped('field') }).get('posts')
     expect(cfg.scope).toBe('field')
     expect(cfg.where).toEqual({ published: true })
   })
 
   it('binds :dir — and the list page, where :dir is unbound, sees the whole set', () => {
     const vars = { path: 'field/river', dir: 'field', slug: 'river' }
-    expect(resolveFetchConfigs(decl({ scope: ':dir' }), { variables: vars }).get('posts').scope).toBe('field')
-    const list = resolveFetchConfigs(decl({ scope: ':dir' }), {}).get('posts')
+    expect(resolveFetchConfigs(decl(), { queries: scoped(':dir'), variables: vars }).get('posts').scope).toBe('field')
+    const list = resolveFetchConfigs(decl(), { queries: scoped(':dir') }).get('posts')
     expect('where' in list).toBe(false)
     expect('scope' in list).toBe(false)
   })
 
   it('an empty scope — the root — is no scope, and is dropped', () => {
-    const cfg = resolveFetchConfigs(decl({ scope: '' }), {}).get('posts')
+    const cfg = resolveFetchConfigs(decl(), { queries: scoped('') }).get('posts')
     expect('where' in cfg).toBe(false)
     expect('scope' in cfg).toBe(false)
   })
@@ -374,17 +378,87 @@ describe('a named query\'s routed clauses reach the compiled file\'s config — 
     expect('where' in list).toBe(false)
   })
 
-  it('carries a FIXED scope too — the build never applies scope, so a page\'s own can replace it', () => {
+  it('carries a FIXED scope too — the build never applies scope', () => {
     const queries = { posts: { schema: '@/post', scope: 'field' } }
     expect(resolveFetchConfigs(ref(), { queries }).get('posts')).toMatchObject({ path: '/data/posts.json', scope: 'field' })
-    expect(resolveFetchConfigs(ref({ scope: 'lab' }), { queries }).get('posts').scope).toBe('lab')
   })
 
-  it('a fetch\'s own scope and where win over the named query\'s', () => {
+  it('⛔ a binding\'s own `scope` is not read — the query\'s arrives (ruled 2026-09-13)', () => {
+    // It REPLACED the query's until then; the build refuses it on a binding now.
+    const queries = { posts: { schema: '@/post', scope: 'field' } }
+    expect(resolveFetchConfigs(ref({ scope: 'lab' }), { queries }).get('posts').scope).toBe('field')
+    expect('scope' in resolveFetchConfigs(ref({ scope: 'lab' }), {}).get('posts')).toBe(false)
+  })
+
+  it('a binding\'s where JOINS the routed clauses — both must hold', () => {
     const queries = { posts: { schema: '@/post', scope: ':dir', where: { tag: ':dir' } } }
-    const cfg = resolveFetchConfigs(ref({ scope: 'lab', where: { pinned: true } }), { queries, variables: vars }).get('posts')
-    expect(cfg.scope).toBe('lab')
-    expect(cfg.where).toEqual({ pinned: true })
+    const cfg = resolveFetchConfigs(ref({ where: { pinned: true } }), { queries, variables: vars }).get('posts')
+    expect(cfg.scope).toBe('field')
+    expect(cfg.where).toEqual({ and: [{ tag: 'field' }, { pinned: true }] })
+  })
+})
+
+describe('a binding narrows its query and never widens it — the same question on both lanes (ruled 2026-09-13)', () => {
+  // ⛔ Measured before this rule: a binding REPLACED the query's where, sort and limit
+  // on the records service, while the static build had baked the query's into the
+  // file — the file delivered published records tagged x, the service was asked for
+  // every record tagged x.
+  const SERVICES = { records: '/_records/ask/{locale}' }
+  const ref = (extra = {}) => [{ query: 'posts', path: '/data/posts.json', as: 'posts', ...extra }]
+  const onFile = (queries, extra, variables = null) =>
+    resolveFetchConfigs(ref(extra), { queries, variables }).get('posts')
+  const asked = (queries, extra, variables = null) =>
+    resolveFetchConfigs(ref(extra), { queries, variables, services: SERVICES, locale: 'en' }).get('posts')
+
+  it('the service is asked for records matching the query\'s where AND the binding\'s', () => {
+    const queries = { posts: { schema: '@/post', where: { published: true } } }
+    expect(asked(queries, { where: { tag: 'x' } }).where).toEqual({ and: [{ published: true }, { tag: 'x' }] })
+    // either alone is itself
+    expect(asked(queries, {}).where).toEqual({ published: true })
+    expect(asked({ posts: { schema: '@/post' } }, { where: { tag: 'x' } }).where).toEqual({ tag: 'x' })
+  })
+
+  it('the compiled file carries the binding\'s where alone when the query\'s is fixed — the build applied that', () => {
+    const queries = { posts: { schema: '@/post', where: { published: true } } }
+    expect(onFile(queries, { where: { tag: 'x' } }).where).toEqual({ tag: 'x' })
+  })
+
+  it('sort and limit: the binding\'s replaces the query\'s, on both lanes — and a limit is not bounded by the query\'s', () => {
+    const queries = { posts: { schema: '@/post', sort: 'date desc', limit: 3 } }
+    for (const lane of [onFile, asked]) {
+      expect(lane(queries, {})).toMatchObject({ sort: 'date desc', limit: 3 })
+      expect(lane(queries, { limit: 5 })).toMatchObject({ sort: 'date desc', limit: 5 })
+      expect(lane(queries, { sort: 'title' })).toMatchObject({ sort: 'title', limit: 3 })
+    }
+  })
+
+  it('⭐ PARITY — one binding of a query whose where is routed asks both lanes the same question', () => {
+    const queries = { posts: { schema: '@/post', scope: ':dir', where: { tag: ':dir' }, sort: 'date desc', limit: 10 } }
+    const vars = { path: 'field/river', dir: 'field', slug: 'river' }
+    const binding = { where: { featured: true }, limit: 3 }
+    const pick = ({ scope, where, sort, limit }) => ({ scope, where, sort, limit })
+    expect(pick(onFile(queries, binding, vars))).toEqual(pick(asked(queries, binding, vars)))
+    expect(pick(onFile(queries, binding, vars))).toEqual({
+      scope: 'field', where: { and: [{ tag: 'field' }, { featured: true }] }, sort: 'date desc', limit: 3,
+    })
+  })
+
+  it('on the list page, where the query\'s clause is unbound, the binding\'s where is asked alone — not an `and` of one', () => {
+    const queries = { posts: { schema: '@/post', where: { tag: ':dir' } } }
+    expect(onFile(queries, { where: { featured: true } }).where).toEqual({ featured: true })
+    expect(asked(queries, { where: { featured: true } }).where).toEqual({ featured: true })
+  })
+})
+
+describe('routeSelection — the records a route query selects, uncut', () => {
+  it('drops limit and keeps sort: a count is how many a list shows, not which records have a page', () => {
+    expect(routeSelection({ path: '/data/posts.json', as: 'posts', sort: 'date desc', limit: 3 }))
+      .toEqual({ path: '/data/posts.json', as: 'posts', sort: 'date desc' })
+  })
+
+  it('is the config itself when there is no limit — the same cache entry, no second read', () => {
+    const cfg = { path: '/data/posts.json', as: 'posts' }
+    expect(routeSelection(cfg)).toBe(cfg)
   })
 })
 

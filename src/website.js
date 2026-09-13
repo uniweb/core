@@ -12,7 +12,7 @@ import ObservableState from './observable-state.js'
 import { normalizeSeo } from './seo.js'
 import { resolveDefaultLocale, localeLabel } from './locale-config.js'
 import { matchDynamicRoute, decodeRouteValue, matchesRouteParam, routeBinding, routeParamName, parentRouteOf } from './route-match.js'
-import { resolveFetchConfigs, routeQuery, sectionFetches } from './fetch-config.js'
+import { resolveFetchConfigs, routeQuery, routeSelection, sectionFetches } from './fetch-config.js'
 import { buildDetailConfig } from './detail-url.js'
 import { resolveService } from './services.js'
 
@@ -672,7 +672,10 @@ export default class Website {
           const record = Array.isArray(raw) ? raw[0] : raw
           if (record && typeof record === 'object') currentItem = record
 
-          const cached = this.fetcher.peek(fetchConfig, ctx)
+          // ⛔ The route query's whole selection (`routeSelection`), never a list its
+          // `limit` cut: a record past the limit is a record, and until 2026-09-13
+          // this declared its page "Not found" because the cut list was loaded.
+          const cached = this.fetcher.peek(routeSelection(fetchConfig), ctx)
           items = Array.isArray(cached?.data) ? cached.data : []
         }
       }

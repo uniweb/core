@@ -54,9 +54,11 @@ describe('a query resolves to the service when the host offers one AND the paylo
     expect(cfg.endpoint).toBeUndefined()
   })
 
-  it('the fetch\'s own narrowing wins over the saved query\'s', () => {
+  it('a binding narrows the saved query — its where joins the query\'s, its sort replaces it (ruled 2026-09-13)', () => {
+    // ⛔ The binding's where REPLACED the query's until then, so a page could ask the
+    // service for records the query leaves out.
     const cfg = resolveFetchConfigs(authored({ where: { featured: true }, sort: 'date desc' }), opts()).get('members')
-    expect(cfg.where).toEqual({ featured: true })
+    expect(cfg.where).toEqual({ and: [{ published: true }, { featured: true }] })
     expect(cfg.sort).toBe('date desc')
   })
 
@@ -86,9 +88,16 @@ describe('a query resolves to the service when the host offers one AND the paylo
   })
 
   it('an asked config keeps scope as the door\'s own field — no fold into where', () => {
-    const cfg = resolveFetchConfigs(authored({ scope: 'research' }), opts()).get('members')
+    const queries = { members: { ...QUERIES.members, scope: 'research' } }
+    const cfg = resolveFetchConfigs(authored(), opts({ queries })).get('members')
     expect(cfg.scope).toBe('research')
     expect(cfg.where).toEqual({ published: true })
+  })
+
+  it('⛔ a binding\'s own scope is not asked — scope is the query\'s (ruled 2026-09-13)', () => {
+    const queries = { members: { ...QUERIES.members, scope: 'research' } }
+    expect(resolveFetchConfigs(authored({ scope: 'teaching' }), opts({ queries })).get('members').scope).toBe('research')
+    expect(resolveFetchConfigs(authored({ scope: 'teaching' }), opts()).get('members')).not.toHaveProperty('scope')
   })
 })
 
@@ -126,7 +135,7 @@ describe('the record on the service is the same question, narrowed by the handle
   it('a condition the author put on the same key stays — the URL cannot replace it', () => {
     const list = resolveFetchConfigs(authored({ where: { $name: { in: ['ada', 'lin'] } } }), opts()).get('members')
     const rec = buildDetailConfig(list, { paramName: 'slug', paramValue: 'zed' })
-    expect(rec.where).toEqual({ $name: { in: ['ada', 'lin'] } })
+    expect(rec.where).toEqual({ and: [{ published: true }, { $name: { in: ['ada', 'lin'] } }] })
     expect(rec.match).toEqual({ $name: 'zed' })
   })
 

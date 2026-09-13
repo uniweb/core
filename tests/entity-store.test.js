@@ -997,3 +997,40 @@ describe('a parametric page over a `multi` field delivers the record a member ma
     expect(result.data.people).toEqual([people[0]])
   })
 })
+
+describe('a record past a list\'s `limit` is still its page\'s record (ruled 2026-09-13)', () => {
+  // ⛔ Until then the compiled-file lane looked the record up in the list the
+  // `limit` had cut, so `/blog/e` under a `limit: 2` rendered "not found".
+  const posts = ['a', 'b', 'c', 'd', 'e'].map((slug) => ({ slug, title: slug.toUpperCase() }))
+  const listFetch = { path: '/data/posts.json', as: 'posts', limit: 2 }
+  const selection = { path: '/data/posts.json', as: 'posts' }
+  const dynamicContext = { paramName: 'slug', paramValue: 'e', params: { slug: 'e', path: 'e', dir: '' } }
+  const harness = () => makeHarness({
+    // the default fetcher's own cut: a request's `limit` slices what it read
+    fetcherImpl: (req) => Promise.resolve({ data: req.limit ? posts.slice(0, req.limit) : posts }),
+  })
+
+  it('found in the route query\'s whole selection — the request carries no limit', async () => {
+    const { entityStore, website, fetcherSpy } = harness()
+    const page = makePage({ dynamicContext, parent: makePage({ fetch: listFetch }) })
+    const result = await entityStore.fetch(makeBlock({ page }, website), {})
+    expect(result.data.posts).toEqual([posts[4]])
+    expect(fetcherSpy.mock.calls.map(([req]) => req.limit)).toEqual([undefined])
+  })
+
+  it('resolve() reads the selection from the cache — a cached cut list alone is a miss, never "not found"', () => {
+    const { entityStore, dataStore, website } = harness()
+    const page = makePage({ dynamicContext, parent: makePage({ fetch: listFetch }) })
+    dataStore.set(deriveCacheKey(listFetch), { data: posts.slice(0, 2) })
+    expect(entityStore.resolve(makeBlock({ page }, website), {}).status).toBe('pending')
+    dataStore.set(deriveCacheKey(selection), { data: posts })
+    const ready = entityStore.resolve(makeBlock({ page }, website), {})
+    expect(ready).toEqual({ status: 'ready', data: { posts: [posts[4]] } })
+  })
+
+  it('CONTROL — the list page itself still gets the cut list', async () => {
+    const { entityStore, website } = harness()
+    const result = await entityStore.fetch(makeBlock({ page: makePage({ fetch: listFetch }) }, website), {})
+    expect(result.data.posts).toEqual(posts.slice(0, 2))
+  })
+})

@@ -190,6 +190,13 @@ function resolveQuerySource(cfg, services, { queries = null, locale = null, defa
     ? queries[cfg.query]
     : null
 
+  // ⛔ A BINDING'S OWN `scope` IS NOT READ — ruled 2026-09-13 [Diego]: *"it belongs
+  // to the query"*. Which folder branch a query reads decides what the query IS, so
+  // a binding adapts it with `where`, `sort` and `limit` and nothing else. The build
+  // refuses `scope` on a binding (`parseFetchConfig`); a payload that still carries
+  // one gets the query's. It REPLACED the query's until then. Dropped from a COPY on
+  // both branches below, so the config itself is read exactly as it was.
+
   // ⭐ THE SERVICE FIRST. A host that answers questions gets the whole query —
   // `schema`, `scope`, `where`, `sort`, `limit`, `depth` — and composes no
   // per-query address at all (the records contract, §2). It needs the query's
@@ -202,6 +209,7 @@ function resolveQuerySource(cfg, services, { queries = null, locale = null, defa
     // Drop the transitional `path`: two addresses on one request is an
     // ambiguity the fetcher would have to break by accident of field order.
     const { path, url, ...rest } = cfg
+    delete rest.scope
     if (!schema) {
       // ⛔ LOUD, not a fallthrough. A payload that offers the service and carries no
       // Model ref for the query cannot ask, and reading the compiled file
@@ -210,33 +218,63 @@ function resolveQuerySource(cfg, services, { queries = null, locale = null, defa
       // request is made, and the block's `dataError` says exactly this.
       return { ...rest, ask, schema: null }
     }
-    const asked = { ...rest, ask, schema }
-    // A saved query's own narrowing applies unless the fetch overrides it.
-    if (asked.scope === undefined && typeof decl.scope === 'string') asked.scope = decl.scope
-    if (asked.where === undefined && decl.where && typeof decl.where === 'object') asked.where = decl.where
-    if (asked.sort === undefined && decl.sort !== undefined && decl.sort !== null) asked.sort = decl.sort
-    if (asked.limit === undefined && typeof decl.limit === 'number' && decl.limit > 0) asked.limit = decl.limit
-    return asked
+    return narrowQuery({ ...rest, ask, schema }, decl, decl.where)
   }
 
   // ⭐ THE COMPILED FILE. The build applied the named query's fixed `where` when it
   // wrote `/data/<query>.json`; what it could NOT apply is a clause bound to the
   // route (`where: { tag: :dir }`) — a file is written once and the route differs
-  // per page — and it never applies `scope`, fixed or routed. So those travel here
-  // and are bound per page, exactly as they are on the service
-  // (`bindRouteVariables`, below). A fetch's own `scope` / `where` win, as they do
-  // there. ⛔ Until 2026-09-11 nothing travelled: a named query's `scope: :dir` was
+  // per page — and it applies neither `scope` nor `limit`. So those travel here and
+  // are applied per page, exactly as the service applies them (`bindRouteVariables`,
+  // below). ⛔ Until 2026-09-11 nothing travelled: a named query's `scope: :dir` was
   // ignored on this lane and `where: { tag: :dir }` was applied at build to the
   // literal `':dir'`, compiling to no records (measured).
   const out = { ...cfg, path: queryDataUrl(cfg.query) }
-  if (decl) {
-    if (out.scope === undefined && typeof decl.scope === 'string') out.scope = decl.scope
-    if (out.where === undefined) {
-      const routed = routeVariableClauses(decl.where)
-      if (routed) out.where = routed
-    }
-  }
-  return out
+  delete out.scope
+  return decl ? narrowQuery(out, decl, routeVariableClauses(decl.where)) : out
+}
+
+/**
+ * ⭐ A BINDING NARROWS ITS QUERY, AND NEVER WIDENS IT — ruled 2026-09-13 [Diego]:
+ * *"binding can narrow its query and pick its own order and count, but it can never
+ * add records the query leaves out."* One composition, so the records service is
+ * asked exactly what the compiled file is evaluated with:
+ *
+ *   - `scope` — the query's; a binding has none;
+ *   - `where` — the query's and the binding's must BOTH hold, as `{ and: [ … ] }`;
+ *   - `sort`, `limit` — the binding's, else the query's. A binding's `limit` is not
+ *     bounded by the query's: a count is how many to show, never which records exist.
+ *
+ * ⛔ Until 2026-09-13 each field of a binding REPLACED the query's here, while the
+ * static build had already baked the query's `where`, `sort` and `limit` into the
+ * file — so a binding narrowed inside the query on a static site and replaced it on
+ * a hosted one (measured: `where: { published: true }` plus `{ tag: x }` delivered
+ * published records tagged x from the file and asked the service for `{ tag: x }`).
+ *
+ * @param {Object} out - the binding, addressed
+ * @param {Object} decl - the query's declaration
+ * @param {Object|null} queryWhere - the part of the query's `where` this lane still
+ *   applies: all of it on the service, the routed clauses on the compiled file
+ * @returns {Object}
+ */
+function narrowQuery(out, decl, queryWhere) {
+  const next = { ...out }
+  if (typeof decl.scope === 'string') next.scope = decl.scope
+  const where = bothHold(queryWhere, out.where)
+  if (where) next.where = where
+  else delete next.where
+  if (next.sort === undefined && decl.sort !== undefined && decl.sort !== null) next.sort = decl.sort
+  if (next.limit === undefined && typeof decl.limit === 'number' && decl.limit > 0) next.limit = decl.limit
+  return next
+}
+
+/** Two where-objects that must both hold — `{ and: [a, b] }`, or whichever one there is. */
+function bothHold(a, b) {
+  const some = (w) => Boolean(w) && typeof w === 'object' && !Array.isArray(w) && Object.keys(w).length > 0
+  if (some(a) && some(b)) return { and: [a, b] }
+  if (some(b)) return b
+  if (some(a)) return a
+  return null
 }
 
 /**
@@ -378,10 +416,24 @@ function bindRouteVariables(cfg, variables) {
     const bound = bindWhere(cfg.where, variables)
     if (bound !== cfg.where) {
       const { where, ...rest } = out
-      out = bound === null ? rest : { ...rest, where: bound }
+      out = bound === null ? rest : { ...rest, where: soleMember(bound) }
     }
   }
   return out
+}
+
+/**
+ * An `and` or `or` left holding ONE member once its unbound clauses dropped is that
+ * member. It is how a query whose `where` is all route clauses, joined with its
+ * binding's (`narrowQuery`), asks the list page the binding's `where` alone — the same
+ * question, and the same cache entry, as a binding of a query with no `where`.
+ */
+function soleMember(where) {
+  if (!where || typeof where !== 'object' || Array.isArray(where)) return where
+  const keys = Object.keys(where)
+  if (keys.length !== 1 || (keys[0] !== 'and' && keys[0] !== 'or')) return where
+  const members = where[keys[0]]
+  return Array.isArray(members) && members.length === 1 ? members[0] : where
 }
 
 /** Walk a where-object: bind `:var` VALUES, drop clauses whose variable is unbound. */
@@ -468,7 +520,7 @@ function routeVariableClauses(where) {
  * A named query's narrowing that is FIXED for every page — the top-level `where`
  * clauses that hold no route variable, and its `scope` unless that is routed. The
  * build applies the `where` part when it compiles `/data/<query>.json` (it leaves
- * `scope` to the runtime, so a page's own can replace it); the rest is exactly
+ * `scope` to the runtime, which applies it with the rest of the query); the rest is exactly
  * `routeVariableClauses`, which the runtime binds per page (`resolveQuerySource`
  * carries it there). A clause is split at the TOP level and never inside: an `or`
  * holding one variable goes to the runtime whole, because applying half of it at
@@ -490,6 +542,26 @@ export function withoutRouteVariables({ where = null, scope = null } = {}) {
     ? scope
     : null
   return { where: fixed, scope: fixedScope }
+}
+
+/**
+ * ⭐ THE RECORDS A ROUTE QUERY SELECTS, UNCUT — the list a parametric page finds its
+ * record in, and the list its detail pages are made from. A `limit` is how many a
+ * list shows, never which records have a page: a binding `limit: 3` on `/blog` leaves
+ * `/blog/d` a record (ruled 2026-09-13 [Diego]). `sort` stays, as the selection's order.
+ *
+ * ⛔ Until 2026-09-13 the compiled-file lane looked the record up in the LIMITED list,
+ * so `/blog/d` rendered "not found" wherever its route query had a `limit`, and the
+ * static build made no page for it. The records service never had this: its record
+ * question drops `limit` (`buildDetailConfig`).
+ *
+ * @param {Object} cfg - a resolved config
+ * @returns {Object} the config itself when it has no `limit`, else a copy without one
+ */
+export function routeSelection(cfg) {
+  if (!cfg || typeof cfg !== 'object' || cfg.limit === undefined) return cfg
+  const { limit, ...rest } = cfg
+  return rest
 }
 
 /** A `fetch` as a list: one declaration, several, or none. */

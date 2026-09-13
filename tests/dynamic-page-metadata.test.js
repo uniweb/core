@@ -287,3 +287,34 @@ describe('a page nested inside a parametric page is parametric too (ruled 2026-0
     expect(page.title).toBe('Alice')
   })
 })
+
+describe('a record past the list page\'s `limit` is not "Not found" (ruled 2026-09-13)', () => {
+  // ⛔ Until then the probe read the list the `limit` cut, and a record past it was
+  // declared not found as soon as that list was cached.
+  const limited = () => new Website({
+    content: {
+      config: { name: 'T', defaultLanguage: 'en' },
+      theme: {},
+      pages: [
+        { route: '/', isIndex: true, title: 'Home', sections: [] },
+        { route: '/blog', title: 'Blog', sections: [], fetch: { query: 'articles', path: '/data/articles.json', as: 'articles', limit: 1 } },
+        { route: '/blog/:slug', isDynamic: true, paramName: 'slug', title: 'Article', sections: [] },
+      ],
+    },
+  })
+  const records = [{ slug: 'hello', title: 'Hello' }, { slug: 'world', title: 'World' }]
+
+  it('the cut list alone claims nothing about a record past it', () => {
+    const w = limited()
+    w.dataStore.set(deriveCacheKey({ query: 'articles', as: 'articles', path: '/data/articles.json', limit: 1 }), { data: records.slice(0, 1) })
+    const page = w.getPage('/blog/world')
+    expect(page.notFound).toBeFalsy()
+    expect(page.title).toBe('Article')
+  })
+
+  it('the whole selection titles it', () => {
+    const w = limited()
+    w.dataStore.set(deriveCacheKey({ query: 'articles', as: 'articles', path: '/data/articles.json' }), { data: records })
+    expect(w.getPage('/blog/world').title).toBe('World')
+  })
+})

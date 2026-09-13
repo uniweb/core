@@ -14,7 +14,7 @@
  * and in-flight dedup.
  */
 
-import { isFetchRefinement, resolveFetchConfigs, routeQuery, sectionFetches } from './fetch-config.js'
+import { isFetchRefinement, resolveFetchConfigs, routeQuery, routeSelection, sectionFetches } from './fetch-config.js'
 import { fillRoutePattern, matchesRouteParam } from './route-match.js'
 import { sortRecords } from './sort.js'
 
@@ -308,8 +308,9 @@ export default class EntityStore {
       } else if (isRouteQuery) {
         // Detail page: deliver the focused record as a length-1 array under the
         // query key. A deferred/remote query fetches the full per-record;
-        // others use the matched record. Not found → [].
-        const cached = dispatcher?.peek(cfg, ctx)
+        // others use the matched record. Not found → []. Found in the route
+        // query's whole selection, never in a list its `limit` cut (`routeSelection`).
+        const cached = dispatcher?.peek(routeSelection(cfg), ctx)
         if (cached) {
           const { paramName, paramValue } = dynamicContext
           const items = cached.data
@@ -446,14 +447,17 @@ export default class EntityStore {
           data[schema] = answer.slice(0, 1) // a route resolves to ONE; `[]` is not found
         }))
       } else if (isRouteQuery) {
-        // Detail page: focused record as a length-1 array under the query key.
+        // Detail page: focused record as a length-1 array under the query key,
+        // found in the route query's whole selection (`routeSelection`) — a record
+        // past a list's `limit` still has its page.
         const { paramName, paramValue } = dynamicContext
+        const selection = routeSelection(cfg)
 
-        let records = peekArray(dispatcher, cfg, ctx)
+        let records = peekArray(dispatcher, selection, ctx)
         if (records === null) {
-          const result = await dispatcher.dispatch(cfg, ctx)
+          const result = await dispatcher.dispatch(selection, ctx)
           if (result?.error) {
-            fail(schema, cfg, result.error)
+            fail(schema, selection, result.error)
             continue
           }
           records = Array.isArray(result?.data) ? result.data : null
