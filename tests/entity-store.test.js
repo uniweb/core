@@ -44,6 +44,10 @@ function makeBlock(overrides = {}, website = null) {
 
 function makePage(overrides = {}) {
   return {
+    // A page's route pattern — a parametric one, so a page given a `dynamicContext`
+    // is the page that captured its URL's variable (`pageRouteQuery`). A test of a
+    // page nested inside a parametric page sets its own.
+    route: '/items/:slug',
     fetch: null,
     parent: null,
     dynamicContext: null,
@@ -442,88 +446,139 @@ describe('EntityStore.fetch', () => {
     expect(ctxArg?.signal).toBeDefined()
   })
 
-  describe('refine', () => {
-    it('refine: true on a block skips it as a new source and fetches parent config', async () => {
-      const articles = [{ slug: 'a' }, { slug: 'b' }]
-      const { entityStore, fetcherSpy, website } = makeHarness({
-        fetcherImpl: () => Promise.resolve({ data: articles }),
-      })
-      const parentConfig = { path: '/data/articles.json', as: 'articles' }
-      const blockConfig = { path: '/data/override.json', as: 'articles' }
-      const parent = makePage({ fetch: parentConfig })
-      const page = makePage({ parent })
-      const block = makeBlock({ page, fetch: { ...blockConfig, refine: true } }, website)
+})
 
-      const result = await entityStore.fetch(block, {})
-      expect(result.data.articles).toEqual(articles)
-      // Parent's URL is fetched — block's own URL is NOT used as a new source.
-      expect(fetcherSpy).toHaveBeenCalledWith(expect.objectContaining(parentConfig), expect.anything())
-      expect(fetcherSpy).not.toHaveBeenCalledWith(expect.objectContaining(blockConfig), expect.anything())
+describe('current: — how a section on a parametric page uses the page\'s record (ruled 2026-09-13)', () => {
+  // ⛔ It replaces `refine: true, detail: false`, which delivered the "exclude" case
+  // alone; its `sort` and `where` changed nothing, and `order` was the one sort read.
+  const posts = ['a', 'b', 'c', 'd', 'e'].map((slug, i) => ({ slug, n: i + 1 }))
+  const listFetch = { path: '/data/posts.json', as: 'posts' }
+  const on = (slug) => ({ paramName: 'slug', paramValue: slug, params: { slug, path: slug, dir: '' } })
+  // the default fetcher's own order of work: sort, then cut
+  const harness = () => makeHarness({
+    fetcherImpl: (req) => {
+      let out = posts.slice()
+      if (req.sort === 'n desc') out.reverse()
+      if (req.limit) out = out.slice(0, req.limit)
+      return Promise.resolve({ data: out })
+    },
+  })
+  const detail = (slug) => makePage({ parent: makePage({ route: '/posts', fetch: listFetch }), dynamicContext: on(slug) })
+  const slugs = (result) => result.data.posts.map((p) => p.slug)
+
+  it('only — the default: the record, as a list of one', async () => {
+    const { entityStore, website } = harness()
+    const page = detail('c')
+    expect(slugs(await entityStore.fetch(makeBlock({ page }, website), {}))).toEqual(['c'])
+    const explicit = makeBlock({ page, fetch: { ...listFetch, current: 'only' } }, website)
+    expect(slugs(await entityStore.fetch(explicit, {}))).toEqual(['c'])
+  })
+
+  it('exclude — the records without this page\'s, and `limit` counts the others', async () => {
+    const { entityStore, website, fetcherSpy } = harness()
+    const block = makeBlock({ page: detail('b'), fetch: { ...listFetch, current: 'exclude', limit: 3 } }, website)
+    expect(slugs(await entityStore.fetch(block, {}))).toEqual(['a', 'c', 'd'])
+    // asked one longer, so removing the record still leaves three
+    expect(fetcherSpy.mock.calls.map(([req]) => req.limit)).toEqual([4])
+  })
+
+  it('exclude — the order is narrow, sort, remove the record, limit', async () => {
+    const { entityStore, website } = harness()
+    const block = makeBlock({ page: detail('d'), fetch: { ...listFetch, current: 'exclude', sort: 'n desc', limit: 2 } }, website)
+    expect(slugs(await entityStore.fetch(block, {}))).toEqual(['e', 'c'])
+  })
+
+  it('exclude — a record outside the first `limit + 1` removes nothing, and the list is cut', async () => {
+    const { entityStore, website } = harness()
+    const block = makeBlock({ page: detail('e'), fetch: { ...listFetch, current: 'exclude', limit: 2 } }, website)
+    expect(slugs(await entityStore.fetch(block, {}))).toEqual(['a', 'b'])
+  })
+
+  it('include — all of them, this page\'s record among them: a pager', async () => {
+    const { entityStore, website } = harness()
+    const block = makeBlock({ page: detail('b'), fetch: { ...listFetch, current: 'include', limit: 3 } }, website)
+    expect(slugs(await entityStore.fetch(block, {}))).toEqual(['a', 'b', 'c'])
+  })
+
+  it('the sync path gives the same answers from the cache', async () => {
+    const { entityStore, website } = harness()
+    const exclude = makeBlock({ page: detail('b'), fetch: { ...listFetch, current: 'exclude', limit: 3 } }, website)
+    const include = makeBlock({ page: detail('b'), fetch: { ...listFetch, current: 'include', limit: 3 } }, website)
+    expect(entityStore.resolve(exclude, {}).status).toBe('pending')
+    await entityStore.fetch(exclude, {})
+    await entityStore.fetch(include, {})
+    expect(entityStore.resolve(exclude, {})).toEqual({ status: 'ready', data: { posts: [posts[0], posts[2], posts[3]] } })
+    expect(entityStore.resolve(include, {})).toEqual({ status: 'ready', data: { posts: posts.slice(0, 3) } })
+  })
+
+  it('CONTROL — `current:` under a key the URL does not narrow changes nothing', async () => {
+    const { entityStore, website } = harness()
+    const page = detail('b')
+    const block = makeBlock({ page, fetch: [{ path: '/data/tags.json', as: 'tags', current: 'exclude', limit: 2 }] }, website)
+    const result = await entityStore.fetch(block, {})
+    expect(result.data.tags.map((p) => p.slug)).toEqual(['a', 'b'])
+  })
+
+  it('on the records service, exclude asks the list one longer and never the record', async () => {
+    const asked = []
+    const { entityStore, website } = makeHarness({
+      fetcherImpl: (req) => {
+        asked.push({ limit: req.limit, match: req.match })
+        return Promise.resolve({ data: posts.slice(0, req.limit).map((p) => ({ ...p, $name: p.slug })) })
+      },
     })
+    website.config = { services: { records: '/_records/ask/{locale}' }, queries: { posts: { schema: '@/post' } } }
+    const page = makePage({ parent: makePage({ route: '/posts', fetch: { query: 'posts', as: 'posts' } }), dynamicContext: on('a') })
+    const block = makeBlock({ page, fetch: { query: 'posts', as: 'posts', current: 'exclude', limit: 2 } }, website)
+    const result = await entityStore.fetch(block, {})
+    expect(result.data.posts.map((p) => p.slug)).toEqual(['b', 'c'])
+    expect(asked).toEqual([{ limit: 3, match: undefined }])
+  })
+})
 
-    // `inherit: true` was the alias of `refine: true`, removed 2026-09-02. It is
-    // refused, not ignored: ignored, the block would render empty with nothing
-    // to say why.
-    it('inherit: true is refused in dev — the removed alias throws, naming refine', async () => {
-      const { entityStore, website } = makeHarness({
-        fetcherImpl: () => Promise.resolve({ data: [] }),
-        dev: true,
-      })
-      const parent = makePage({ fetch: { path: '/data/articles.json', as: 'articles' } })
-      const page = makePage({ parent })
-      const block = makeBlock({ page, fetch: { inherit: true, limit: 3 } }, website)
+describe('a page nested inside a parametric page shares its route query (ruled 2026-09-13)', () => {
+  // ⛔ Until then every lane looked one parent up from `/members/:slug/cv`, found no
+  // query on the `[slug]` page, and the nested page had no record.
+  const members = [{ slug: 'alice', name: 'Alice' }, { slug: 'bob', name: 'Bob' }]
+  const pubs = [{ slug: 'p1' }]
+  const membersFetch = { path: '/data/members.json', as: 'members' }
+  const pubsFetch = { path: '/data/pubs.json', as: 'pubs' }
+  const dynamicContext = { paramName: 'slug', paramValue: 'bob', params: { slug: 'bob', path: 'bob', dir: '' }, templateRoute: '/members/:slug/cv' }
+  const harness = () => makeHarness({
+    fetcherImpl: (req) => Promise.resolve({ data: req.path === membersFetch.path ? members : pubs }),
+  })
+  const tree = ({ list = null, capturing = null, nestedFetch = null } = {}) => {
+    const listPage = makePage({ route: '/members', fetch: list })
+    const capturingPage = makePage({ route: '/members/:slug', fetch: capturing, parent: listPage })
+    return makePage({ route: '/members/:slug/cv', fetch: nestedFetch, parent: capturingPage, dynamicContext })
+  }
 
-      let err
-      try { await entityStore.fetch(block, {}) } catch (e) { err = e }
-      expect(err?.message).toMatch(/inherit: true/)
-      expect(err?.message).toMatch(/refine: true/)
-    })
+  it('the record of a route query declared two levels up — on the list page', async () => {
+    const { entityStore, website } = harness()
+    const result = await entityStore.fetch(makeBlock({ page: tree({ list: membersFetch }) }, website), {})
+    expect(result.data.members).toEqual([members[1]])
+  })
 
-    it('in production inherit: true logs an error once and is dropped — cascaded data arrives unrefined', async () => {
-      const articles = [{ slug: 'a' }, { slug: 'b' }, { slug: 'c' }]
-      const { entityStore, fetcherSpy, website } = makeHarness({
-        fetcherImpl: () => Promise.resolve({ data: articles }),
-      })
-      const parentConfig = { path: '/data/articles.json', as: 'articles' }
-      const parent = makePage({ fetch: parentConfig })
-      const page = makePage({ parent })
-      const error = vi.spyOn(console, 'error').mockImplementation(() => {})
-      const block = makeBlock({ page, fetch: { inherit: true, limit: 1 } }, website)
+  it('the record of a route query declared on the `[slug]` page itself', async () => {
+    const { entityStore, website } = harness()
+    const result = await entityStore.fetch(makeBlock({ page: tree({ capturing: membersFetch }) }, website), {})
+    expect(result.data.members).toEqual([members[1]])
+  })
 
-      const result = await entityStore.fetch(block, {})
-      // The parent's data still arrives; the `limit: 1` the alias carried does not apply.
-      expect(result.data.articles).toEqual(articles)
-      expect(fetcherSpy).toHaveBeenCalledWith(expect.objectContaining(parentConfig), expect.anything())
-      expect(error).toHaveBeenCalledTimes(1)
-      expect(error).toHaveBeenCalledWith(expect.stringContaining('no longer accepted'))
-      error.mockRestore()
-    })
+  it('a query the nested page declares under another key is its own data — `:slug` still names a member', async () => {
+    const { entityStore, website } = harness()
+    const page = tree({ list: membersFetch, nestedFetch: pubsFetch })
+    const result = await entityStore.fetch(makeBlock({ page }, website), {})
+    expect(result.data.pubs).toEqual(pubs)
+    expect(result.data.members).toEqual([members[1]])
+  })
 
-    it('refine: true with detail: false returns collection minus active item', async () => {
-      const articles = [
-        { slug: 'a', title: 'A' },
-        { slug: 'b', title: 'B' },
-        { slug: 'c', title: 'C' },
-      ]
-      const { entityStore, website } = makeHarness({
-        fetcherImpl: () => Promise.resolve({ data: articles }),
-      })
-      const parentConfig = {
-        url: 'https://api.example.com/articles',
-        as: 'articles',
-        detail: 'rest',
-      }
-      const dynamicContext = { paramName: 'slug', paramValue: 'b' }
-      const parent = makePage({ fetch: parentConfig })
-      const page = makePage({ parent, dynamicContext })
-      const block = makeBlock(
-        { page, fetch: { refine: true, detail: false, limit: 2 } },
-        website,
-      )
-
-      const result = await entityStore.fetch(block, {})
-      expect(result.data.articles.map((a) => a.slug)).toEqual(['a', 'c'])
-    })
+  it('CONTROL — only the route key reaches down: the list page\'s other keys do not cascade two levels', async () => {
+    const { entityStore, website } = harness()
+    const page = tree({ list: [membersFetch, pubsFetch] })
+    const result = await entityStore.fetch(makeBlock({ page }, website), {})
+    expect(result.data.members).toEqual([members[1]])
+    expect(result.data.pubs).toBeUndefined()
   })
 })
 
@@ -792,21 +847,6 @@ describe('the record in hand reaches the detail address', () => {
       expect.objectContaining({ path: '/data/articles/design-tips.json' }),
       expect.anything(),
     )
-  })
-})
-
-describe('refine order rides the shared sort', () => {
-  it('sorts the cascaded records by { orderBy, sortOrder }', async () => {
-    const articles = [{ slug: 'b', n: 2 }, { slug: 'a', n: 1 }, { slug: 'c', n: 3 }]
-    const { entityStore, website } = makeHarness({
-      fetcherImpl: () => Promise.resolve({ data: articles }),
-    })
-    const parent = makePage({ fetch: { path: '/data/articles.json', as: 'articles' } })
-    const page = makePage({ parent })
-    const block = makeBlock({ page, fetch: { refine: true, order: { orderBy: 'n', sortOrder: 'DESC' } } }, website)
-
-    const result = await entityStore.fetch(block, {})
-    expect(result.data.articles.map((a) => a.slug)).toEqual(['c', 'b', 'a'])
   })
 })
 

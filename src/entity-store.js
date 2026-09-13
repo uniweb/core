@@ -14,9 +14,8 @@
  * and in-flight dedup.
  */
 
-import { isFetchRefinement, resolveFetchConfigs, routeQuery, routeSelection, sectionFetches } from './fetch-config.js'
+import { resolveFetchConfigs, pageRouteQuery, routeSelection, currentOf, othersView, othersOf } from './fetch-config.js'
 import { fillRoutePattern, matchesRouteParam } from './route-match.js'
-import { sortRecords } from './sort.js'
 
 /**
  * A fetch config's binding key — the `content.data.<key>` a component reads.
@@ -26,74 +25,17 @@ import { sortRecords } from './sort.js'
 const bindingKeyOf = (cfg) => cfg?.as
 import { buildDetailConfig } from './detail-url.js'
 
-/**
- * Is `block.fetch` a per-instance refinement of the ancestor's fetch config
- * rather than a new source? The spelling is `refine: true`.
- *
- * The predicate itself lives in `./fetch-config.js` with the rest of the
- * cascade rule; this alias keeps the local call sites reading as they did.
- */
-const isRefinement = isFetchRefinement
-
-/**
- * `fetch: { inherit: true }` was the earlier spelling of `refine: true`, kept
- * "for one release" from April 2026 and removed on 2026-09-02. It is refused
- * rather than ignored: ignored, the declaration would read as a source with no
- * location and the block would render empty with nothing to say why. Dev
- * throws, so a page does not render on the old spelling; production logs once
- * and the caller drops the declaration, so the block receives the cascaded
- * data unrefined.
- */
-let inheritRefusalLogged = false
-function refuseInheritAlias(block, dev) {
-  const message =
-    "[uniweb] 'fetch: { inherit: true }' is no longer accepted; write 'fetch: { refine: true }'. " +
-    `Seen on block ${block?.id ?? '(unknown)'} of page ${block?.page?.route ?? '(unknown)'}.`
-  if (dev) throw new Error(message)
-  if (inheritRefusalLogged) return
-  inheritRefusalLogged = true
-  console.error(message)
-}
-
 export default class EntityStore {
   /**
    * @param {Object} options
    * @param {import('./website.js').default} options.website
-   * @param {boolean} [options.dev=false] - dev mode: a retired spelling throws
-   *   instead of logging once.
+   * @param {boolean} [options.dev=false] - dev mode: a failed fetch is logged
+   *   where the author is looking.
    */
   constructor({ website, dev = false }) {
     this.website = website
     this.dev = dev
     Object.seal(this)
-  }
-
-  _shouldInheritDetail(meta, block) {
-    const bf = block?.fetch
-    if (isRefinement(bf) && bf?.detail !== undefined) return bf.detail !== false
-    if (!meta) return true
-    return meta.inheritDetail !== false
-  }
-
-  _inheritLimit(meta, block) {
-    const bf = block?.fetch
-    if (isRefinement(bf) && bf?.limit > 0) return bf.limit
-    return (meta?.inheritLimit > 0) ? meta.inheritLimit : null
-  }
-
-  _inheritOrder(block) {
-    const bf = block?.fetch
-    if (isRefinement(bf) && bf?.order?.orderBy) return bf.order
-    return null
-  }
-
-  /**
-   * A refine block's `order: { orderBy, sortOrder }` — the same one-key sort the
-   * build and the fetcher fallback run (`./sort.js`), so the three cannot drift.
-   */
-  _sortItems(items, order) {
-    if (!order?.orderBy) return items
-    return sortRecords(items, { field: order.orderBy, desc: order.sortOrder === 'DESC' })
   }
 
   /**
@@ -120,13 +62,8 @@ export default class EntityStore {
    * re-inline it here — divergence between copies is what the extraction
    * exists to prevent.
    */
-  _findFetchConfigs(block, requested) {
-    let blockFetch = block.fetch
-    if (blockFetch?.inherit !== undefined) {
-      refuseInheritAlias(block, this.dev)
-      blockFetch = null
-    }
-
+  _findFetchConfigs(block, requested, route = this._route(block)) {
+    const blockFetch = block.fetch
     const page = block.page
     const website = block.website
     const dynamicContext = block.dynamicContext || page?.dynamicContext
@@ -147,9 +84,13 @@ export default class EntityStore {
 
     return resolveFetchConfigs(
       [
-        blockFetch && !isRefinement(blockFetch) ? blockFetch : null,
+        blockFetch,
         page?.fetch,
         page?.parent?.fetch,
+        // ⭐ A page nested inside a parametric page receives its capturing page's
+        // route binding — the cascade reaches one parent up, and the binding may sit
+        // above that (`pageRouteQuery`). Its key only; the rest does not cascade.
+        route?.nested ? route.config : null,
         website?.config?.fetch,
       ],
       {
@@ -171,30 +112,33 @@ export default class EntityStore {
   }
 
   /**
-   * The binding key whose records a parametric page's URL narrows to one — its
-   * ROUTE QUERY (`routeQuery`, `./fetch-config.js`), worked out from the same
-   * sources `_findFetchConfigs` walks: the page's fetch, its parent's, the site's,
-   * and, when none of those declares one, the key the page's sections share. So
-   * what a section receives and what the URL narrows are read off one walk and
-   * cannot disagree.
+   * The ROUTE QUERY of the block's page — the query its URL names one record of —
+   * worked out from the same sources `_findFetchConfigs` walks, at the page that
+   * captured the URL's variable (`pageRouteQuery`, `./fetch-config.js`): its fetch,
+   * its parent's, the site's, and, when none of those declares one, the key its
+   * sections share. So what a section receives and what the URL narrows are read
+   * off one walk and cannot disagree.
    *
    * ⛔ This was `dynamicContext.schema`, stored on the page by whoever built it —
    * the SPA from `parentSchema`, the static build from the parent's first
    * prerendered fetch — a stored copy of a derived answer, computed by a different
    * rule from the one sections are fed by. Deleted 2026-09-11 [Diego].
    *
-   * @returns {string|null} null off a parametric page, or when it has no route query
+   * @returns {{ key: string, config: Object, nested: boolean }|null} null off a
+   *   parametric page, or when it has no route query
    */
-  _routeKey(block) {
+  _route(block) {
     const dynamicContext = block.dynamicContext || block.page?.dynamicContext
-    if (!dynamicContext) return null
-    const page = block.page
-    return routeQuery({
-      page: page?.fetch,
-      parent: page?.parent?.fetch,
+    if (!dynamicContext || !block.page) return null
+    return pageRouteQuery(block.page, {
+      // a concrete page carries its template's route; its ancestors are templates, or
+      // pages the static build expanded, which carry theirs the same way
+      routeOf: (p) => p?.dynamicContext?.templateRoute ?? p?.route,
+      parentOf: (p) => p?.parent ?? null,
+      fetchOf: (p) => p?.fetch,
+      sectionsOf: (p) => p?._bodySections,
       site: block.website?.config?.fetch,
-      sections: sectionFetches(page?._bodySections),
-    })?.key ?? null
+    })
   }
 
   /**
@@ -265,37 +209,28 @@ export default class EntityStore {
 
     if (requested === null) return { status: 'none', data: null }
 
-    const configs = this._findFetchConfigs(block, requested)
+    const route = this._route(block)
+    const configs = this._findFetchConfigs(block, requested, route)
     if (configs.size === 0) return { status: 'none', data: null }
 
     const dynamicContext = block.dynamicContext || block.page?.dynamicContext
-    const inheritDetail = this._shouldInheritDetail(meta, block)
-    const limit = this._inheritLimit(meta, block)
-    const order = this._inheritOrder(block)
     const ctx = this._ctx(block)
 
     const data = {}
     let allCached = true
 
-    const routeSchema = this._routeKey(block)
-
     for (const [schema, cfg] of configs) {
-      const isRouteQuery = dynamicContext && schema === routeSchema
-      if (isRouteQuery && !inheritDetail) {
-        // refine detail:false — the records minus the active one (related items).
-        const cached = dispatcher?.peek(cfg, ctx)
+      // `current:` applies under the key the page's URL narrows, and nowhere else.
+      const current = dynamicContext && route && schema === route.key ? currentOf(cfg) : null
+      if (current === 'exclude') {
+        // The route query's records without this page's, `limit` counting the others.
+        const cached = dispatcher?.peek(othersView(cfg), ctx)
         if (cached) {
-          const { paramName, paramValue } = dynamicContext
-          const items = cached.data
-          let filtered = Array.isArray(items)
-            ? items.filter((item) => !matchesRouteParam(item, paramName, paramValue))
-            : items
-          if (order) filtered = this._sortItems(filtered, order)
-          data[schema] = limit && Array.isArray(filtered) ? filtered.slice(0, limit) : filtered
+          data[schema] = othersOf(cached.data, cfg, isPageRecord(dynamicContext))
         } else {
           allCached = false
         }
-      } else if (isRouteQuery && cfg.ask) {
+      } else if (current === 'only' && cfg.ask) {
         // The records service: the record's own answer is cached under its own key.
         const detailCfg = this._buildDetailConfig(cfg, dynamicContext)
         const detailCached = detailCfg ? dispatcher?.peek(detailCfg, ctx) : null
@@ -305,7 +240,7 @@ export default class EntityStore {
         } else {
           allCached = false
         }
-      } else if (isRouteQuery) {
+      } else if (current === 'only') {
         // Detail page: deliver the focused record as a length-1 array under the
         // query key. A deferred/remote query fetches the full per-record;
         // others use the matched record. Not found → []. Found in the route
@@ -342,10 +277,11 @@ export default class EntityStore {
           allCached = false
         }
       } else {
+        // Any other key — and `current: include`, the route query's list as the
+        // binding describes it, this page's record among the rest.
         const cached = dispatcher?.peek(cfg, ctx)
         if (cached) {
-          const items = cached.data
-          data[schema] = order ? this._sortItems(items, order) : items
+          data[schema] = cached.data
         } else {
           allCached = false
         }
@@ -389,13 +325,11 @@ export default class EntityStore {
     }
     if (requested === null) return { data: null, errors: null }
 
-    const configs = this._findFetchConfigs(block, requested)
+    const route = this._route(block)
+    const configs = this._findFetchConfigs(block, requested, route)
     if (configs.size === 0) return { data: null, errors: null }
 
     const dynamicContext = block.dynamicContext || block.page?.dynamicContext
-    const inheritDetail = this._shouldInheritDetail(meta, block)
-    const limit = this._inheritLimit(meta, block)
-    const order = this._inheritOrder(block)
     const ctx = this._ctx(block, { signal })
 
     const data = {}
@@ -406,33 +340,27 @@ export default class EntityStore {
       reportFetchFailure(this.dev, block, key, cfg, message)
     }
 
-    const routeSchema = this._routeKey(block)
-
     for (const [schema, cfg] of configs) {
-      const isRouteQuery = dynamicContext && schema === routeSchema
-      if (isRouteQuery && !inheritDetail) {
-        // refine detail:false — the records minus the active one.
-        let records = peekArray(dispatcher, cfg, ctx)
-        if (records === null) {
-          const result = await dispatcher.dispatch(cfg, ctx)
+      // `current:` applies under the key the page's URL narrows, and nowhere else.
+      const current = dynamicContext && route && schema === route.key ? currentOf(cfg) : null
+      if (current === 'exclude') {
+        // The route query's records without this page's, `limit` counting the others:
+        // asked one longer (`othersView`), so removing the record still leaves enough.
+        const view = othersView(cfg)
+        parallelFetches.push(dispatcher.dispatch(view, ctx).then((result) => {
           if (result?.error) {
-            fail(schema, cfg, result.error)
-            continue
+            fail(schema, view, result.error)
+            return
           }
-          records = Array.isArray(result?.data) ? result.data : null
-        }
-        const { paramName, paramValue } = dynamicContext
-        let filtered = Array.isArray(records)
-          ? records.filter((item) => !matchesRouteParam(item, paramName, paramValue))
-          : (records ?? [])
-        if (order) filtered = this._sortItems(filtered, order)
-        data[schema] = limit && Array.isArray(filtered) ? filtered.slice(0, limit) : filtered
-      } else if (isRouteQuery && cfg.ask) {
+          if (result?.data !== undefined && result?.data !== null) {
+            data[schema] = othersOf(result.data, cfg, isPageRecord(dynamicContext))
+          }
+        }))
+      } else if (current === 'only' && cfg.ask) {
         // ⭐ THE RECORDS SERVICE needs no list to find the record: the record is the
         // same question narrowed by the route's handle, so list and record are
         // asked together — one round trip, and no client-side scan gating the
-        // fetch (F13, the live half). The list is asked too, because sections
-        // beside the record read it (`refine: true, detail: false`) and the
+        // fetch (F13, the live half). The list is asked too, because the record
         // index files its briefs; the record's own answer is the answer.
         const detailCfg = this._buildDetailConfig(cfg, dynamicContext)
         parallelFetches.push(dispatcher.dispatch(cfg, ctx).then((result) => {
@@ -446,7 +374,7 @@ export default class EntityStore {
           const answer = Array.isArray(result?.data) ? result.data : (result?.data ? [result.data] : [])
           data[schema] = answer.slice(0, 1) // a route resolves to ONE; `[]` is not found
         }))
-      } else if (isRouteQuery) {
+      } else if (current === 'only') {
         // Detail page: focused record as a length-1 array under the query key,
         // found in the route query's whole selection (`routeSelection`) — a record
         // past a list's `limit` still has its page.
@@ -504,6 +432,7 @@ export default class EntityStore {
           data[schema] = [match]
         }
       } else {
+        // Any other key — and `current: include`, the list as the binding describes it.
         parallelFetches.push(
           dispatcher.dispatch(cfg, ctx).then((result) => {
             if (result?.error) {
@@ -511,10 +440,7 @@ export default class EntityStore {
               return
             }
             if (result?.data !== undefined && result?.data !== null) {
-              // The same refine `order` the sync path applies (`resolve`), so a
-              // block sorts identically on a cache hit and on the fetch that
-              // filled it — it did not until 2026-09-04.
-              data[schema] = order ? this._sortItems(result.data, order) : result.data
+              data[schema] = result.data
             }
           })
         )
@@ -560,6 +486,11 @@ function heldWhole(dispatcher, match) {
   if (typeof id !== 'string' || !id || typeof dispatcher?.peekRecord !== 'function') return null
   const held = dispatcher.peekRecord(id)
   return held?.whole === true ? held.record : null
+}
+
+/** Matches the record a parametric page is about — the one `current: only` delivers. */
+function isPageRecord({ paramName, paramValue }) {
+  return (item) => matchesRouteParam(item, paramName, paramValue)
 }
 
 /**

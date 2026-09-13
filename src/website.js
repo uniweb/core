@@ -12,7 +12,7 @@ import ObservableState from './observable-state.js'
 import { normalizeSeo } from './seo.js'
 import { resolveDefaultLocale, localeLabel } from './locale-config.js'
 import { matchDynamicRoute, decodeRouteValue, matchesRouteParam, routeBinding, routeParamName, parentRouteOf } from './route-match.js'
-import { resolveFetchConfigs, routeQuery, routeSelection, sectionFetches } from './fetch-config.js'
+import { resolveFetchConfigs, routeQuery, pageRouteQuery, routeSelection, sectionFetches } from './fetch-config.js'
 import { buildDetailConfig } from './detail-url.js'
 import { resolveService } from './services.js'
 
@@ -611,18 +611,21 @@ export default class Website {
     }
 
     // Try to resolve page metadata from DataStore: the record the page is about,
-    // from its ROUTE QUERY (`routeQuery`) — the page's own query, its parent's, the
-    // site's, or its sections' shared key — read off the same parent the entity
-    // store reads (`templatePage.parent`, linked by the one parent rule). ⛔ Until
-    // 2026-09-11 this probed only a parent found by stripping the route down to
-    // `/` (so a top-level page probed the homepage) and only that parent's fetch,
-    // so a page whose route query was its own or the site's never got its title.
+    // from its ROUTE QUERY — the page's own query, its parent's, the site's, or its
+    // sections' shared key, chosen at the page that captured the URL's variable
+    // (`pageRouteQuery`; a nested page's is its parametric ancestor's) — read off the
+    // same parents the entity store reads (`page.parent`, linked by the one parent
+    // rule). ⛔ Until 2026-09-11 this probed only a parent found by stripping the
+    // route down to `/` (so a top-level page probed the homepage) and only that
+    // parent's fetch, so a page whose route query was its own or the site's never
+    // got its title.
     const parentPage = templatePage.parent
-    const route = routeQuery({
-      page: originalData.fetch,
-      parent: parentPage?.fetch,
+    const route = pageRouteQuery(templatePage, {
+      routeOf: (p) => p?.route,
+      parentOf: (p) => p?.parent ?? null,
+      fetchOf: (p) => (p === templatePage ? originalData.fetch : p?.fetch),
+      sectionsOf: (p) => (p === templatePage ? originalData.sections : p?._bodySections),
       site: this.config?.fetch,
-      sections: sectionFetches(originalData.sections),
     })
 
     if (route && paramValue !== undefined) {
@@ -643,9 +646,10 @@ export default class Website {
 
       if (this.fetcher) {
         // The same sources the store walks for a section that declares nothing,
-        // plus the declaring section's config when the key came from the sections.
+        // plus the route binding itself — which sits above the parent on a nested
+        // page, or on a section when the key came from the sections.
         const fetchConfig = resolveFetchConfigs(
-          [originalData.fetch, parentPage?.fetch, this.config?.fetch, route.level === 'sections' ? route.config : null],
+          [originalData.fetch, parentPage?.fetch, route.config, this.config?.fetch],
           {
             schemas: [route.key],
             locale: this.getActiveLocale(),
@@ -699,8 +703,8 @@ export default class Website {
       // Note: the matched record and the sibling list are intentionally NOT
       // stored on dynamicContext — nothing reads them (its shape is
       // { templateRoute, params, paramName, paramValue }; the record reaches
-      // components via content.data, siblings via
-      // `fetch: { refine: true, detail: false }`). The local
+      // components via content.data, the others via
+      // `fetch: { query, current: exclude }`). The local
       // `currentItem`/`items` above drive title/description/notFound.
       pageData._recordsLoaded = items.length > 0 || currentItem !== null
     }

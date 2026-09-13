@@ -318,3 +318,27 @@ describe('a record past the list page\'s `limit` is not "Not found" (ruled 2026-
     expect(w.getPage('/blog/world').title).toBe('World')
   })
 })
+
+describe('a page nested inside a parametric page is titled by its record (ruled 2026-09-13)', () => {
+  const nested = () => new Website({
+    content: {
+      config: { name: 'T', defaultLanguage: 'en' },
+      theme: {},
+      pages: [
+        { route: '/', isIndex: true, title: 'Home', sections: [] },
+        { route: '/team', title: 'Team', sections: [], fetch: { query: 'members', path: '/data/members.json', as: 'members' } },
+        { route: '/team/:slug', isDynamic: true, paramName: 'slug', title: 'Member', sections: [] },
+        { route: '/team/:slug/cv', isDynamic: true, paramName: 'slug', title: 'CV', sections: [] },
+      ],
+    },
+  })
+
+  it('its route query is the capturing page\'s — declared two levels up', () => {
+    const w = nested()
+    w.dataStore.set(deriveCacheKey({ query: 'members', as: 'members', path: '/data/members.json' }), {
+      data: [{ slug: 'ada', title: 'Ada Lovelace' }],
+    })
+    expect(w.getPage('/team/ada/cv').title).toBe('Ada Lovelace')
+    expect(w.getPage('/team/nobody/cv').notFound).toBe(true)
+  })
+})

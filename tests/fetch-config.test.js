@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isFetchRefinement, resolveFetchConfigs, routeQuery, routeSelection, sectionFetches, withoutRouteVariables } from '../src/fetch-config.js'
+import { isFetchRefinement, resolveFetchConfigs, routeQuery, pageRouteQuery, routeSelection, sectionFetches, withoutRouteVariables, othersView, othersOf, currentOf } from '../src/fetch-config.js'
 // Derived, never re-spelled: the convention is pinned once, in
 // `tests/data-paths.test.js`. See the note there before pinning it again.
 import { queryDataUrl, recordDataUrl } from '../src/data-paths.js'
@@ -515,11 +515,71 @@ describe('routeQuery — the query a parametric page\'s URL names one record of 
     expect(routeQuery({ parent: q('members'), sections }).key).toBe('members')
   })
 
-  it('a refinement is never a route query', () => {
-    expect(routeQuery({ page: { refine: true, as: 'x' }, parent: q('members') }).key).toBe('members')
+  it('a section binding with `current:` declares its key like any other', () => {
+    const sections = [{ query: 'members', as: 'members' }, { query: 'members', as: 'members', current: 'exclude' }]
+    expect(routeQuery({ sections })).toMatchObject({ key: 'members', level: 'sections' })
   })
 
   it('returns the declaration it chose, so a caller can read its query name', () => {
     expect(routeQuery({ parent: { query: 'articles', as: 'posts' } }).config.query).toBe('articles')
+  })
+})
+
+describe('pageRouteQuery — the route query is chosen at the page that captured the variable (ruled 2026-09-13)', () => {
+  // content-document shape: routes, declared parents, fetches, raw sections
+  const q = (name) => ({ query: name, as: name })
+  const pages = [
+    { route: '/members', fetch: q('members') },
+    { route: '/members/:slug', fetch: null, sections: [] },
+    { route: '/members/:slug/cv', fetch: q('publications'), sections: [] },
+    { route: '/members/:slug/cv/2020', fetch: null, sections: [] },
+    { route: '/about', fetch: q('team') },
+  ]
+  const byRoute = new Map(pages.map((p) => [p.route, p]))
+  const access = {
+    routeOf: (p) => p.route,
+    parentOf: (p) => byRoute.get(p.route.slice(0, p.route.lastIndexOf('/'))) ?? null,
+    fetchOf: (p) => p.fetch,
+    sectionsOf: (p) => p.sections,
+  }
+
+  it('the capturing page itself: its parent\'s query', () => {
+    expect(pageRouteQuery(byRoute.get('/members/:slug'), access)).toMatchObject({ key: 'members', level: 'parent', nested: false })
+  })
+
+  it('a nested page: the SAME answer, found at the capturing page — its own `publications` changes nothing', () => {
+    const found = pageRouteQuery(byRoute.get('/members/:slug/cv'), access)
+    expect(found).toMatchObject({ key: 'members', level: 'parent', nested: true })
+    expect(found.capturing.route).toBe('/members/:slug')
+  })
+
+  it('any depth below it', () => {
+    expect(pageRouteQuery(byRoute.get('/members/:slug/cv/2020'), access)).toMatchObject({ key: 'members', nested: true })
+  })
+
+  it('CONTROL — a page on no parametric route has none', () => {
+    expect(pageRouteQuery(byRoute.get('/about'), access)).toBeNull()
+  })
+})
+
+describe('othersView / othersOf — `current: exclude`', () => {
+  const records = ['a', 'b', 'c', 'd'].map((slug) => ({ slug }))
+  const isB = (r) => r.slug === 'b'
+
+  it('asks one longer, so removing the record still leaves `limit`', () => {
+    expect(othersView({ as: 'x', limit: 2 })).toEqual({ as: 'x', limit: 3 })
+    const cfg = { as: 'x' }
+    expect(othersView(cfg)).toBe(cfg)
+  })
+
+  it('removes the page\'s record — the first match only — and cuts to the binding\'s limit', () => {
+    expect(othersOf(records, { limit: 2 }, isB)).toEqual([{ slug: 'a' }, { slug: 'c' }])
+    expect(othersOf([...records, { slug: 'b' }], {}, isB)).toEqual([{ slug: 'a' }, { slug: 'c' }, { slug: 'd' }, { slug: 'b' }])
+    expect(othersOf(records, {}, (r) => r.slug === 'z')).toEqual(records)
+  })
+
+  it('currentOf reads the three modes, and `only` for anything else', () => {
+    expect(['only', 'exclude', 'include', undefined, 'other'].map((current) => currentOf({ current })))
+      .toEqual(['only', 'exclude', 'include', 'only', 'only'])
   })
 })

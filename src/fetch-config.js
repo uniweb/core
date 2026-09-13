@@ -24,6 +24,7 @@
  * rather than counted:**
  *
  *     fetch-config → data-paths                                    (leaf)
+ *                  → route-match                                   (leaf)
  *                  → records-service → substitute-placeholders     (leaf)
  *                                    → services → base-path        (leaf)
  *
@@ -51,21 +52,73 @@
 
 import { queryDataUrl, isDataUrl, recordDataUrl } from './data-paths.js'
 import { resolveRecordsService } from './records-service.js'
+// A leaf that imports nothing — `recordRouteBase` is the one rule for which page
+// addresses a record, and a route query is chosen at exactly that page.
+import { recordRouteBase } from './route-match.js'
 
 /**
- * Is this fetch declaration a per-instance *refinement* of an ancestor's
- * config rather than a new source of its own?
+ * ⭐ HOW A SECTION ON A PARAMETRIC PAGE USES THE PAGE'S RECORD — `current:` on its
+ * binding under the page's route key, ruled 2026-09-13 [Diego]:
  *
- * The spelling is `refine: true`. Its earlier alias, `inherit: true`, was
- * accepted with a warning from April 2026 and removed on 2026-09-02: the build
- * refuses it with an error, and `EntityStore` refuses it in dev. This predicate
- * stays silent so it is safe in any environment.
+ *   - `only` — the record, as a list of one. The default: every section gets it;
+ *   - `exclude` — the route query's records without it: "related", "more articles";
+ *   - `include` — all of them, the record among them: a previous / next pager.
+ *
+ * ⛔ It replaces `refine: true` and `detail: false`, a flag three methods consulted
+ * separately, which delivered `exclude` and nothing else, and whose `sort` and
+ * `where` changed nothing (measured 2026-09-13). The build refuses both.
+ */
+export const CURRENT_MODES = Object.freeze(['only', 'exclude', 'include'])
+
+/**
+ * Does a declaration still say `refine: true`?
+ *
+ * ⛔ `refine` is RETIRED (2026-09-13, for `current:` above): the build refuses it and
+ * nothing in the framework calls this. ⚠️ It stays exported because a consumer that
+ * bundles this clone read it through `./fetch-config` (pinned by
+ * `tests/fetch-config-live-contract.test.js`, 2026-09-02) — removing a name a reader
+ * imports breaks them at the commit, so it goes when that reader says it has.
  *
  * @param {Object} cfg - a fetch declaration
  * @returns {boolean}
  */
 export function isFetchRefinement(cfg) {
   return cfg?.refine === true
+}
+
+/** A resolved config's `current:` — `only` when it says nothing, or something else. */
+export function currentOf(cfg) {
+  return CURRENT_MODES.includes(cfg?.current) ? cfg.current : 'only'
+}
+
+/**
+ * The list a `current: exclude` section asks for: its own view, one record longer,
+ * so that removing the page's record still leaves `limit` others. The order is
+ * narrow, sort, remove the record, limit — a `limit` counts the others.
+ *
+ * @param {Object} cfg - a resolved config under the route key
+ * @returns {Object}
+ */
+export function othersView(cfg) {
+  if (!cfg || typeof cfg.limit !== 'number' || cfg.limit <= 0) return cfg
+  return { ...cfg, limit: cfg.limit + 1 }
+}
+
+/**
+ * The records a `current: exclude` section receives, from what `othersView` asked:
+ * the list without the page's record — the first that matches the route's value, the
+ * one `only` delivers — cut to the binding's `limit`.
+ *
+ * @param {Array|*} records - what `othersView(cfg)` answered
+ * @param {Object} cfg - the section's resolved config
+ * @param {(record: Object) => boolean} isCurrent - matches the page's record
+ * @returns {Array|*}
+ */
+export function othersOf(records, cfg, isCurrent) {
+  if (!Array.isArray(records)) return records
+  const at = records.findIndex(isCurrent)
+  const others = at < 0 ? records : [...records.slice(0, at), ...records.slice(at + 1)]
+  return typeof cfg?.limit === 'number' && cfg.limit > 0 ? others.slice(0, cfg.limit) : others
 }
 
 /**
@@ -626,7 +679,6 @@ export function sectionFetches(sections) {
 export function routeQuery({ page = null, parent = null, site = null, sections = [] } = {}) {
   for (const [level, fetch] of [['page', page], ['parent', parent], ['site', site]]) {
     for (const cfg of fetchList(fetch)) {
-      if (isFetchRefinement(cfg)) continue
       const key = bindingKey(cfg)
       if (key) return { key, config: cfg, level }
     }
@@ -634,7 +686,6 @@ export function routeQuery({ page = null, parent = null, site = null, sections =
   let found = null
   for (const fetch of sections || []) {
     for (const cfg of fetchList(fetch)) {
-      if (isFetchRefinement(cfg)) continue
       const key = bindingKey(cfg)
       if (!key) continue
       if (found && found.key !== key) return null // the sections disagree: no route query
@@ -642,6 +693,52 @@ export function routeQuery({ page = null, parent = null, site = null, sections =
     }
   }
   return found
+}
+
+/**
+ * ⭐ THE ROUTE QUERY OF ANY PAGE ON A PARAMETRIC ROUTE — a nested one included.
+ *
+ * A route variable is captured by exactly one page: the `[slug]` or `[...path]`
+ * folder's, whose route ends in it. A page nested inside that one —
+ * `pages/members/[slug]/cv/`, routed `/members/:slug/cv` — names the same record,
+ * so its route query is found by `routeQuery` AT THE CAPTURING PAGE: that page's own
+ * query, its parent's, the site's, or its sections' shared key. Ruled 2026-09-13
+ * [Diego]: *"a nested page shares the route query of the page that captured its
+ * variable"*. ⛔ Until then every lane looked one parent up from the nested page,
+ * found no query on the `[slug]` page, and `/members/alice/cv` had no record.
+ *
+ * A query the nested page declares under another key is its own data and changes
+ * nothing about what `:slug` names. The caller hands the route binding to the nested
+ * page's sections (`nested`), since the cascade reaches only one parent up.
+ *
+ * Shape-agnostic: the object graph and a content document hand in their own
+ * accessors, and every lane climbs by the one parent rule (`parentRouteOf`).
+ *
+ * @param {Object} page - the page, in the caller's shape
+ * @param {Object} access
+ * @param {(page: Object) => string} access.routeOf - its route PATTERN (a concrete page's template route)
+ * @param {(page: Object) => Object|null} access.parentOf - its parent page, or null
+ * @param {(page: Object) => Object|Object[]|null} access.fetchOf - its `fetch`
+ * @param {(page: Object) => Array<Object>|undefined} access.sectionsOf - its raw sections
+ * @param {Object|Object[]|null} [access.site] - the site's `fetch`
+ * @returns {{ key: string, config: Object, level: string, capturing: Object, nested: boolean } | null}
+ *   null off a parametric route, or when the capturing page has no route query
+ */
+export function pageRouteQuery(page, { routeOf, parentOf, fetchOf, sectionsOf, site = null }) {
+  let capturing = page
+  for (let depth = 0; capturing && recordRouteBase(routeOf(capturing)) === null; depth++) {
+    if (depth > 64) return null // a parent cycle in a malformed payload
+    capturing = parentOf(capturing)
+  }
+  if (!capturing) return null
+  const parent = parentOf(capturing)
+  const found = routeQuery({
+    page: fetchOf(capturing),
+    parent: parent ? fetchOf(parent) : null,
+    site,
+    sections: sectionFetches(sectionsOf(capturing)),
+  })
+  return found ? { ...found, capturing, nested: capturing !== page } : null
 }
 
 /**
