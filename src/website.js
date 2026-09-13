@@ -29,6 +29,28 @@ const SERVICE_RESOLVERS = {
 }
 
 /**
+ * The entry a layout name names in a map keyed by layout name — the site's layout
+ * sets, or the foundation's layout components and their meta.
+ *
+ * ⭐ **A layout name matches regardless of case** — a page's `layout: Docs`, the
+ * foundation's `defaultLayout`, the foundation's `docs` layout and a site's
+ * `layout/docs/` folder are one layout. An exact key wins first.
+ *
+ * @param {Object|null|undefined} map
+ * @param {string|null|undefined} name
+ * @returns {*} the entry, or undefined
+ */
+function findLayoutEntry(map, name) {
+  if (!map || typeof map !== 'object' || typeof name !== 'string' || !name) return undefined
+  if (Object.prototype.hasOwnProperty.call(map, name)) return map[name]
+  const lower = name.toLowerCase()
+  for (const key of Object.keys(map)) {
+    if (key.toLowerCase() === lower) return map[key]
+  }
+  return undefined
+}
+
+/**
  * Website — orchestration root for a single site instance.
  *
  * Accepts the site content payload plus the primary foundation and any
@@ -721,10 +743,7 @@ export default class Website {
   getRemoteLayout(layoutName) {
     const config = globalThis.uniweb?.foundationConfig
     if (!config?.layouts) return null
-    if (layoutName && config.layouts[layoutName]) {
-      return config.layouts[layoutName]
-    }
-    return null
+    return findLayoutEntry(config.layouts, layoutName) ?? null
   }
 
   /**
@@ -753,8 +772,11 @@ export default class Website {
    * @returns {Block[]|null}
    */
   getAreaBlocks(areaName, layoutName) {
-    if (layoutName && this._layoutSets[layoutName]) {
-      return this._layoutSets[layoutName][areaName]?.bodyBlocks || null
+    // A named layout's areas are its own: an area it lacks is absent, never
+    // borrowed from the default layout.
+    const named = findLayoutEntry(this._layoutSets, layoutName)
+    if (named) {
+      return named[areaName]?.bodyBlocks || null
     }
     // Fallback to 'default' layout
     if (this._layoutSets.default) {
@@ -769,8 +791,7 @@ export default class Website {
    * @returns {Object} Map of areaName -> Block[]
    */
   getLayoutAreas(layoutName) {
-    const setName = layoutName || 'default'
-    const layoutSet = this._layoutSets[setName] || this._layoutSets.default
+    const layoutSet = findLayoutEntry(this._layoutSets, layoutName || 'default') || this._layoutSets.default
     if (!layoutSet) return {}
 
     const areas = {}
@@ -788,7 +809,7 @@ export default class Website {
    * @returns {Object|null} Layout meta { areas, transitions, defaults }
    */
   getLayoutMeta(layoutName) {
-    return globalThis.uniweb?.foundationConfig?.layoutMeta?.[layoutName] || null
+    return findLayoutEntry(globalThis.uniweb?.foundationConfig?.layoutMeta, layoutName) || null
   }
 
   /**
