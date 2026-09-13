@@ -14,7 +14,7 @@
  * and in-flight dedup.
  */
 
-import { resolveFetchConfigs, pageRouteQuery, routeSelection, currentOf, othersView, othersOf } from './fetch-config.js'
+import { resolveFetchConfigs, pageRouteQuery, routeSelection, currentOf, othersView, othersOf, siteReaches } from './fetch-config.js'
 import { fillRoutePattern, matchesRouteParam } from './route-match.js'
 
 /**
@@ -91,7 +91,9 @@ export default class EntityStore {
         // route binding — the cascade reaches one parent up, and the binding may sit
         // above that (`pageRouteQuery`). Its key only; the rest does not cascade.
         route?.nested ? route.config : null,
-        website?.config?.fetch,
+        // The site's binding reaches a layout section and a top-level page's
+        // sections, and nothing deeper (`siteReaches`).
+        siteReaches(page?.parent) ? website?.config?.fetch : null,
       ],
       {
         schemas: requested,

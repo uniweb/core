@@ -225,15 +225,25 @@ describe('the route query is chosen at the page level — the page, its parent, 
     expect(w.getPage('/team/ada').title).toBe('Ada')
   })
 
-  it('a query only in site.yml is the route query when the page and its parent declare none', () => {
+  it('a query only in site.yml is the route query of a TOP-LEVEL parametric page', () => {
+    const w = withPages([
+      { route: '/', isIndex: true, title: 'Home', sections: [] },
+      { route: '/:slug', isDynamic: true, paramName: 'slug', title: 'Person', sections: [] },
+    ], { fetch: { query: 'people', path: '/data/people.json', as: 'people' } })
+    w.dataStore.set(key('people'), { data: people })
+    expect(w.getPage('/ada').title).toBe('Ada')
+    expect(w.getPage('/nobody').notFound).toBe(true)
+  })
+
+  it('⛔ and of no deeper one — the site is the virtual root page, not every page\'s ancestor (ruled 2026-09-13)', () => {
     const w = withPages([
       { route: '/', isIndex: true, title: 'Home', sections: [] },
       { route: '/team', title: 'Team', sections: [] },
       { route: '/team/:slug', isDynamic: true, paramName: 'slug', title: 'Person', sections: [] },
     ], { fetch: { query: 'people', path: '/data/people.json', as: 'people' } })
     w.dataStore.set(key('people'), { data: people })
-    expect(w.getPage('/team/ada').title).toBe('Ada')
-    expect(w.getPage('/team/nobody').notFound).toBe(true)
+    expect(w.getPage('/team/ada').title).toBe('Person')
+    expect(w.getPage('/team/ada').notFound).toBeFalsy()
   })
 
   it('a top-level parametric page has no parent — the homepage\'s query is not its route query', () => {

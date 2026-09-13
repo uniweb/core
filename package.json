@@ -11,6 +11,7 @@
     "./datastore": "./src/datastore.js",
     "./detail-url": "./src/detail-url.js",
     "./fetch-config": "./src/fetch-config.js",
+    "./layout-name": "./src/layout-name.js",
     "./icon-corpus": "./src/icon-corpus.js",
     "./locale-config": "./src/locale-config.js",
     "./route-match": "./src/route-match.js",

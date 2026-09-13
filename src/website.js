@@ -12,8 +12,9 @@ import ObservableState from './observable-state.js'
 import { normalizeSeo } from './seo.js'
 import { resolveDefaultLocale, localeLabel } from './locale-config.js'
 import { matchDynamicRoute, decodeRouteValue, matchesRouteParam, routeBinding, routeParamName, parentRouteOf } from './route-match.js'
-import { resolveFetchConfigs, routeQuery, pageRouteQuery, routeSelection, sectionFetches } from './fetch-config.js'
+import { resolveFetchConfigs, routeQuery, pageRouteQuery, routeSelection, sectionFetches, siteReaches } from './fetch-config.js'
 import { buildDetailConfig } from './detail-url.js'
+import { findLayoutEntry } from './layout-name.js'
 import { resolveService } from './services.js'
 
 /**
@@ -26,28 +27,6 @@ import { resolveService } from './services.js'
  */
 const SERVICE_RESOLVERS = {
   search: (website) => website.isSearchEnabled(),
-}
-
-/**
- * The entry a layout name names in a map keyed by layout name — the site's layout
- * sets, or the foundation's layout components and their meta.
- *
- * ⭐ **A layout name matches regardless of case** — a page's `layout: Docs`, the
- * foundation's `defaultLayout`, the foundation's `docs` layout and a site's
- * `layout/docs/` folder are one layout. An exact key wins first.
- *
- * @param {Object|null|undefined} map
- * @param {string|null|undefined} name
- * @returns {*} the entry, or undefined
- */
-function findLayoutEntry(map, name) {
-  if (!map || typeof map !== 'object' || typeof name !== 'string' || !name) return undefined
-  if (Object.prototype.hasOwnProperty.call(map, name)) return map[name]
-  const lower = name.toLowerCase()
-  for (const key of Object.keys(map)) {
-    if (key.toLowerCase() === lower) return map[key]
-  }
-  return undefined
 }
 
 /**
@@ -649,7 +628,7 @@ export default class Website {
         // plus the route binding itself — which sits above the parent on a nested
         // page, or on a section when the key came from the sections.
         const fetchConfig = resolveFetchConfigs(
-          [originalData.fetch, parentPage?.fetch, route.config, this.config?.fetch],
+          [originalData.fetch, parentPage?.fetch, route.config, siteReaches(parentPage) ? this.config?.fetch : null],
           {
             schemas: [route.key],
             locale: this.getActiveLocale(),
@@ -923,7 +902,8 @@ export default class Website {
       const route = routeQuery({
         page: data.fetch,
         parent: page?.parent?.fetch,
-        site: this.config?.fetch,
+        // the site's binding is a route query for a top-level page only (`siteReaches`)
+        site: siteReaches(page?.parent) ? this.config?.fetch : null,
         sections: sectionFetches(data.sections),
       })
       if (!route) continue

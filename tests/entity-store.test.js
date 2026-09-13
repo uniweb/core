@@ -130,7 +130,7 @@ describe('EntityStore.fetch', () => {
     expect(fetcherSpy).not.toHaveBeenCalled()
   })
 
-  it('finds fetch config from site-level config', async () => {
+  it('finds fetch config from site-level config — on a page with no parent page', async () => {
     const teams = [{ name: 'Team A' }]
     const { entityStore, website } = makeHarness({
       fetcherImpl: () => Promise.resolve({ data: teams }),
@@ -141,6 +141,20 @@ describe('EntityStore.fetch', () => {
     const block = makeBlock({ page: makePage() }, website)
     const result = await entityStore.fetch(block, {})
     expect(result.data.teams).toEqual(teams)
+  })
+
+  it('⛔ the site\'s binding reaches no deeper — a page with a parent page does not get it (ruled 2026-09-13)', async () => {
+    const { entityStore, website, fetcherSpy } = makeHarness({
+      fetcherImpl: () => Promise.resolve({ data: [{ name: 'Team A' }] }),
+    })
+    website.config = { fetch: { path: '/data/teams.json', as: 'teams' } }
+    const child = makePage({ route: '/about/team', parent: makePage({ route: '/about' }) })
+    expect(await entityStore.fetch(makeBlock({ page: child }, website), {})).toEqual({ data: null, errors: null })
+    expect(fetcherSpy).not.toHaveBeenCalled()
+    // ⭐ a layout area is the site's own — it has no parent page, so the binding reaches it
+    const header = makePage({ route: '/layout/header' })
+    const result = await entityStore.fetch(makeBlock({ page: header }, website), {})
+    expect(result.data.teams).toEqual([{ name: 'Team A' }])
   })
 
   it('first match per schema wins (block overrides page)', async () => {

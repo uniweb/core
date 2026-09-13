@@ -641,6 +641,25 @@ export function routeSelection(cfg) {
   return rest
 }
 
+/**
+ * ⭐ DOES THE SITE'S BINDING REACH THIS PAGE'S SECTIONS? — ruled 2026-09-13 [Diego]:
+ * *"Site is basically a virtual root page"*, *"meant to reach the layout pseudo-pages
+ * and sections because they belong to the site. and it's meant to reach the root
+ * pages."* So it reaches what a page's binding would if the site were the parent of
+ * the pages directly under it: a page with no parent page — a top-level page, the
+ * homepage included — and a layout area, which has none either. ⛔ Until then it
+ * reached every section on every page.
+ *
+ * Nothing is restructured: every lane keeps the site's fetch as the last level of
+ * its walk, and passes it for these pages only.
+ *
+ * @param {Object|null|undefined} parent - the page's parent page (by `parentRouteOf`), or null
+ * @returns {boolean}
+ */
+export function siteReaches(parent) {
+  return !parent
+}
+
 /** A `fetch` as a list: one declaration, several, or none. */
 function fetchList(fetch) {
   if (!fetch) return []
@@ -735,6 +754,11 @@ export function routeQuery({ page = null, parent = null, site = null, sections =
  * nothing about what `:slug` names. The caller hands the route binding to the nested
  * page's sections (`nested`), since the cascade reaches only one parent up.
  *
+ * ⭐ THE SITE IS THE VIRTUAL ROOT PAGE (ruled 2026-09-13 [Diego]), so the site's
+ * binding is a route query only for a capturing page with no parent page — a
+ * top-level parametric page — the way a page's binding is its children's
+ * (`siteReaches`). ⛔ Until then it was every parametric page's last fallback.
+ *
  * Shape-agnostic: the object graph and a content document hand in their own
  * accessors, and every lane climbs by the one parent rule (`parentRouteOf`).
  *
@@ -759,7 +783,7 @@ export function pageRouteQuery(page, { routeOf, parentOf, fetchOf, sectionsOf, s
   const found = routeQuery({
     page: fetchOf(capturing),
     parent: parent ? fetchOf(parent) : null,
-    site,
+    site: parent ? null : site,
     sections: sectionFetches(sectionsOf(capturing)),
   })
   return found ? { ...found, capturing, nested: capturing !== page } : null
