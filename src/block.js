@@ -104,10 +104,16 @@ export default class Block {
 
     // Merge fetched data from prerender (if present)
     // Prerender stores fetched data in blockData.parsedContent.data
+    //
+    // ⭐ THE SECTION'S OWN DATA WINS, as it does when nothing was prerendered: a tagged
+    // data block fills its key first, and a fetch fills only what is left. ⛔ The
+    // prerendered answer was spread LAST until 2026-09-14, so a key held by both a
+    // tagged block and the section's own fetch showed the fetch's records on a
+    // prerendered page and the tagged block in the browser.
     if (blockData.parsedContent?.data) {
       this.parsedContent.data = {
-        ...(this.parsedContent.data || {}),
         ...blockData.parsedContent.data,
+        ...(this.parsedContent.data || {}),
       }
     }
 

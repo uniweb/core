@@ -218,6 +218,34 @@ describe('Block', () => {
     })
   })
 
+  describe('data a static build prerendered into the section', () => {
+    const tagged = {
+      type: 'doc',
+      content: [
+        { type: 'dataBlock', attrs: { tag: 'articles', language: 'yaml', data: [{ slug: 'tagged' }] } },
+      ],
+    }
+
+    it('fills the keys the section does not hold itself', () => {
+      const block = new Block({
+        type: 'List',
+        content: tagged,
+        parsedContent: { data: { team: [{ slug: 'baked' }] } },
+      }, '0', mockPage())
+      expect(block.heldData.team).toEqual([{ slug: 'baked' }])
+      expect(block.heldData.articles).toEqual([{ slug: 'tagged' }])
+    })
+
+    it("⭐ never replaces the section's own tagged data block — the browser reads that key the same way", () => {
+      const block = new Block({
+        type: 'List',
+        content: tagged,
+        parsedContent: { data: { articles: [{ slug: 'baked' }] } },
+      }, '0', mockPage())
+      expect(block.heldData.articles).toEqual([{ slug: 'tagged' }])
+    })
+  })
+
   describe('sealed object shape', () => {
     it('rejects new properties on block instances', () => {
       const page = mockPage()
