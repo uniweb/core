@@ -113,6 +113,17 @@ describe('sortRecords', () => {
     expect(sortRecords(rows, 'p.v desc').map((r) => r.id)).toEqual(['obj', 'list'])
   })
 
+  it('two kinds in one field are ordered by kind — booleans, numbers, texts, then objects — and within a kind', () => {
+    const rows = [
+      { id: 'text-b', v: 'b' }, { id: 'obj', v: { x: 1 } }, { id: 'num-10', v: 10 },
+      { id: 'true', v: true }, { id: 'none' }, { id: 'num-9', v: 9 }, { id: 'false', v: false }, { id: 'text-a', v: 'a' },
+    ]
+    expect(sortRecords(rows, 'v').map((r) => r.id))
+      .toEqual(['false', 'true', 'num-9', 'num-10', 'text-a', 'text-b', 'obj', 'none'])
+    expect(sortRecords(rows, 'v desc').map((r) => r.id))
+      .toEqual(['obj', 'text-b', 'text-a', 'num-10', 'num-9', 'true', 'false', 'none'])
+  })
+
   it('records that compare equal keep their order, and so do records with no value', () => {
     const rows = [{ id: 1, k: 'x' }, { id: 2 }, { id: 3, k: 'x' }, { id: 4 }, { id: 5, k: 'a' }]
     expect(sortRecords(rows, 'k').map((r) => r.id)).toEqual([5, 1, 3, 2, 4])

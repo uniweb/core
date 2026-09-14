@@ -108,10 +108,7 @@ export function sortRecords(items, sort) {
     const bNone = !hasSortValue(bv)
     // Last in either direction — so this is decided before `desc` flips anything.
     if (aNone || bNone) return aNone === bNone ? 0 : (aNone ? 1 : -1)
-    const cmp = typeof av === 'string' && typeof bv === 'string'
-      ? av.localeCompare(bv)
-      : (av > bv ? 1 : av < bv ? -1 : 0)
-    return desc ? -cmp : cmp
+    return desc ? -compareValues(av, bv) : compareValues(av, bv)
   })
 }
 
@@ -119,6 +116,34 @@ export function sortRecords(items, sort) {
 function hasSortValue(v) {
   if (v === undefined || v === null || v === '') return false
   return !Array.isArray(v)
+}
+
+/**
+ * ⭐ TWO KINDS IN ONE FIELD ARE ORDERED BY KIND, THEN WITHIN THE KIND — booleans,
+ * numbers, texts, then anything else — the records service's comparator, stated by
+ * backend on 2026-09-14. A total order, so a sort never fails; `where` still holds no
+ * comparison across kinds. ⛔ Until then `<` / `>` coerced a number against a text.
+ *
+ * ⚠️ Text uses `localeCompare` with no locale, which is the JavaScript runtime's own —
+ * a browser and a host's prerender can disagree, and the records service compares code
+ * points. Which order both lanes use is put to Diego (2026-09-14).
+ */
+function compareValues(a, b) {
+  const ka = kindRank(a)
+  const kb = kindRank(b)
+  if (ka !== kb) return ka < kb ? -1 : 1
+  if (typeof a === 'string') return a.localeCompare(b)
+  if (ka === KIND_OTHER) return 0
+  return a > b ? 1 : a < b ? -1 : 0
+}
+
+const KIND_OTHER = 3
+
+function kindRank(v) {
+  if (typeof v === 'boolean') return 0
+  if (typeof v === 'number') return 1
+  if (typeof v === 'string') return 2
+  return KIND_OTHER
 }
 
 function readPath(record, path) {
