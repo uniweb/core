@@ -115,3 +115,18 @@ describe('a source-shape fetch, which has no query at all', () => {
     expect(cfg.path).toBe('/data/articles.json')
   })
 })
+
+describe("a `deferred:` query's per-record file follows the page's locale", () => {
+  it('⭐ is the translated copy on a locale other than the default', () => {
+    // A localized build writes dist/<locale>/data/<query>/<slug>.json beside the
+    // translated list; the record page must ask for that file, not the default one.
+    const cfg = resolveFetchConfigs([buildLane()], { queries: QUERIES, locale: 'es', defaultLocale: 'en' }).get('articles')
+    expect(cfg.path).toBe('/es/data/articles.json')
+    expect(cfg.detail).toBe('/es/data/articles/{slug}.json')
+  })
+
+  it('CONTROL — the default locale reads the unprefixed file', () => {
+    const cfg = resolveFetchConfigs([buildLane()], { queries: QUERIES, locale: 'en', defaultLocale: 'en' }).get('articles')
+    expect(cfg.detail).toBe('/data/articles/{slug}.json')
+  })
+})

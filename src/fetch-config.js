@@ -195,8 +195,12 @@ function localizeConfig(cfg, locale, defaultLocale) {
  *     by the URL's value (`buildDetailConfig`);
  *   - an external query declaring `record:` → `true`: its own request;
  *   - a query declaring `deferred:` → `/data/<query>/{slug}.json`, the per-record
- *     file the build emits beside the lean list. Per-record files are keyed by the
- *     record's slug, and are not localized.
+ *     file the build emits beside the lean list, keyed by the record's slug. ⭐ On a
+ *     locale other than the default it is `/<locale>/data/<query>/{slug}.json`, the
+ *     way the list's own path is (`localizeConfig`): a localized build writes a
+ *     translated copy of every per-record file beside the translated list. ⛔ Until
+ *     2026-09-14 the pattern was never localized, so a translated record page asked
+ *     for the default locale's file and showed an untranslated body.
  *
  * ⛔ `detail:` is no longer AUTHORED (retired 2026-09-13 [Diego]; the build refuses
  * it): its `rest`, `query`, pattern and `{ body, envelope }` forms are an external
@@ -208,9 +212,11 @@ function localizeConfig(cfg, locale, defaultLocale) {
  *
  * @param {Object} cfg
  * @param {Object|null} queries - the site's `config.queries` map
+ * @param {string|null} [locale] - the page's locale
+ * @param {string|null} [defaultLocale] - the site's default locale
  * @returns {Object} the original config, or a copy carrying `detail`
  */
-function applyDeferredDetail(cfg, queries) {
+function applyDeferredDetail(cfg, queries, locale = null, defaultLocale = null) {
   if (cfg.detail !== undefined) return cfg
 
   // The records service answers a RECORD by the query's set narrowed to it, so
@@ -239,7 +245,9 @@ function applyDeferredDetail(cfg, queries) {
   if (!collConfig || typeof collConfig !== 'object') return cfg
   const deferred = Array.isArray(collConfig.deferred) ? collConfig.deferred : null
   if (!deferred || deferred.length === 0) return cfg
-  return { ...cfg, detail: recordDataUrl(queryName, '{slug}') }
+  const pattern = recordDataUrl(queryName, '{slug}')
+  const localized = locale && locale !== defaultLocale && isDataUrl(pattern) ? `/${locale}${pattern}` : pattern
+  return { ...cfg, detail: localized }
 }
 
 /**
@@ -549,7 +557,7 @@ export function resolveFetchConfigs(sources, options = {}) {
       const sourced = resolveQuerySource(cfg, services, { queries, locale, defaultLocale })
       const localized = localizeConfig(sourced, locale, defaultLocale)
       const bound = dropRootScope(bindRouteVariables(localized, variables))
-      configs.set(key, stampDepthAndLocale(applyDeferredDetail(bound, queries), locale, defaultLocale))
+      configs.set(key, stampDepthAndLocale(applyDeferredDetail(bound, queries, locale, defaultLocale), locale, defaultLocale))
     }
   }
 
