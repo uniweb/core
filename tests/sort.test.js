@@ -95,10 +95,28 @@ describe('sortRecords', () => {
     expect(sortRecords(items, 'nested.v desc').map((i) => i.n)).toEqual([3, 2, 1])
   })
 
-  it('a record missing the key sorts as the empty string — first ascending, last descending', () => {
+  it('⭐ a record with no value for the key sorts LAST in either direction — as the records service answers', () => {
     const withGap = [{ n: 2 }, { x: 1 }, { n: 1 }]
-    expect(sortRecords(withGap, 'n').map((i) => i.n)).toEqual([undefined, 1, 2])
+    expect(sortRecords(withGap, 'n').map((i) => i.n)).toEqual([1, 2, undefined])
     expect(sortRecords(withGap, 'n desc').map((i) => i.n)).toEqual([2, 1, undefined])
+  })
+
+  it('"no value" is what `exists: false` means — null, "" and a list too', () => {
+    const rows = [{ id: 'null', s: null }, { id: 'b', s: 'b' }, { id: 'empty', s: '' }, { id: 'list', s: ['a'] }, { id: 'a', s: 'a' }]
+    expect(sortRecords(rows, 's').map((r) => r.id)).toEqual(['a', 'b', 'null', 'empty', 'list'])
+    expect(sortRecords(rows, 's desc').map((r) => r.id)).toEqual(['b', 'a', 'null', 'empty', 'list'])
+  })
+
+  it('a dotted path that meets a list reads no value', () => {
+    const rows = [{ id: 'list', p: [{ v: 1 }] }, { id: 'obj', p: { v: 2 } }]
+    expect(sortRecords(rows, 'p.v').map((r) => r.id)).toEqual(['obj', 'list'])
+    expect(sortRecords(rows, 'p.v desc').map((r) => r.id)).toEqual(['obj', 'list'])
+  })
+
+  it('records that compare equal keep their order, and so do records with no value', () => {
+    const rows = [{ id: 1, k: 'x' }, { id: 2 }, { id: 3, k: 'x' }, { id: 4 }, { id: 5, k: 'a' }]
+    expect(sortRecords(rows, 'k').map((r) => r.id)).toEqual([5, 1, 3, 2, 4])
+    expect(sortRecords(rows, 'k desc').map((r) => r.id)).toEqual([1, 3, 5, 2, 4])
   })
 
   it('returns a new array and leaves the input untouched', () => {

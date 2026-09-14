@@ -82,9 +82,16 @@ export function sortToWire(sort) {
  * Sort records by one key. Returns a new array; the input is not mutated.
  *
  * Strings compare with `localeCompare` so `apple` sorts before `Banana`; anything
- * else compares with `<`/`>`, which is right for numbers and ISO date strings. A
- * record with no value for the key sorts as the empty string — first ascending,
- * last descending — which is what every previous evaluator did.
+ * else compares with `<`/`>`, which is right for numbers and ISO date strings.
+ *
+ * ⭐ A RECORD WITH NO VALUE FOR THE KEY SORTS LAST, IN EITHER DIRECTION, and records
+ * that compare equal keep their order — the language both lanes answer
+ * (`kb/frontend/contracts/site-queries.md` §1.4, as the records service built it on
+ * 2026-09-13). "No value" is what `exists: false` means: missing, `null`, `""` — and a
+ * list, since nothing says which member orders the record (a dotted path that meets
+ * a list reads no value). ⛔ Until 2026-09-14 a missing value sorted as the empty
+ * string — first ascending, last descending — so a static site and a hosted one put
+ * the same records in different places.
  *
  * @param {Array<Object>} items
  * @param {string|{field:string, desc?:boolean}|null|undefined} sort
@@ -95,13 +102,23 @@ export function sortRecords(items, sort) {
   if (!spec || !Array.isArray(items) || items.length === 0) return items
   const { field, desc } = spec
   return [...items].sort((a, b) => {
-    const av = readPath(a, field) ?? ''
-    const bv = readPath(b, field) ?? ''
+    const av = readPath(a, field)
+    const bv = readPath(b, field)
+    const aNone = !hasSortValue(av)
+    const bNone = !hasSortValue(bv)
+    // Last in either direction — so this is decided before `desc` flips anything.
+    if (aNone || bNone) return aNone === bNone ? 0 : (aNone ? 1 : -1)
     const cmp = typeof av === 'string' && typeof bv === 'string'
       ? av.localeCompare(bv)
       : (av > bv ? 1 : av < bv ? -1 : 0)
     return desc ? -cmp : cmp
   })
+}
+
+/** A value a record can be ordered by: not missing, `null`, `""` or a list. */
+function hasSortValue(v) {
+  if (v === undefined || v === null || v === '') return false
+  return !Array.isArray(v)
 }
 
 function readPath(record, path) {
