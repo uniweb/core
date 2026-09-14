@@ -573,7 +573,7 @@ export default class Website {
     const { paramName, paramValue, variables } = routeBinding(templatePage.route, params, originalData.paramName)
 
     // Store dynamic context for components to access. ⛔ No `schema`: the key the
-    // URL narrows is worked out where it is read (`EntityStore._routeKey`), from
+    // URL narrows is worked out where it is read (`EntityStore._route`), from
     // the page, never stored beside it (deleted 2026-09-11).
     pageData.dynamicContext = {
       templateRoute: templatePage.route,
