@@ -8,7 +8,7 @@
 import { describe, it, expect } from 'vitest'
 import { resolveFetchConfigs } from '../src/fetch-config.js'
 import { buildDetailConfig, ROUTE_HANDLE_KEY } from '../src/detail-url.js'
-import { resolveRecordsService, resolveAnswersService, _resetRecordsServiceWarnings } from '../src/records-service.js'
+import { resolveRecordsService, _resetRecordsServiceWarnings } from '../src/records-service.js'
 import { deriveCacheKey } from '../src/datastore.js'
 
 const SERVICES = { records: '/_records/ask/{locale}' }
@@ -144,37 +144,5 @@ describe('the record on the service is the same question, narrowed by the handle
     const ada = buildDetailConfig(list, { paramName: 'slug', paramValue: 'ada' })
     const lin = buildDetailConfig(list, { paramName: 'slug', paramValue: 'lin' })
     expect(deriveCacheKey(ada)).not.toBe(deriveCacheKey(lin))
-  })
-})
-
-describe('the answers service — the host\'s cache of the records service\'s answers', () => {
-  const WITH_ANSWERS = { records: '/_query/{locale}', answers: '/_answers/{locale}' }
-
-  it('substitutes the locale, beside a records row only', () => {
-    expect(resolveAnswersService(WITH_ANSWERS, 'fr')).toBe('/_answers/fr')
-    expect(resolveAnswersService({ answers: '/_answers/{locale}' }, 'fr')).toBeNull()
-    expect(resolveAnswersService({ records: '/_query/{locale}' }, 'fr')).toBeNull()
-    expect(resolveAnswersService(WITH_ANSWERS, '')).toBeNull()
-  })
-
-  it('reads the { endpoint } form like any service row', () => {
-    expect(resolveAnswersService({ records: { endpoint: '/_query/{locale}' }, answers: { endpoint: '/_answers/{locale}' } }, 'en'))
-      .toBe('/_answers/en')
-  })
-
-  it('an asked config carries the answers address beside `ask`, and a record request keeps it', () => {
-    const list = resolveFetchConfigs(authored({ limit: 5 }), opts({ services: WITH_ANSWERS })).get('members')
-    expect(list.ask).toBe('/_query/en')
-    expect(list.answers).toBe('/_answers/en')
-    const rec = buildDetailConfig(list, { paramName: 'slug', paramValue: 'ada' })
-    expect(rec.answers).toBe('/_answers/en')
-    // CONTROL — the address is not part of the question, so it moves no cache key
-    const { answers, ...withoutAnswers } = list
-    expect(deriveCacheKey(list)).toBe(deriveCacheKey(withoutAnswers))
-  })
-
-  it('CONTROL — with no answers row, nothing about an asked config changes', () => {
-    const cfg = resolveFetchConfigs(authored(), opts()).get('members')
-    expect(cfg).not.toHaveProperty('answers')
   })
 })
