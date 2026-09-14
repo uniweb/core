@@ -877,6 +877,54 @@ export function pageRouteQuery(page, { routeOf, parentOf, fetchOf, sectionsOf, s
 }
 
 /**
+ * ⭐ THE PAGE A QUERY'S RECORDS LINK TO — ruled 2026-09-14 [Diego]: *a rendered record
+ * links to its query's page.* For each query, the parametric page whose ROUTE QUERY is
+ * that query (`routeQuery`), the first in page order:
+ *
+ *   - **by the query's name, never by its schema** — a page over the same schema may not
+ *     select the record, so its URL could name a record it answers "not found" for;
+ *   - **a page nested inside a parametric page is not a record's page** — its route does
+ *     not end in the parameter (`recordRouteBase`), so a record cannot fill it;
+ *   - **no page, no link** — a query absent from the map has none.
+ *
+ * A fetch picks another page with `detailPage:`, which the caller resolves; this is
+ * the page with none. ⛔ It replaces `route:` on a query, which the build baked into
+ * compiled records as `route` — a field in the author's namespace, overwritten.
+ *
+ * Shape-agnostic, like `pageRouteQuery`: the object graph and a content document hand in
+ * their own accessors, so the runtime, a host and the editor get one answer.
+ *
+ * @param {Array<Object>} pages - every page, in page order, in the caller's shape
+ * @param {Object} access
+ * @param {(page: Object) => string} access.routeOf - its route pattern
+ * @param {(page: Object) => Object|null} access.parentOf - its parent page, or null
+ * @param {(page: Object) => *} access.fetchOf - its `fetch`
+ * @param {(page: Object) => Array<Object>|undefined} access.sectionsOf - its raw sections
+ * @param {*} [access.site] - the site's `fetch`
+ * @returns {Map<string, { page: Object, route: string, key: string }>} query name → its
+ *   record page: the page, its route pattern, and the key its record is delivered under
+ */
+export function recordPages(pages, { routeOf, parentOf, fetchOf, sectionsOf, site = null }) {
+  const out = new Map()
+  for (const page of pages || []) {
+    const route = routeOf(page)
+    if (recordRouteBase(route) === null) continue
+    const parent = parentOf(page)
+    const found = routeQuery({
+      page: fetchOf(page),
+      parent: parent ? fetchOf(parent) : null,
+      // the site's binding is a route query for a top-level page only (`siteReaches`)
+      site: siteReaches(parent) ? site : null,
+      sections: sectionFetches(sectionsOf(page)),
+    })
+    const name = found?.config?.query
+    if (typeof name !== 'string' || !name || out.has(name)) continue
+    out.set(name, { page, route, key: found.key })
+  }
+  return out
+}
+
+/**
  * Say what a resolved config will GET, so the record index can file it.
  *
  * `depth` — `brief` when the config has a per-record source (`detail`), because

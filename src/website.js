@@ -12,7 +12,7 @@ import ObservableState from './observable-state.js'
 import { normalizeSeo } from './seo.js'
 import { resolveDefaultLocale, localeLabel } from './locale-config.js'
 import { matchDynamicRoute, decodeRouteValue, matchesRouteParam, routeBinding, routeParamName, parentRouteOf } from './route-match.js'
-import { resolveFetchConfigs, routeQuery, pageRouteQuery, routeSelection, sectionFetches, siteReaches } from './fetch-config.js'
+import { resolveFetchConfigs, pageRouteQuery, recordPages, routeSelection, siteReaches } from './fetch-config.js'
 import { buildDetailConfig } from './detail-url.js'
 import { findLayoutEntry } from './layout-name.js'
 import { resolveService } from './services.js'
@@ -87,6 +87,8 @@ export default class Website {
     this.notFoundPage = null
     this._dynamicPageData = new Map()
     this._dynamicPageCache = new Map()
+    // query name → the page its records link to (`recordPageFor`), worked out on first ask
+    this._recordPages = null
     this.pages = []
     this.activePage = null
     this.pageRoutes = []
@@ -161,6 +163,7 @@ export default class Website {
       }
     }
     this._dynamicPageCache = new Map()
+    this._recordPages = null
 
     this.pages = regularPages.map((page, index) => new Page(page, index, this))
     this.buildPageHierarchy()
@@ -883,43 +886,46 @@ export default class Website {
   }
 
   /**
-   * The parametric page that renders ONE record of a query — `{ route, paramName }`
-   * for the page whose route query (`routeQuery`) lands under `name`, or null when
-   * the site routes no such page.
+   * ⭐ THE PAGE A QUERY'S RECORDS LINK TO — `{ route, paramName }`: the parametric page
+   * whose route query IS the query, by name, the first in page order (`recordPages`,
+   * `./fetch-config.js`), with its route translated for the active locale. Null when the
+   * site has no such page, and then a record of the query has no link.
    *
-   * ⭐ This is how a caller outside a parametric page learns which record field
-   * the site's URL is built on: `kit`'s `useEntityDetail` asks it so a hover
-   * card and the page it links to address the record by the SAME field. It
-   * hardcoded `slug` until 2026-09-04, which was quietly wrong on any site
-   * routing `[id]`.
+   * This is what fills a delivered record's `$route` (`EntityStore`) when its fetch picks
+   * no `detailPage`, and how a caller outside a parametric page learns which record field
+   * the page's URL is built on: `kit`'s `useEntityDetail` asks it so a hover card and the
+   * page it links to address the record by the SAME field.
    *
-   * `name` may be the binding key (`content.data.<key>`) or the query's name:
-   * `useEntityDetail` holds the query name, and the two differ under an `as:`
-   * override — which this matched by binding key only until 2026-09-11. The first
-   * page found wins, and only a page whose own folder is the parameter (a page
-   * nested inside one is not the record's page).
+   * ⛔ Replaces `detailTemplateFor(name)` (2026-09-14), which matched a binding key OR a
+   * query name — so a page whose route query merely landed under the same key answered
+   * for another query's records.
    *
-   * @param {string} name - a binding key or a query name
+   * @param {string} query - a query's name
    * @returns {{ route: string, paramName: string } | null}
    */
-  detailTemplateFor(name) {
-    if (!name) return null
-    for (const data of this._dynamicPageData.values()) {
-      if (!data?.route || !/\/:[A-Za-z0-9_-]+\*?$/.test(data.route)) continue
-      const page = this.pages.find((p) => p.route === data.route)
-      const route = routeQuery({
-        page: data.fetch,
-        parent: page?.parent?.fetch,
-        // the site's binding is a route query for a top-level page only (`siteReaches`)
-        site: siteReaches(page?.parent) ? this.config?.fetch : null,
-        sections: sectionFetches(data.sections),
+  recordPageFor(query) {
+    if (typeof query !== 'string' || !query) return null
+    if (!this._recordPages) {
+      // ⭐ Every page, by the route PATTERN it answers to — the entity store's reading
+      // (`_route`). A static build replaces a parametric page with one concrete page per
+      // record (`expandDynamicPages`), each carrying its template's route as
+      // `dynamicContext.templateRoute`; the payload it prerenders and hydrates holds those,
+      // and no template. ⛔ Read from the templates alone, this found no page there, and
+      // no record of a prerendered site had a link (measured on the `dynamic` template).
+      this._recordPages = recordPages(this.pages, {
+        routeOf: (page) => page?.dynamicContext?.templateRoute ?? page?.route,
+        parentOf: (page) => page?.parent ?? null,
+        fetchOf: (page) => page?.fetch,
+        sectionsOf: (page) => page?._bodySections,
+        site: this.config?.fetch,
       })
-      if (!route) continue
-      if (route.key === name || route.config?.query === name) {
-        return { route: data.route, paramName: routeParamName(data.route, data.paramName) }
-      }
     }
-    return null
+    const found = this._recordPages.get(query)
+    if (!found) return null
+    return {
+      route: this.translateRoute(found.route),
+      paramName: routeParamName(found.route, found.page?.dynamicContext?.paramName ?? found.page?.paramName),
+    }
   }
 
   /**

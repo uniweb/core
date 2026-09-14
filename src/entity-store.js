@@ -143,25 +143,64 @@ export default class EntityStore {
   }
 
   /**
-   * Post-process assembled records: for each fetch config that declares a
-   * `detailPage` page-ref, resolve it to a locale route template (O(1), via the
-   * Website's `_pageIdMap`) and inject a `route` on each record — so a dynamic-list
-   * card links to the query's canonical detail page regardless of which page
-   * the list sits on. Runs after `data` is fully assembled, in BOTH the sync (peek)
-   * and async (fetch) paths. Replaces the old runtime `getQueryDetailRoute`
-   * page-tree scan. A dangling `detailPage` (unresolvable ref) is a no-op — the
-   * component degrades gracefully; records with a baked `route` (file lane) are kept.
+   * ⭐ EVERY RECORD LINKS TO ITS QUERY'S PAGE — `$route`, filled here at render time, on
+   * every lane (ruled 2026-09-14 [Diego]). For each delivered key, the page is the
+   * fetch's `detailPage` when it names one that resolves, else the page whose route
+   * query is the fetch's query (`website.recordPageFor`); each record gets that page's
+   * route filled from its own fields (`fillRoutePattern`) as `$route`, and a record that
+   * cannot fill it, or a key whose query has no page, gets none.
+   *
+   * ⭐ `$` marks a system field, as on `$uuid`, `$name` and `$tags` — so the link never
+   * lands in the author's namespace. A component writes `<Link href={item.$route}>`. ⛔ Until 2026-09-14 the link was `route`: the build baked
+   * it into compiled records from `route:` on a query, overwriting an entity's own
+   * `route`, and this filled it only from a `detailPage`, skipping any record that
+   * already had one.
+   *
+   * Runs after `data` is assembled, in the sync (peek) and async (fetch) paths alike.
+   * Records are copied, never mutated: one cached record backs every section that
+   * shows it, each of which may link it to a different page.
    */
-  _applyDetailRoutes(data, configs, website) {
-    if (!data || !website?.resolveDetailPageTemplate) return
-    for (const [schema, cfg] of configs) {
-      if (!cfg.detailPage) continue
-      const items = data[schema]
+  _applyRecordRoutes(data, configs, website) {
+    if (!data || !website) return
+    for (const [key, cfg] of configs) {
+      const items = data[key]
       if (!Array.isArray(items) || items.length === 0) continue
-      const template = website.resolveDetailPageTemplate(cfg.detailPage)
+      const template = recordRouteTemplate(cfg, website)
       if (!template) continue
-      data[schema] = items.map((item) => addDetailRoute(item, template))
+      const linked = items.map((item) => withRecordRoute(item, template))
+      // an unchanged list keeps its identity, so a render that re-links changes nothing
+      if (linked.some((item, i) => item !== items[i])) data[key] = linked
     }
+  }
+
+  /**
+   * `$route` on the records a section's OWN fetch put in its content before this store
+   * answered. ⭐ The static build prerenders a section's own fetch into the section's
+   * content (`parsedContent.data`), and a value the block already holds outranks what
+   * this store delivers (`runtime/src/prepare-props.js::mergeEntityData`) — so without
+   * this, a list a section fetches for itself reached its component with no links on a
+   * prerendered site. Linked by the rule a delivered list is linked by
+   * (`_applyRecordRoutes`), on every render and idempotently: held data that is already
+   * linked is left as it is, so its identity survives a re-render.
+   *
+   * The block's data object is replaced, never written into — as `mergeEntityData`
+   * replaces it — since the object the build delivered may back more than this block.
+   *
+   * @param {Object} block
+   */
+  linkOwnRecords(block) {
+    const held = block?.parsedContent?.data
+    if (!held || typeof held !== 'object' || !block.fetch) return
+    const website = block.website ?? this.website
+    const configs = resolveFetchConfigs([block.fetch], {
+      queries: website?.config?.queries ?? null,
+      services: website?.config?.services ?? null,
+      locale: website?.getActiveLocale?.() ?? null,
+      defaultLocale: website?.getDefaultLocale?.() ?? null,
+    })
+    const linked = { ...held }
+    this._applyRecordRoutes(linked, configs, website)
+    if (Object.keys(linked).some((key) => linked[key] !== held[key])) block.parsedContent.data = linked
   }
 
   /**
@@ -289,7 +328,7 @@ export default class EntityStore {
     }
 
     if (allCached) {
-      this._applyDetailRoutes(data, configs, block.website)
+      this._applyRecordRoutes(data, configs, block.website)
       return { status: 'ready', data }
     }
     return { status: 'pending', data: null }
@@ -449,7 +488,7 @@ export default class EntityStore {
     }
 
     if (parallelFetches.length > 0) await Promise.all(parallelFetches)
-    this._applyDetailRoutes(data, configs, block.website)
+    this._applyRecordRoutes(data, configs, block.website)
     return { data, errors: Object.keys(errors).length ? errors : null }
   }
 }
@@ -504,20 +543,37 @@ function peekArray(dispatcher, cfg, ctx) {
 }
 
 /**
- * Interpolate a record's fields into a detail-page route template to build its
- * `route` (the canonical href for a card). `/blog/:slug` + `{ slug: 'a-post' }`
- * → `/blog/a-post`. Returns a SHALLOW COPY with `route` added — never mutates the
- * cached record (the same query may back several sections with different
- * detail pages). Idempotent + back-compat: a record that already carries a `route`
- * (the file lane bakes one via the query processor) is returned untouched. A
- * `:param` with no matching record field → no `route` (graceful; degrades to the
- * component's own fallback rather than emitting a broken href).
+ * The route template a fetch's records link to — its `detailPage`, else its query's page.
  *
- * ⭐ The encoding is `fillRoutePattern`'s, shared with the build's bake, so the
- * two producers of `item.route` agree — they did not (F14, 2026-09-04).
+ * ⭐ A `detailPage` that no longer resolves — its page deleted, or no longer parametric —
+ * falls back to the query's own page rather than taking every card's link away: the
+ * author picked among the query's pages, and the query still has one. (The website warns
+ * in dev when a ref dangles.)
+ *
+ * @param {Object} cfg - a resolved config
+ * @param {Object} website
+ * @returns {string|null}
  */
-function addDetailRoute(item, template) {
-  if (!item || typeof item !== 'object' || item.route !== undefined) return item
+function recordRouteTemplate(cfg, website) {
+  if (cfg?.detailPage) {
+    const picked = website.resolveDetailPageTemplate?.(cfg.detailPage)
+    if (picked) return picked
+  }
+  return typeof cfg?.query === 'string' ? (website.recordPageFor?.(cfg.query)?.route ?? null) : null
+}
+
+/**
+ * A record with its `$route` — the template filled from the record's own fields
+ * (`/blog/:slug` + `{ $name: 'a-post' }` → `/blog/a-post`). A SHALLOW COPY, never the
+ * cached record. A record that cannot fill the template — a `:param` with no value on it
+ * — is returned as it is, with no `$route`, so a component renders no link rather than a
+ * broken one.
+ *
+ * ⭐ The encoding is `fillRoutePattern`'s: the one encoder for a record's href, which the
+ * route matcher decodes (F14, 2026-09-04).
+ */
+function withRecordRoute(item, template) {
+  if (!item || typeof item !== 'object') return item
   const route = fillRoutePattern(template, item)
-  return route === null ? item : { ...item, route }
+  return route === null || item.$route === route ? item : { ...item, $route: route }
 }

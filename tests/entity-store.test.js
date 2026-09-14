@@ -572,140 +572,161 @@ describe('a page nested inside a parametric page shares its route query (ruled 2
   })
 })
 
-describe('EntityStore detailPage → record.route injection', () => {
-  const cfg = { path: '/data/articles.json', as: 'articles', detailPage: 'page:detail' }
+describe('a record links to its query\'s page — `$route` (ruled 2026-09-14)', () => {
+  // ⛔ Until then the link was `route`: baked by the build from `route:` on a query,
+  // overwriting an entity's own field, and filled here only from a `detailPage`.
+  const cfg = { query: 'articles', as: 'articles', path: '/data/articles.json', detailPage: 'page:detail' }
+  const plain = { query: 'articles', as: 'articles', path: '/data/articles.json' }
 
-  function seed(articles, resolver) {
+  function seed(articles, { detailPage = () => null, recordPage = () => null, fetch = cfg } = {}) {
     const h = makeHarness()
-    if (resolver !== undefined) h.website.resolveDetailPageTemplate = resolver
-    h.dataStore.set(deriveCacheKey(cfg), { data: articles })
-    const block = makeBlock({ page: makePage({ fetch: cfg }) }, h.website)
+    h.website.resolveDetailPageTemplate = detailPage
+    h.website.recordPageFor = recordPage
+    h.dataStore.set(deriveCacheKey(fetch), { data: articles })
+    const block = makeBlock({ page: makePage({ route: '/', fetch }) }, h.website)
     return { ...h, block }
   }
 
-  it('injects the canonical route on each record (sync path), url-encoding the param', () => {
+  it('fills each record\'s `$route` from its query\'s page when the fetch picks none (sync path), url-encoding the param', () => {
     const articles = [{ slug: 'a-post', title: 'A' }, { slug: 'b post', title: 'B' }]
-    const { entityStore, block } = seed(articles, (ref) =>
-      ref === 'page:detail' ? '/blog/:slug' : null
-    )
+    const { entityStore, block } = seed(articles, { fetch: plain, recordPage: (q) => (q === 'articles' ? { route: '/blog/:slug', paramName: 'slug' } : null) })
     const result = entityStore.resolve(block, {})
     expect(result.status).toBe('ready')
-    expect(result.data.articles[0].route).toBe('/blog/a-post')
-    expect(result.data.articles[1].route).toBe('/blog/b%20post')
-    // cached source records are NOT mutated (same collection may back other sections)
-    expect(articles[0].route).toBeUndefined()
+    expect(result.data.articles.map((a) => a.$route)).toEqual(['/blog/a-post', '/blog/b%20post'])
+    // cached source records are NOT mutated (one record may back other sections)
+    expect(articles[0]).not.toHaveProperty('$route')
   })
 
-  it('injects on the async fetch path too', async () => {
+  it('a fetch\'s `detailPage` picks the page, and wins over the query\'s own', () => {
+    const { entityStore, block } = seed([{ slug: 'x' }], {
+      detailPage: (ref) => (ref === 'page:detail' ? '/featured/:slug' : null),
+      recordPage: () => ({ route: '/blog/:slug', paramName: 'slug' }),
+    })
+    expect(entityStore.resolve(block, {}).data.articles[0].$route).toBe('/featured/x')
+  })
+
+  it('fills on the async fetch path too', async () => {
     const h = makeHarness({ fetcherImpl: () => Promise.resolve({ data: [{ slug: 'x', title: 'X' }] }) })
-    h.website.resolveDetailPageTemplate = () => '/blog/:slug'
-    const block = makeBlock({ page: makePage({ fetch: cfg }) }, h.website)
+    h.website.recordPageFor = () => ({ route: '/blog/:slug', paramName: 'slug' })
+    const block = makeBlock({ page: makePage({ route: '/', fetch: plain }) }, h.website)
     const result = await h.entityStore.fetch(block, {})
-    expect(result.data.articles[0].route).toBe('/blog/x')
+    expect(result.data.articles[0].$route).toBe('/blog/x')
   })
 
-  it('leaves records untouched for a dangling detailPage ref', () => {
-    const { entityStore, block } = seed([{ slug: 'a', title: 'A' }], () => null)
-    const result = entityStore.resolve(block, {})
-    expect(result.data.articles[0].route).toBeUndefined()
+  it('a dangling `detailPage` falls back to the query\'s page', () => {
+    const { entityStore, block } = seed([{ slug: 'a' }], { recordPage: () => ({ route: '/blog/:slug', paramName: 'slug' }) })
+    expect(entityStore.resolve(block, {}).data.articles[0].$route).toBe('/blog/a')
   })
 
-  it('preserves a record’s existing baked route (file lane back-compat)', () => {
-    const { entityStore, block } = seed(
-      [{ slug: 'a', title: 'A', route: '/blog/a' }],
-      () => '/other/:slug'
-    )
-    const result = entityStore.resolve(block, {})
-    expect(result.data.articles[0].route).toBe('/blog/a')
+  it('no page for the query, and no `detailPage` — no link', () => {
+    const { entityStore, block } = seed([{ slug: 'a' }], { fetch: plain })
+    expect(entityStore.resolve(block, {}).data.articles[0]).not.toHaveProperty('$route')
   })
 
-  it('skips a record missing the :param field (no broken href)', () => {
-    const { entityStore, block } = seed([{ title: 'no slug' }], () => '/blog/:slug')
-    const result = entityStore.resolve(block, {})
-    expect(result.data.articles[0].route).toBeUndefined()
+  it('⭐ a record\'s own `route` is the author\'s field — never read, never overwritten', () => {
+    const { entityStore, block } = seed([{ slug: 'a', route: 'north-trail' }], { fetch: plain, recordPage: () => ({ route: '/blog/:slug', paramName: 'slug' }) })
+    const record = entityStore.resolve(block, {}).data.articles[0]
+    expect(record.route).toBe('north-trail')
+    expect(record.$route).toBe('/blog/a')
   })
 
-  it('is a no-op when the fetch config declares no detailPage', () => {
-    const plain = { path: '/data/articles.json', as: 'articles' }
-    const h = makeHarness()
-    h.website.resolveDetailPageTemplate = () => '/blog/:slug'
-    h.dataStore.set(deriveCacheKey(plain), { data: [{ slug: 'a', title: 'A' }] })
-    const block = makeBlock({ page: makePage({ fetch: plain }) }, h.website)
-    const result = h.entityStore.resolve(block, {})
-    expect(result.data.articles[0].route).toBeUndefined()
+  it('skips a record missing the :param field — no broken href', () => {
+    const { entityStore, block } = seed([{ title: 'no slug' }], { fetch: plain, recordPage: () => ({ route: '/blog/:slug', paramName: 'slug' }) })
+    expect(entityStore.resolve(block, {}).data.articles[0]).not.toHaveProperty('$route')
   })
 })
 
-describe('EntityStore + real Website: end-to-end detailPage resolution', () => {
-  it('a list preview on ANY page links to the collection’s canonical detail (real _pageIdMap)', () => {
-    // A site where Home carries an articles preview but the detail page lives
-    // under Blog — the exact cross-page case the runtime scan got wrong.
-    const w = new Website({
-      content: {
-        config: { name: 'T', defaultLanguage: 'en' },
-        theme: {},
-        pages: [
-          { route: '/', isIndex: true, title: 'Home', sections: [] },
-          { route: '/blog', id: 'blog-list', title: 'Blog', sections: [] },
-          {
-            route: '/blog/:slug',
-            id: 'article-detail',
-            isDynamic: true,
-            paramName: 'slug',
-            title: 'Article',
-            sections: [],
-          },
-        ],
-      },
-    })
+describe('`$route` through a real Website — a list on any page links to its query\'s page', () => {
+  const site = () => new Website({
+    content: {
+      config: { name: 'T', defaultLanguage: 'en', queries: { articles: { schema: '@std/article' }, news: { schema: '@std/article' } } },
+      theme: {},
+      pages: [
+        { route: '/', isIndex: true, title: 'Home', sections: [] },
+        { route: '/blog', id: 'blog-list', title: 'Blog', sections: [], fetch: { query: 'articles', as: 'articles' } },
+        { route: '/blog/:slug', id: 'article-detail', isDynamic: true, paramName: 'slug', title: 'Article', sections: [] },
+        { route: '/news', title: 'News', sections: [], fetch: { query: 'news', as: 'news' } },
+        { route: '/news/:slug', id: 'news-detail', isDynamic: true, paramName: 'slug', title: 'News item', sections: [] },
+      ],
+    },
+  })
+  const homeBlock = (w, fetch) => ({ fetch: null, dynamicContext: null, page: { route: '/', fetch, parent: null, dynamicContext: null }, website: w })
+  const records = [{ slug: 'first', title: 'First' }, { slug: 'second', title: 'Second' }]
 
-    const cfg = {
-      path: '/data/articles.json',
-      as: 'articles',
-      detailPage: 'page:article-detail',
-    }
-    w.dataStore.set(deriveCacheKey(cfg), {
-      data: [{ slug: 'first', title: 'First' }, { slug: 'second', title: 'Second' }],
-    })
-
-    // A block on the HOME page (route '/') whose fetch pulls the articles preview.
-    const block = {
-      fetch: null,
-      dynamicContext: null,
-      page: { route: '/', fetch: cfg, parent: null, dynamicContext: null },
-      website: w,
-    }
-
-    const result = w.entityStore.resolve(block, {})
+  it('a preview on the home page links to the page whose route query is its query — no `detailPage` needed', () => {
+    const w = site()
+    const fetch = { query: 'articles', as: 'articles', limit: 2 }
+    const resolved = resolveFetchConfigs([fetch], { queries: w.config.queries, locale: 'en', defaultLocale: 'en' }).get('articles')
+    w.dataStore.set(deriveCacheKey(resolved), { data: records })
+    const result = w.entityStore.resolve(homeBlock(w, fetch), {})
     expect(result.status).toBe('ready')
-    // Cards link to /blog/:slug (canonical), NOT /first relative to Home.
-    expect(result.data.articles.map((a) => a.route)).toEqual(['/blog/first', '/blog/second'])
+    expect(result.data.articles.map((a) => a.$route)).toEqual(['/blog/first', '/blog/second'])
+  })
+
+  it('a `detailPage` resolves through the real page ids', () => {
+    const w = site()
+    const fetch = { query: 'articles', as: 'articles', detailPage: 'page:news-detail' }
+    const resolved = resolveFetchConfigs([fetch], { queries: w.config.queries, locale: 'en', defaultLocale: 'en' }).get('articles')
+    w.dataStore.set(deriveCacheKey(resolved), { data: records })
+    expect(w.entityStore.resolve(homeBlock(w, fetch), {}).data.articles[0].$route).toBe('/news/first')
   })
 })
 
-describe('EntityStore detailPage — SECTION-level (block.fetch) resolution', () => {
-  it('resolves detailPage from a SECTION own fetch (block.fetch) on a page with NO page fetch', () => {
-    const cfg = { path: '/data/articles.json', as: 'articles', detailPage: 'page:detail' }
+describe('`$route` from a SECTION\'s own fetch', () => {
+  it('a section\'s own `detailPage` wins over its page\'s for the same key', () => {
+    const sectionCfg = { query: 'articles', path: '/data/articles.json', as: 'articles', detailPage: 'page:section' }
+    const pageCfg = { query: 'articles', path: '/data/articles.json', as: 'articles', detailPage: 'page:page' }
     const h = makeHarness()
-    h.website.resolveDetailPageTemplate = () => '/blog/:slug'
-    h.dataStore.set(deriveCacheKey(cfg), { data: [{ slug: 'x', title: 'X' }] })
-    // The section carries its own full fetch; the page has none.
-    const block = makeBlock({ fetch: cfg, page: makePage({ fetch: null }) }, h.website)
-    const result = h.entityStore.resolve(block, {})
-    expect(result.status).toBe('ready')
-    expect(result.data.articles[0].route).toBe('/blog/x')
-  })
-
-  it('section fetch.detailPage WINS over page fetch.detailPage for the same schema', () => {
-    const sectionCfg = { path: '/data/articles.json', as: 'articles', detailPage: 'page:section' }
-    const pageCfg = { path: '/data/articles.json', as: 'articles', detailPage: 'page:page' }
-    const h = makeHarness()
-    h.website.resolveDetailPageTemplate = (ref) =>
-      ref === 'page:section' ? '/section/:slug' : '/page/:slug'
+    h.website.resolveDetailPageTemplate = (ref) => (ref === 'page:section' ? '/section/:slug' : '/page/:slug')
     h.dataStore.set(deriveCacheKey(sectionCfg), { data: [{ slug: 'x' }] })
-    const block = makeBlock({ fetch: sectionCfg, page: makePage({ fetch: pageCfg }) }, h.website)
-    const result = h.entityStore.resolve(block, {})
-    expect(result.data.articles[0].route).toBe('/section/x')
+    const block = makeBlock({ fetch: sectionCfg, page: makePage({ route: '/', fetch: pageCfg }) }, h.website)
+    expect(h.entityStore.resolve(block, {}).data.articles[0].$route).toBe('/section/x')
+  })
+})
+
+describe('`$route` on the records a section already HOLDS — its own fetch, prerendered into its content', () => {
+  // The static build bakes a section's own fetch into `parsedContent.data`, and a key the
+  // block holds outranks the store's answer (`prepareProps`), so the store's `$route`
+  // never reached the component. `linkOwnRecords` links what it holds by the same rule.
+  const plain = { query: 'articles', as: 'articles', path: '/data/articles.json' }
+  function held(data, fetch = plain) {
+    const h = makeHarness()
+    h.website.recordPageFor = (q) => (q === 'articles' ? { route: '/blog/:slug', paramName: 'slug' } : null)
+    const block = makeBlock({ fetch, parsedContent: { data }, page: makePage({ route: '/' }) }, h.website)
+    return { ...h, block }
+  }
+
+  it('links the records under its own fetch\'s key, and writes into nothing it was given', () => {
+    const data = { articles: [{ slug: 'a' }, { slug: 'b' }] }
+    const { entityStore, block } = held(data)
+    entityStore.linkOwnRecords(block)
+    expect(block.parsedContent.data.articles.map((a) => a.$route)).toEqual(['/blog/a', '/blog/b'])
+    expect(data.articles[0]).not.toHaveProperty('$route')
+    expect(block.parsedContent.data).not.toBe(data)
+  })
+
+  it('a second render changes nothing — the linked data keeps its identity', () => {
+    const { entityStore, block } = held({ articles: [{ slug: 'a' }] })
+    entityStore.linkOwnRecords(block)
+    const once = block.parsedContent.data
+    entityStore.linkOwnRecords(block)
+    expect(block.parsedContent.data).toBe(once)
+    expect(block.parsedContent.data.articles).toBe(once.articles)
+  })
+
+  it('CONTROL — a key no fetch of its own binds is not linked, and nothing is replaced', () => {
+    const data = { articles: [{ slug: 'a' }] }
+    const { entityStore, block } = held(data, { query: 'news', as: 'news', path: '/data/news.json' })
+    entityStore.linkOwnRecords(block)
+    expect(block.parsedContent.data).toBe(data)
+    expect(data.articles[0]).not.toHaveProperty('$route')
+  })
+
+  it('a block with no fetch of its own is left alone', () => {
+    const data = { articles: [{ slug: 'a' }] }
+    const { entityStore, block } = held(data, null)
+    entityStore.linkOwnRecords(block)
+    expect(block.parsedContent.data).toBe(data)
   })
 })
 

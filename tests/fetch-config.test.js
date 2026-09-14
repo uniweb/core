@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isFetchRefinement, resolveFetchConfigs, routeQuery, pageRouteQuery, routeSelection, sectionFetches, withoutRouteVariables, othersView, othersOf, currentOf } from '../src/fetch-config.js'
+import { isFetchRefinement, resolveFetchConfigs, routeQuery, pageRouteQuery, recordPages, routeSelection, sectionFetches, withoutRouteVariables, othersView, othersOf, currentOf } from '../src/fetch-config.js'
 // Derived, never re-spelled: the convention is pinned once, in
 // `tests/data-paths.test.js`. See the note there before pinning it again.
 import { queryDataUrl, recordDataUrl } from '../src/data-paths.js'
@@ -628,6 +628,48 @@ describe('pageRouteQuery — the route query is chosen at the page that captured
 
   it('CONTROL — a page on no parametric route has none', () => {
     expect(pageRouteQuery(byRoute.get('/about'), access)).toBeNull()
+  })
+})
+
+describe('recordPages — the page each query\'s records link to, over a content document (ruled 2026-09-14)', () => {
+  // The shape a host and projections hold: plain page objects, parents found by route.
+  const content = (pages, site = null) => {
+    const byRoute = new Map(pages.map((p) => [p.route, p]))
+    return recordPages(pages, {
+      routeOf: (p) => p.route,
+      parentOf: (p) => byRoute.get(p.route.split('/').slice(0, -1).join('/') || '/') ?? null,
+      fetchOf: (p) => p.fetch ?? null,
+      sectionsOf: (p) => p.sections,
+      site,
+    })
+  }
+
+  it('maps a query to the first parametric page, in page order, whose route query it is', () => {
+    const map = content([
+      { route: '/blog', fetch: 'articles' },
+      { route: '/blog/:slug' },
+      { route: '/archive', fetch: { query: 'articles', as: 'old' } },
+      { route: '/archive/:slug' },
+      { route: '/team', fetch: { query: 'members', as: 'people' } },
+      { route: '/team/:id' },
+    ])
+    expect([...map.keys()]).toEqual(['articles', 'members'])
+    expect(map.get('articles')).toMatchObject({ route: '/blog/:slug', key: 'articles' })
+    expect(map.get('members')).toMatchObject({ route: '/team/:id', key: 'people' })
+  })
+
+  it('a nested page, a static page, and a page whose sections disagree give no record page', () => {
+    const map = content([
+      { route: '/team', fetch: { query: 'members', as: 'members' } },
+      { route: '/team/:slug/cv' },
+      { route: '/about', fetch: { query: 'about', as: 'about' } },
+      { route: '/misc/:slug', sections: [{ fetch: { query: 'a', as: 'a' } }, { fetch: { query: 'b', as: 'b' } }] },
+    ])
+    expect(map.size).toBe(0)
+  })
+
+  it('the site\'s query routes a top-level parametric page', () => {
+    expect(content([{ route: '/:slug' }], { query: 'people', as: 'people' }).get('people')).toMatchObject({ route: '/:slug' })
   })
 })
 

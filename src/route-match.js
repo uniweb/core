@@ -479,12 +479,13 @@ export function recordRouteBase(route) {
  *
  * `/blog/:slug` + `{ slug: 'a post' }` → `/blog/a%20post`. Every value is
  * `encodeURIComponent`-ed, because the output is a URL: it is compared against
- * `location.pathname` (`isActive(item.route)`) and matched back through
+ * `location.pathname` (`isActive(item.$route)`) and matched back through
  * `matchDynamicRoute`, which decodes what it captures. A raw interpolation and an
  * encoded one compare unequal on the first slug with a space — and they used to
  * both exist: the build baked `${base}/${item.slug}` raw into `/data/*.json` while
  * the runtime interpolated with encoding, and which one a site got was
- * lane-dependent (measured 2026-09-04). Two producers of one field now call this.
+ * lane-dependent (measured 2026-09-04). The build bakes no link since 2026-09-14;
+ * the runtime's `$route` and a search index's record URL both call this.
  *
  * ⛔ NOT for a file path. The SSG writes `dist/<route>/index.html` from the DECODED
  * value on purpose — a server decodes the request path before looking a file up,

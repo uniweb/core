@@ -129,31 +129,82 @@ describe('the page is about one record, so the record is asked first (F3)', () =
   })
 })
 
-describe('detailTemplateFor — which field a site routes a key\'s records by', () => {
-  it('answers from the template page whose parent query lands under the key', () => {
+describe('recordPageFor — the page a query\'s records link to (ruled 2026-09-14)', () => {
+  const pagesOf = (pages) => new Website({ content: { config: { name: 'T', defaultLanguage: 'en' }, theme: {}, pages } })
+
+  it('answers from the parametric page whose route query is the query', () => {
     const w = site()
-    expect(w.detailTemplateFor('articles')).toEqual({ route: '/blog/:slug', paramName: 'slug' })
+    expect(w.recordPageFor('articles')).toEqual({ route: '/blog/:slug', paramName: 'slug' })
   })
 
-  it('is null for a key the site routes no detail page over, and for no key', () => {
+  it('is null for a query the site routes no page over, and for no query', () => {
     const w = site()
-    expect(w.detailTemplateFor('people')).toBeNull()
-    expect(w.detailTemplateFor(undefined)).toBeNull()
+    expect(w.recordPageFor('people')).toBeNull()
+    expect(w.recordPageFor(undefined)).toBeNull()
   })
 
   it('reports the author\'s own param name, not a default', () => {
-    const w = new Website({
-      content: {
-        config: { name: 'T', defaultLanguage: 'en' },
-        theme: {},
-        pages: [
-          { route: '/', isIndex: true, title: 'Home', sections: [] },
-          { route: '/products', title: 'P', sections: [], fetch: { query: 'products', path: '/data/products.json', as: 'products' } },
-          { route: '/products/:id', isDynamic: true, paramName: 'id', title: 'Product', sections: [] },
-        ],
-      },
+    const w = pagesOf([
+      { route: '/', isIndex: true, title: 'Home', sections: [] },
+      { route: '/products', title: 'P', sections: [], fetch: { query: 'products', path: '/data/products.json', as: 'products' } },
+      { route: '/products/:id', isDynamic: true, paramName: 'id', title: 'Product', sections: [] },
+    ])
+    expect(w.recordPageFor('products')).toEqual({ route: '/products/:id', paramName: 'id' })
+  })
+
+  it('several pages route the query — the first in page order', () => {
+    const w = pagesOf([
+      { route: '/blog', title: 'Blog', sections: [], fetch: { query: 'articles', as: 'articles' } },
+      { route: '/blog/:slug', isDynamic: true, paramName: 'slug', title: 'A', sections: [] },
+      { route: '/archive', title: 'Archive', sections: [], fetch: { query: 'articles', as: 'articles' } },
+      { route: '/archive/:slug', isDynamic: true, paramName: 'slug', title: 'B', sections: [] },
+    ])
+    expect(w.recordPageFor('articles').route).toBe('/blog/:slug')
+  })
+
+  it('⛔ the same schema is not enough — a page routing another query over it is not the page', () => {
+    const w = pagesOf([
+      { route: '/news', title: 'News', sections: [], fetch: { query: 'news', as: 'news' } },
+      { route: '/news/:slug', isDynamic: true, paramName: 'slug', title: 'N', sections: [] },
+    ])
+    w.config.queries = { news: { schema: '@std/article' }, articles: { schema: '@std/article' } }
+    expect(w.recordPageFor('news').route).toBe('/news/:slug')
+    expect(w.recordPageFor('articles')).toBeNull()
+  })
+
+  it('⛔ a page nested inside a parametric page is not a record\'s page', () => {
+    const w = pagesOf([
+      { route: '/team', title: 'Team', sections: [], fetch: { query: 'members', as: 'members' } },
+      { route: '/team/:slug/cv', isDynamic: true, paramName: 'slug', title: 'CV', sections: [] },
+    ])
+    expect(w.recordPageFor('members')).toBeNull()
+  })
+
+  it('⭐ answers on a PRERENDERED payload too — concrete pages that carry their template\'s route, and no template', () => {
+    // A static build replaces `/logbook/:path*` with one page per record
+    // (`expandDynamicPages`); the payload it prerenders and hydrates holds no template.
+    // ⛔ Measured on the `dynamic` template: read from templates alone, no record linked.
+    const concrete = (route, capture) => ({
+      route, title: capture, parent: '/logbook', sections: [],
+      dynamicContext: { templateRoute: '/logbook/:path*', params: { path: capture }, paramName: 'slug', paramValue: capture.split('/').pop() },
     })
-    expect(w.detailTemplateFor('products')).toEqual({ route: '/products/:id', paramName: 'id' })
+    const w = pagesOf([
+      { route: '/logbook', title: 'Logbook', sections: [], fetch: { query: 'logbook', as: 'logbook' } },
+      concrete('/logbook/field/river-survey', 'field/river-survey'),
+      concrete('/logbook/welcome', 'welcome'),
+    ])
+    expect(w.recordPageFor('logbook')).toEqual({ route: '/logbook/:path*', paramName: 'slug' })
+  })
+
+  it('⛔ answers by query NAME, never by the key the route query lands under', () => {
+    // `detailTemplateFor`, which this replaced, answered for either — so a page whose route
+    // query landed under the key `posts` answered for any query delivered as `posts`.
+    const w = pagesOf([
+      { route: '/blog', title: 'Blog', sections: [], fetch: { query: 'articles', as: 'posts' } },
+      { route: '/blog/:id', isDynamic: true, paramName: 'id', title: 'Post', sections: [] },
+    ])
+    expect(w.recordPageFor('articles')).toEqual({ route: '/blog/:id', paramName: 'id' })
+    expect(w.recordPageFor('posts')).toBeNull()
   })
 })
 
@@ -271,14 +322,12 @@ describe('the route query is chosen at the page level — the page, its parent, 
     expect(page.title).toBe('Ada')
   })
 
-  it('detailTemplateFor answers by query name too — the two differ under an `as:` override', () => {
+  it('recordPageFor answers for the site\'s query on a top-level parametric page', () => {
     const w = withPages([
       { route: '/', isIndex: true, title: 'Home', sections: [] },
-      { route: '/blog', title: 'Blog', sections: [], fetch: { query: 'articles', path: '/data/articles.json', as: 'posts' } },
-      { route: '/blog/:id', isDynamic: true, paramName: 'id', title: 'Post', sections: [] },
-    ])
-    expect(w.detailTemplateFor('posts')).toEqual({ route: '/blog/:id', paramName: 'id' })
-    expect(w.detailTemplateFor('articles')).toEqual({ route: '/blog/:id', paramName: 'id' })
+      { route: '/:slug', isDynamic: true, paramName: 'slug', title: 'Person', sections: [] },
+    ], { fetch: { query: 'people', path: '/data/people.json', as: 'people' } })
+    expect(w.recordPageFor('people')).toEqual({ route: '/:slug', paramName: 'slug' })
   })
 })
 
