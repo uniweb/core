@@ -5,6 +5,7 @@
  */
 import { describe, it, expect, vi } from 'vitest'
 import DataStore, { deriveCacheKey, recordIdentity } from '../src/datastore.js'
+import FetcherDispatcher from '../src/fetcher-dispatcher.js'
 
 const brief = (uuid, extra = {}) => ({ $uuid: uuid, $name: uuid, title: `Title ${uuid}`, ...extra })
 const full = (uuid, extra = {}) => ({ ...brief(uuid), body: `Body ${uuid}`, ...extra })
@@ -101,6 +102,24 @@ describe('R3 — an upgrade merges, it does not replace', () => {
     // materialization is cached between index writes
     expect(store.get('k-list')).toBe(store.get('k-list'))
   })
+
+  it('a list FETCHED after its record was held whole delivers it whole on that same pass (2026-09-14)', async () => {
+    // ⛔ The dispatcher returned what ARRIVED on a miss, so the upgrade reached the list
+    // only on a later read from the cache. A parametric page on the records service
+    // asked its list beside its record until 2026-09-14, which hid it.
+    const dataStore = new DataStore()
+    const answers = {
+      rec: { data: full('a'), meta: { whole: true } },
+      list: { data: [brief('a'), brief('b')], meta: { whole: false } },
+    }
+    const defaultFetcher = { resolve: (req) => Promise.resolve(answers[req.as]) }
+    const dispatcher = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher })
+    await dispatcher.dispatch({ url: 'https://h.example/rec', as: 'rec' })
+    const list = await dispatcher.dispatch({ url: 'https://h.example/list', as: 'list' })
+    expect(list.data[0].body).toBe('Body a')
+    expect(list.data[1]).toEqual(brief('b'))
+    expect(list.meta).toEqual({ whole: false })
+  })
 })
 
 describe('the rest of the store is unchanged by the index', () => {
@@ -165,5 +184,20 @@ describe('deriveCacheKey — two identities (F11)', () => {
   it('CONTROL — the addressed key is stable across field order, and a view is part of it', () => {
     expect(deriveCacheKey({ path: '/a', as: 'x' })).toBe(deriveCacheKey({ as: 'x', path: '/a' }))
     expect(deriveCacheKey({ path: '/a', as: 'x', limit: 3 })).not.toBe(deriveCacheKey({ as: 'x', path: '/a' }))
+  })
+
+  it('`narrow` is part of both identities, in one field order — and an empty one is none (2026-09-14)', () => {
+    const set = { query: 'articles', as: 'articles', schema: '@std/article', limit: 100 }
+    expect(deriveCacheKey({ ...set, narrow: { limit: 3 } })).not.toBe(deriveCacheKey(set))
+    expect(deriveCacheKey({ ...set, narrow: { where: { tags: 'x' }, limit: 3 } }))
+      .toBe(deriveCacheKey({ ...set, narrow: { limit: 3, where: { tags: 'x' } } }))
+    expect(deriveCacheKey({ ...set, narrow: {} })).toBe(deriveCacheKey(set))
+    // two records of one set are two entries
+    expect(deriveCacheKey({ ...set, narrow: { match: { $name: 'a' } } }))
+      .not.toBe(deriveCacheKey({ ...set, narrow: { match: { $name: 'b' } } }))
+    const file = { path: '/data/articles.json', as: 'articles' }
+    expect(deriveCacheKey({ ...file, narrow: { limit: 3 } })).not.toBe(deriveCacheKey(file))
+    // ⭐ a fetch's count is not the query's: the same number at the other level is another question
+    expect(deriveCacheKey({ ...file, limit: 3 })).not.toBe(deriveCacheKey({ ...file, narrow: { limit: 3 } }))
   })
 })

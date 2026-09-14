@@ -58,6 +58,9 @@ export { applyScope, withinScope } from './scope.js'
 // (materialization, the `route:` bake) and by `@uniweb/runtime` (the fallback),
 // which is what keeps the static and live lanes answering a query identically.
 export { parseSort, sortRecords, sortToWire } from './sort.js'
+// A config's set, then its `narrow` — the one order of work the runtime's default
+// fetcher and `@uniweb/build` both evaluate a fetch with.
+export { evaluateQuery } from './query-evaluation.js'
 export {
   fillRoutePattern,
   splitPathCapture,

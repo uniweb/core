@@ -115,6 +115,18 @@ describe('the page is about one record, so the record is asked first (F3)', () =
     expect(first.notFound).toBeFalsy()
     expect(w.getPage('/blog/hello')).not.toBe(first)
   })
+
+  it('⭐ on a live lane an answered record question of `[]` is a definitive not-found — no list needed (2026-09-14)', () => {
+    // The record question checks the route query's set, so its empty answer means the set
+    // does not hold the record; the page asks no list beside it any more.
+    const w = site(LIVE)
+    w.dataStore.set(recordKey(w, 'nope'), { data: [] })
+    const page = w.getPage('/blog/nope')
+    expect(page.notFound).toBe(true)
+    expect(page.title).toBe('Not found')
+    // and the answer was available, so the page is cached
+    expect(w.getPage('/blog/nope')).toBe(page)
+  })
 })
 
 describe('detailTemplateFor — which field a site routes a key\'s records by', () => {
@@ -298,12 +310,13 @@ describe('a page nested inside a parametric page is parametric too (ruled 2026-0
   })
 })
 
-describe('a record past the list page\'s `limit` is not "Not found" (ruled 2026-09-13)', () => {
-  // ⛔ Until then the probe read the list the `limit` cut, and a record past it was
-  // declared not found as soon as that list was cached.
-  const limited = () => new Website({
+describe('a parametric page\'s record is one of its route query\'s set — a fetch\'s `limit` decides nothing, the query\'s does (ruled 2026-09-14)', () => {
+  // ⛔ Until 2026-09-13 the probe read the list a fetch's `limit` cut, and a record past it
+  // was declared not found as soon as that list was cached. ⛔ Until 2026-09-14 no `limit`
+  // counted — the query's included.
+  const limited = (queries = { articles: { schema: '@x/article' } }) => new Website({
     content: {
-      config: { name: 'T', defaultLanguage: 'en' },
+      config: { name: 'T', defaultLanguage: 'en', queries },
       theme: {},
       pages: [
         { route: '/', isIndex: true, title: 'Home', sections: [] },
@@ -313,19 +326,30 @@ describe('a record past the list page\'s `limit` is not "Not found" (ruled 2026-
     },
   })
   const records = [{ slug: 'hello', title: 'Hello' }, { slug: 'world', title: 'World' }]
+  const file = { query: 'articles', as: 'articles', path: '/data/articles.json' }
 
-  it('the cut list alone claims nothing about a record past it', () => {
+  it('the list a fetch narrowed claims nothing about a record past its count', () => {
     const w = limited()
-    w.dataStore.set(deriveCacheKey({ query: 'articles', as: 'articles', path: '/data/articles.json', limit: 1 }), { data: records.slice(0, 1) })
+    w.dataStore.set(deriveCacheKey({ ...file, narrow: { limit: 1 } }), { data: records.slice(0, 1) })
     const page = w.getPage('/blog/world')
     expect(page.notFound).toBeFalsy()
     expect(page.title).toBe('Article')
   })
 
-  it('the whole selection titles it', () => {
+  it('the set titles it', () => {
     const w = limited()
-    w.dataStore.set(deriveCacheKey({ query: 'articles', as: 'articles', path: '/data/articles.json' }), { data: records })
+    w.dataStore.set(deriveCacheKey(file), { data: records })
     expect(w.getPage('/blog/world').title).toBe('World')
+  })
+
+  it('⛔ a record past the QUERY\'s `limit` is not found once the set is loaded — a query\'s count is part of what it selects', () => {
+    const w = limited({ articles: { schema: '@x/article', limit: 1 } })
+    // the set: the query as saved, its `limit` included
+    w.dataStore.set(deriveCacheKey({ ...file, limit: 1 }), { data: records.slice(0, 1) })
+    const page = w.getPage('/blog/world')
+    expect(page.notFound).toBe(true)
+    // CONTROL — the record the set holds is titled
+    expect(w.getPage('/blog/hello').title).toBe('Hello')
   })
 })
 

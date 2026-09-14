@@ -343,7 +343,15 @@ export default class FetcherDispatcher {
 
       const entry = meta !== undefined ? { data, meta } : { data }
       this._dataStore.set(key, entry)
-      return { data, meta }
+      // ⭐ What the store now HOLDS, not what arrived: an entry the record index filed
+      // materializes each record at the depth the index holds it — so a list fetched
+      // after its record was fetched whole delivers that record whole, on this pass as
+      // on every later read (R3). ⛔ Until 2026-09-14 a miss returned what arrived, and
+      // the upgrade reached a list only once it was read back from the cache — which a
+      // parametric page on the records service happened to do, by asking its list
+      // beside its record, until its record question checked the set on its own.
+      const held = this._dataStore.get(key)
+      return held ? { data: held.data, meta: held.meta } : { data, meta }
     } catch (err) {
       if (this._dataStore.inflight.get(key) === inflight) {
         this._dataStore.inflight.delete(key)

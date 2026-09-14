@@ -23,10 +23,10 @@
  *
  * An ADDRESSED request — `path` or `url` — is identified by where it goes (the
  * address, the binding key, the unwrap, and for a POST its method and body) AND by
- * the view it takes of what came back: `scope`, `where`, `sort`, `limit`, which
- * the default fetcher evaluates locally over the file. `query` is not hashed: the
- * address already carries it (a query's list and its per-record file are
- * different addresses).
+ * the view it takes of what came back: the set — `scope`, `where`, `sort`, `limit` —
+ * and the `narrow` taken of it, which the default fetcher evaluates locally over the
+ * file (`evaluateQuery`). `query` is not hashed: the address already carries it (a
+ * query's list and its per-record file are different addresses).
  *
  * ⛔ **The view was left out until 2026-09-11, on the belief that operators "are
  * applied after the fetch over one shared copy".** They were applied BEFORE the
@@ -39,12 +39,18 @@
  * for the same request."*
  *
  * An ADDRESS-LESS request — a QUESTION sent to the records service — is
- * identified by the question: `query`, `schema`, `scope`, `where`, `match`,
- * `sort`, `limit`, `whole`. ⛔ The reason: with no per-query address, two pages
- * binding one `as` to two queries would otherwise share an entry, and a list
- * (brief) and a record (whole) of one query would collide — the one defect on
- * this path that delivers WRONG data rather than none. `match` is the record a
- * parametric page asks for; without it every record's question is one entry.
+ * identified by the question: `query`, `schema`, `scope`, `where`, `sort`, `limit`,
+ * `narrow`, `whole`. ⛔ The reason: with no per-query address, two pages binding one
+ * `as` to two queries would otherwise share an entry, and a list (brief) and a
+ * record (whole) of one query would collide — the one defect on this path that
+ * delivers WRONG data rather than none. `narrow.match` is the record a parametric
+ * page asks for; without it every record's question is one entry.
+ *
+ * ⭐ `narrow` is hashed field by field, in one order — `where`, `match`, `sort`,
+ * `cursor`, `limit` — so two producers that build the same narrowing in a different
+ * key order share an entry, and a `narrow` with nothing in it is no `narrow`. ⛔ Until
+ * 2026-09-14 a fetch's narrowing was merged into the top-level fields and `match` sat
+ * beside them (`@uniweb/core/fetch-config`, `setAndNarrow`).
  *
  * `locale` is hashed on both when present: two locales' answers must not share
  * an entry, and an asked config always carries the locale it was asked in.
@@ -62,15 +68,24 @@ export function deriveCacheKey(request) {
     ? request.method.toUpperCase()
     : undefined
   const body = method === 'POST' ? request?.body : undefined
-  const { query, schema, scope, where, match, sort, limit, whole } = request || {}
+  const { query, schema, scope, where, sort, limit, whole } = request || {}
+  const narrow = canonicalNarrow(request?.narrow)
   if (path || url) {
     // ⚠️ The field NAME is part of the hash, so renaming it moves every key ONCE.
     // In-memory stores repopulate; a consumer with a persistent cache takes one
     // cold pass. Chosen over hashing under the old name, which would have hidden
     // the rename inside the one function whose job is to be canonical.
-    return JSON.stringify({ path, url, as, transform, method, body, locale, scope, where, sort, limit })
+    return JSON.stringify({ path, url, as, transform, method, body, locale, scope, where, sort, limit, narrow })
   }
-  return JSON.stringify({ query, schema, scope, where, match, sort, limit, whole, as, transform, locale })
+  return JSON.stringify({ query, schema, scope, where, sort, limit, narrow, whole, as, transform, locale })
+}
+
+/** A `narrow` in one field order, or `undefined` when it holds nothing. */
+function canonicalNarrow(narrow) {
+  if (!narrow || typeof narrow !== 'object') return undefined
+  const { where, match, sort, cursor, limit } = narrow
+  if ([where, match, sort, cursor, limit].every((v) => v === undefined)) return undefined
+  return { where, match, sort, cursor, limit }
 }
 
 /**

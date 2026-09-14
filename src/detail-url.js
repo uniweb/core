@@ -69,7 +69,7 @@ export const ROUTE_HANDLE_KEY = routeRecordKey('slug')
  * config (post-`resolveFetchConfigs`, which set `detail` — see `./fetch-config.js`).
  * Three sources, and no others:
  *
- *   - **the records service** — the route query's own question, plus `match`;
+ *   - **the records service** — the route query's set, plus `narrow.match`;
  *   - **an external query's `record:`** — its `url` (the query's when it names none),
  *     `method` (likewise), `body` and `transform` — ⛔ never the list's `body` or
  *     `transform`, since a record response is rarely wrapped the way the list is;
@@ -97,22 +97,30 @@ export function buildDetailConfig(queryConfig, dynamicContext) {
   const { paramName, paramValue, record = null } = dynamicContext
   if (!paramName || paramValue === undefined) return null
 
-  // ⭐ THE RECORDS SERVICE: the record is the route query's own question, unchanged,
-  // plus `match` — the one key the page's folder names and the URL's value for it
-  // (`routeRecordKey`: `[slug]` → `$name`, `[uuid]` → `$uuid`, `[id]` → `id`) —
-  // asked in full. `sort` and `limit` are the list's and drop; `scope` and the
-  // authored `where` stay AS WRITTEN, so a query's conditions cannot be escaped
-  // through the URL (the records contract, §1a).
+  // ⭐ THE RECORDS SERVICE: the record is the route query's SET — the query as saved,
+  // its `scope`, `where`, `sort` and `limit` all kept — narrowed by `match`, the one
+  // key the page's folder names and the URL's value for it (`routeRecordKey`: `[slug]`
+  // → `$name`, `[uuid]` → `$uuid`, `[id]` → `id`), asked in full. So the one question
+  // answers the record if it is in the set and `[]` (not found) if it is not: a
+  // record outside the query's `limit` has no page, and a query's conditions cannot
+  // be escaped through the URL (ruled 2026-09-14 [Diego]).
   //
-  // ⛔ `where` is never touched. Until 2026-09-11 the handle was merged into it,
-  // which replaced any condition the author had on the same key; `where` is the
-  // author's and `match` is the visitor's [Diego]. The value is a string — it is a
-  // URL segment — and the service compares it as one, as the local match does.
+  // ⭐ The fetch's own narrowing drops: which pages exist is the query's to decide,
+  // never a list's (`routeSelection`). So every section of the page that asks its
+  // record asks this one question.
+  //
+  // ⛔ Until 2026-09-14 the record question dropped the query's `sort` and `limit` and
+  // sent `match` at the top level, so "this field note, if it is among the 100" was
+  // asked as "this field note". ⛔ And `where` is never touched: until 2026-09-11 the
+  // handle was merged into it, which replaced any condition the author had on the same
+  // key; `where` is the author's and `match` is the visitor's [Diego]. The value is a
+  // string — it is a URL segment — and the service compares it as one, as the local
+  // match does.
   if (queryConfig.ask) {
-    const { sort, limit, detail: _detail, match: _match, ...rest } = queryConfig
+    const { narrow: _narrow, detail: _detail, match: _match, ...set } = queryConfig
     return {
-      ...rest,
-      match: { [routeRecordKey(paramName)]: String(paramValue) },
+      ...set,
+      narrow: { match: { [routeRecordKey(paramName)]: String(paramValue) } },
       whole: true,
       dynamicContext: { paramName, paramValue },
     }

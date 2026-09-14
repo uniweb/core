@@ -273,7 +273,14 @@ describe('route variables reach a query as placeholders — and an unbound one d
 
   it('binds :dir / :path / :slug as VALUES in where', () => {
     const cfg = resolveFetchConfigs(decl({ where: { tag: ':dir', $name: ':slug' } }), { variables: vars }).get('posts')
-    expect(cfg.where).toEqual({ tag: 'rust/2025', $name: 'my-post' })
+    expect(cfg.narrow.where).toEqual({ tag: 'rust/2025', $name: 'my-post' })
+  })
+
+  it('binds on both levels — the query\'s where and the fetch\'s own, in `narrow`', () => {
+    const queries = { posts: { schema: '@/post', where: { tag: ':dir' } } }
+    const cfg = resolveFetchConfigs(decl({ where: { $name: { ne: ':slug' } } }), { queries, variables: vars }).get('posts')
+    expect(cfg.where).toEqual({ tag: 'rust/2025' })
+    expect(cfg.narrow.where).toEqual({ $name: { ne: 'my-post' } })
   })
 
   // `scope` is the query's (ruled 2026-09-13), so a routed one is declared there
@@ -287,16 +294,18 @@ describe('route variables reach a query as placeholders — and an unbound one d
 
   it('⭐ unbound ⇒ the clause DROPS — one saved query serves the list page and the detail page', () => {
     const list = resolveFetchConfigs(decl({ where: { tag: ':dir', published: true } }), { queries: routedScope }).get('posts')
-    expect(list.where).toEqual({ published: true })
+    expect(list.narrow.where).toEqual({ published: true })
     expect('scope' in list).toBe(false)
+    // a `narrow` left with nothing in it is no `narrow` — the same entry as the whole set
     const only = resolveFetchConfigs(decl({ where: { tag: ':dir' } }), {}).get('posts')
+    expect('narrow' in only).toBe(false)
     expect('where' in only).toBe(false)
   })
 
   it('⭐ an EMPTY variable drops its clause too — :dir on a one-segment URL means no directory (ruled 2026-09-11)', () => {
     const one = { path: 'x', dir: '', slug: 'x' }
     const cfg = resolveFetchConfigs(decl({ where: { tag: ':dir', published: true } }), { variables: one }).get('posts')
-    expect(cfg.where).toEqual({ published: true })
+    expect(cfg.narrow.where).toEqual({ published: true })
     const scoped = resolveFetchConfigs(decl(), { queries: routedScope, variables: one }).get('posts')
     expect('scope' in scoped).toBe(false)
   })
@@ -306,14 +315,15 @@ describe('route variables reach a query as placeholders — and an unbound one d
       decl({ where: { or: [{ tag: ':dir' }, { pinned: true }], year: { gte: ':path' } } }),
       { variables: { path: 'a', dir: 'a', slug: 'a' } },
     ).get('posts')
-    expect(cfg.where).toEqual({ or: [{ tag: 'a' }, { pinned: true }], year: { gte: 'a' } })
-    const unbound = resolveFetchConfigs(decl({ where: { or: [{ tag: ':dir' }], year: { gte: ':path' } } }), {}).get('posts')
-    expect('where' in unbound).toBe(false)
+    expect(cfg.narrow.where).toEqual({ or: [{ tag: 'a' }, { pinned: true }], year: { gte: 'a' } })
+    const unbound = resolveFetchConfigs(decl({ where: { or: [{ tag: ':dir' }], year: { gte: ':path' } }, limit: 3 }), {}).get('posts')
+    // the where emptied out; the rest of the narrowing stays
+    expect(unbound.narrow).toEqual({ limit: 3 })
   })
 
   it('only the three standard names are variables — anything else is a literal value', () => {
     const cfg = resolveFetchConfigs(decl({ where: { tag: ':category', code: 'a:b' } }), { variables: vars }).get('posts')
-    expect(cfg.where).toEqual({ tag: ':category', code: 'a:b' })
+    expect(cfg.narrow.where).toEqual({ tag: ':category', code: 'a:b' })
   })
 
   it('does not mutate the authored declaration', () => {
@@ -333,10 +343,11 @@ describe('scope: is its own field on both lanes — `where.path.under` is retire
     expect('where' in cfg).toBe(false)
   })
 
-  it('sits beside a binding\'s where, both as written', () => {
+  it('sits beside a fetch\'s where, each at its own level, both as written', () => {
     const cfg = resolveFetchConfigs(decl({ where: { published: true } }), { queries: scoped('field') }).get('posts')
     expect(cfg.scope).toBe('field')
-    expect(cfg.where).toEqual({ published: true })
+    expect('where' in cfg).toBe(false)
+    expect(cfg.narrow.where).toEqual({ published: true })
   })
 
   it('binds :dir — and the list page, where :dir is unbound, sees the whole set', () => {
@@ -390,19 +401,21 @@ describe('a named query\'s routed clauses reach the compiled file\'s config — 
     expect('scope' in resolveFetchConfigs(ref({ scope: 'lab' }), {}).get('posts')).toBe(false)
   })
 
-  it('a binding\'s where JOINS the routed clauses — both must hold', () => {
+  it('a fetch\'s where narrows the set the routed clauses make — each at its own level', () => {
     const queries = { posts: { schema: '@/post', scope: ':dir', where: { tag: ':dir' } } }
     const cfg = resolveFetchConfigs(ref({ where: { pinned: true } }), { queries, variables: vars }).get('posts')
     expect(cfg.scope).toBe('field')
-    expect(cfg.where).toEqual({ and: [{ tag: 'field' }, { pinned: true }] })
+    expect(cfg.where).toEqual({ tag: 'field' })
+    expect(cfg.narrow).toEqual({ where: { pinned: true } })
   })
 })
 
-describe('a binding narrows its query and never widens it — the same question on both lanes (ruled 2026-09-13)', () => {
-  // ⛔ Measured before this rule: a binding REPLACED the query's where, sort and limit
+describe('a fetch narrows its query\'s set and never reaches past it — the same two levels on both lanes (ruled 2026-09-14)', () => {
+  // ⛔ Measured before 2026-09-13: a binding REPLACED the query's where, sort and limit
   // on the records service, while the static build had baked the query's into the
-  // file — the file delivered published records tagged x, the service was asked for
-  // every record tagged x.
+  // file. ⛔ From then until 2026-09-14 the two were MERGED into one flat question — the
+  // fetch's where joined the query's with `and`, and its sort and limit replaced the
+  // query's — so "the latest 3 among the query's 100" was asked as "the latest 3".
   const SERVICES = { records: '/_records/ask/{locale}' }
   const ref = (extra = {}) => [{ query: 'posts', path: '/data/posts.json', as: 'posts', ...extra }]
   const onFile = (queries, extra, variables = null) =>
@@ -410,54 +423,76 @@ describe('a binding narrows its query and never widens it — the same question 
   const asked = (queries, extra, variables = null) =>
     resolveFetchConfigs(ref(extra), { queries, variables, services: SERVICES, locale: 'en' }).get('posts')
 
-  it('the service is asked for records matching the query\'s where AND the binding\'s', () => {
+  it('the service is asked the query\'s where as the set, and the fetch\'s in `narrow`', () => {
     const queries = { posts: { schema: '@/post', where: { published: true } } }
-    expect(asked(queries, { where: { tag: 'x' } }).where).toEqual({ and: [{ published: true }, { tag: 'x' }] })
+    const cfg = asked(queries, { where: { tag: 'x' } })
+    expect(cfg.where).toEqual({ published: true })
+    expect(cfg.narrow).toEqual({ where: { tag: 'x' } })
     // either alone is itself
     expect(asked(queries, {}).where).toEqual({ published: true })
-    expect(asked({ posts: { schema: '@/post' } }, { where: { tag: 'x' } }).where).toEqual({ tag: 'x' })
+    expect(asked(queries, {})).not.toHaveProperty('narrow')
+    const bare = asked({ posts: { schema: '@/post' } }, { where: { tag: 'x' } })
+    expect(bare).not.toHaveProperty('where')
+    expect(bare.narrow).toEqual({ where: { tag: 'x' } })
   })
 
-  it('the compiled file carries the binding\'s where alone when the query\'s is fixed — the build applied that', () => {
+  it('the compiled file carries no fixed clause of the query\'s where — the build applied it — and the fetch\'s in `narrow`', () => {
     const queries = { posts: { schema: '@/post', where: { published: true } } }
-    expect(onFile(queries, { where: { tag: 'x' } }).where).toEqual({ tag: 'x' })
+    const cfg = onFile(queries, { where: { tag: 'x' } })
+    expect(cfg).not.toHaveProperty('where')
+    expect(cfg.narrow).toEqual({ where: { tag: 'x' } })
   })
 
-  it('sort and limit: the binding\'s replaces the query\'s, on both lanes — and a limit is not bounded by the query\'s', () => {
+  it('sort and limit: the query\'s define the set, the fetch\'s narrow it — on both lanes', () => {
     const queries = { posts: { schema: '@/post', sort: 'date desc', limit: 3 } }
     for (const lane of [onFile, asked]) {
       expect(lane(queries, {})).toMatchObject({ sort: 'date desc', limit: 3 })
-      expect(lane(queries, { limit: 5 })).toMatchObject({ sort: 'date desc', limit: 5 })
-      expect(lane(queries, { sort: 'title' })).toMatchObject({ sort: 'title', limit: 3 })
+      expect(lane(queries, {})).not.toHaveProperty('narrow')
+      // a larger count is asked as written — it cannot reach past the set, which holds 3
+      expect(lane(queries, { limit: 5 })).toMatchObject({ sort: 'date desc', limit: 3, narrow: { limit: 5 } })
+      expect(lane(queries, { sort: 'title' })).toMatchObject({ sort: 'date desc', limit: 3, narrow: { sort: 'title' } })
     }
   })
 
-  it('⭐ PARITY — one binding of a query whose where is routed asks both lanes the same question', () => {
+  it('⭐ PARITY — one fetch of a query whose where is routed asks both lanes the same two levels', () => {
     const queries = { posts: { schema: '@/post', scope: ':dir', where: { tag: ':dir' }, sort: 'date desc', limit: 10 } }
     const vars = { path: 'field/river', dir: 'field', slug: 'river' }
     const binding = { where: { featured: true }, limit: 3 }
-    const pick = ({ scope, where, sort, limit }) => ({ scope, where, sort, limit })
+    const pick = ({ scope, where, sort, limit, narrow }) => ({ scope, where, sort, limit, narrow })
     expect(pick(onFile(queries, binding, vars))).toEqual(pick(asked(queries, binding, vars)))
     expect(pick(onFile(queries, binding, vars))).toEqual({
-      scope: 'field', where: { and: [{ tag: 'field' }, { featured: true }] }, sort: 'date desc', limit: 3,
+      scope: 'field', where: { tag: 'field' }, sort: 'date desc', limit: 10, narrow: { where: { featured: true }, limit: 3 },
     })
   })
 
-  it('on the list page, where the query\'s clause is unbound, the binding\'s where is asked alone — not an `and` of one', () => {
+  it('on the list page, where the query\'s clause is unbound, the set has no where and the fetch\'s is its narrowing', () => {
     const queries = { posts: { schema: '@/post', where: { tag: ':dir' } } }
-    expect(onFile(queries, { where: { featured: true } }).where).toEqual({ featured: true })
-    expect(asked(queries, { where: { featured: true } }).where).toEqual({ featured: true })
+    for (const lane of [onFile, asked]) {
+      const cfg = lane(queries, { where: { featured: true } })
+      expect(cfg).not.toHaveProperty('where')
+      expect(cfg.narrow).toEqual({ where: { featured: true } })
+    }
+  })
+
+  it('⛔ a `narrow`, `match` or `cursor` a stale fetch carries is not read — the resolver and the client compose them', () => {
+    const queries = { posts: { schema: '@/post' } }
+    for (const lane of [onFile, asked]) {
+      const cfg = lane(queries, { narrow: { limit: 1 }, match: { $name: 'x' }, cursor: 'c', limit: 4 })
+      expect(cfg.narrow).toEqual({ limit: 4 })
+      expect(cfg).not.toHaveProperty('match')
+      expect(cfg).not.toHaveProperty('cursor')
+    }
   })
 })
 
-describe('routeSelection — the records a route query selects, uncut', () => {
-  it('drops limit and keeps sort: a count is how many a list shows, not which records have a page', () => {
-    expect(routeSelection({ path: '/data/posts.json', as: 'posts', sort: 'date desc', limit: 3 }))
-      .toEqual({ path: '/data/posts.json', as: 'posts', sort: 'date desc' })
+describe('routeSelection — the set: the query as saved, without the fetch\'s `narrow` (ruled 2026-09-14)', () => {
+  it('drops `narrow` and keeps the query\'s sort AND limit — a query\'s count is part of what it selects', () => {
+    expect(routeSelection({ path: '/data/posts.json', as: 'posts', sort: 'date desc', limit: 100, narrow: { where: { tag: 'x' }, limit: 3 } }))
+      .toEqual({ path: '/data/posts.json', as: 'posts', sort: 'date desc', limit: 100 })
   })
 
-  it('is the config itself when there is no limit — the same cache entry, no second read', () => {
-    const cfg = { path: '/data/posts.json', as: 'posts' }
+  it('is the config itself when there is no narrow — the same cache entry, no second read', () => {
+    const cfg = { path: '/data/posts.json', as: 'posts', limit: 100 }
     expect(routeSelection(cfg)).toBe(cfg)
   })
 })
@@ -566,16 +601,22 @@ describe('othersView / othersOf — `current: exclude`', () => {
   const records = ['a', 'b', 'c', 'd'].map((slug) => ({ slug }))
   const isB = (r) => r.slug === 'b'
 
-  it('asks one longer, so removing the record still leaves `limit`', () => {
-    expect(othersView({ as: 'x', limit: 2 })).toEqual({ as: 'x', limit: 3 })
+  it('asks the fetch\'s `narrow.limit` one higher, so removing the record still leaves `limit`', () => {
+    expect(othersView({ as: 'x', limit: 100, narrow: { where: { y: 1 }, limit: 2 } }))
+      .toEqual({ as: 'x', limit: 100, narrow: { where: { y: 1 }, limit: 3 } })
     const cfg = { as: 'x' }
     expect(othersView(cfg)).toBe(cfg)
+    // ⛔ a query's `limit` defines the set and is never raised — the others do not reach past it
+    const set = { as: 'x', limit: 5 }
+    expect(othersView(set)).toBe(set)
   })
 
-  it('removes the page\'s record — the first match only — and cuts to the binding\'s limit', () => {
-    expect(othersOf(records, { limit: 2 }, isB)).toEqual([{ slug: 'a' }, { slug: 'c' }])
+  it('removes the page\'s record — the first match only — and cuts to the fetch\'s limit', () => {
+    expect(othersOf(records, { narrow: { limit: 2 } }, isB)).toEqual([{ slug: 'a' }, { slug: 'c' }])
     expect(othersOf([...records, { slug: 'b' }], {}, isB)).toEqual([{ slug: 'a' }, { slug: 'c' }, { slug: 'd' }, { slug: 'b' }])
     expect(othersOf(records, {}, (r) => r.slug === 'z')).toEqual(records)
+    // the set's own `limit` was applied where the records were selected; it cuts nothing here
+    expect(othersOf(records, { limit: 2 }, isB)).toEqual([{ slug: 'a' }, { slug: 'c' }, { slug: 'd' }])
   })
 
   it('currentOf reads the three modes, and `only` for anything else', () => {
@@ -608,10 +649,10 @@ describe('an external query — a query with `url:` (ruled 2026-09-13)', () => {
     expect(resolve({ query: 'posts' }, { services: SERVICES }).ask).toBe('/_records/ask/en')
   })
 
-  it('a binding narrows it as it narrows any query — evaluated over what `transform` picked', () => {
-    expect(resolve({ query: 'items', where: { tag: 'x' }, limit: 3 })).toMatchObject({
-      where: { and: [{ published: true }, { tag: 'x' }] }, sort: 'date desc', limit: 3,
-    })
+  it('a fetch narrows it as it narrows any query — the set, then `narrow`, over what `transform` picked', () => {
+    const cfg = resolve({ query: 'items', where: { tag: 'x' }, limit: 3 })
+    expect(cfg).toMatchObject({ where: { published: true }, sort: 'date desc', narrow: { where: { tag: 'x' }, limit: 3 } })
+    expect(cfg).not.toHaveProperty('limit')
   })
 
   it('is the browser\'s to fetch unless the binding says otherwise', () => {

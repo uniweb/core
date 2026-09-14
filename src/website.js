@@ -622,6 +622,10 @@ export default class Website {
       // visitor's page — the "write key ≠ read key" failure.
       let items = []
       let currentItem = null
+      // ⭐ On the records service the record's own question checks the route query's
+      // set (`buildDetailConfig`), so once it has answered, its answer is definitive —
+      // the record, or `[]` for not found — with no list to consult.
+      let recordAnswered = false
 
       if (this.fetcher) {
         // The same sources the store walks for a section that declares nothing,
@@ -654,10 +658,13 @@ export default class Website {
           const raw = detailCached?.data
           const record = Array.isArray(raw) ? raw[0] : raw
           if (record && typeof record === 'object') currentItem = record
+          if (fetchConfig.ask && detailCached && Array.isArray(raw)) recordAnswered = true
 
-          // ⛔ The route query's whole selection (`routeSelection`), never a list its
-          // `limit` cut: a record past the limit is a record, and until 2026-09-13
-          // this declared its page "Not found" because the cut list was loaded.
+          // ⭐ The route query's set (`routeSelection`) — the query as saved, its `limit`
+          // included, never a list a fetch narrowed: a record past a fetch's `limit` is a
+          // record, and one past the query's is not (ruled 2026-09-14 [Diego]). ⛔ Until
+          // 2026-09-13 this read the cut list and declared a record past a list's
+          // `limit` "Not found".
           const cached = this.fetcher.peek(routeSelection(fetchConfig), ctx)
           items = Array.isArray(cached?.data) ? cached.data : []
         }
@@ -672,8 +679,9 @@ export default class Website {
         if (currentItem.description || currentItem.excerpt) {
           pageData.description = currentItem.description || currentItem.excerpt
         }
-      } else if (items.length > 0) {
-        // The records are loaded but this ID isn't among them — definitive not found
+      } else if (items.length > 0 || recordAnswered) {
+        // The set is loaded and this ID isn't in it, or the record question answered
+        // `[]` — definitive not found
         pageData.title = 'Not found'
         pageData.notFound = true
       }
@@ -685,7 +693,7 @@ export default class Website {
       // components via content.data, the others via
       // `fetch: { query, current: exclude }`). The local
       // `currentItem`/`items` above drive title/description/notFound.
-      pageData._recordsLoaded = items.length > 0 || currentItem !== null
+      pageData._recordsLoaded = items.length > 0 || currentItem !== null || recordAnswered
     }
 
     // Create the page instance

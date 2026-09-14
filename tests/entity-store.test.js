@@ -3,7 +3,8 @@ import EntityStore from '../src/entity-store.js'
 import DataStore, { deriveCacheKey } from '../src/datastore.js'
 import FetcherDispatcher from '../src/fetcher-dispatcher.js'
 import Website from '../src/website.js'
-import { resolveFetchConfigs } from '../src/fetch-config.js'
+import { resolveFetchConfigs, routeSelection } from '../src/fetch-config.js'
+import { evaluateQuery } from '../src/query-evaluation.js'
 // Derived, never re-spelled: the convention is pinned once, in
 // `tests/data-paths.test.js`. See the note there before pinning it again.
 import { queryDataUrl } from '../src/data-paths.js'
@@ -397,17 +398,14 @@ describe('current: — how a section on a parametric page uses the page\'s recor
   // ⛔ It replaces `refine: true, detail: false`, which delivered the "exclude" case
   // alone; its `sort` and `where` changed nothing, and `order` was the one sort read.
   const posts = ['a', 'b', 'c', 'd', 'e'].map((slug, i) => ({ slug, n: i + 1 }))
-  const listFetch = { path: '/data/posts.json', as: 'posts' }
+  const listFetch = { query: 'posts', as: 'posts' }
   const on = (slug) => ({ paramName: 'slug', paramValue: slug, params: { slug, path: slug, dir: '' } })
-  // the default fetcher's own order of work: sort, then cut
-  const harness = () => makeHarness({
-    fetcherImpl: (req) => {
-      let out = posts.slice()
-      if (req.sort === 'n desc') out.reverse()
-      if (req.limit) out = out.slice(0, req.limit)
-      return Promise.resolve({ data: out })
-    },
-  })
+  // the default fetcher's own order of work: the set, then the fetch's narrowing
+  const harness = (queries = { posts: { schema: '@/post' } }) => {
+    const h = makeHarness({ fetcherImpl: (req) => Promise.resolve({ data: evaluateQuery(posts, req) }) })
+    h.website.config = { queries }
+    return h
+  }
   const detail = (slug) => makePage({ parent: makePage({ route: '/posts', fetch: listFetch }), dynamicContext: on(slug) })
   const slugs = (result) => result.data.posts.map((p) => p.slug)
 
@@ -423,8 +421,16 @@ describe('current: — how a section on a parametric page uses the page\'s recor
     const { entityStore, website, fetcherSpy } = harness()
     const block = makeBlock({ page: detail('b'), fetch: { ...listFetch, current: 'exclude', limit: 3 } }, website)
     expect(slugs(await entityStore.fetch(block, {}))).toEqual(['a', 'c', 'd'])
-    // asked one longer, so removing the record still leaves three
-    expect(fetcherSpy.mock.calls.map(([req]) => req.limit)).toEqual([4])
+    // the fetch's `narrow.limit` asked one higher, so removing the record still leaves three
+    expect(fetcherSpy.mock.calls.map(([req]) => req.narrow?.limit)).toEqual([4])
+  })
+
+  it('⭐ exclude never reaches past the set — a query\'s own `limit` bounds the others (ruled 2026-09-14)', async () => {
+    const { entityStore, website, fetcherSpy } = harness({ posts: { schema: '@/post', limit: 3 } })
+    const block = makeBlock({ page: detail('b'), fetch: { ...listFetch, current: 'exclude', limit: 5 } }, website)
+    // the set is a, b, c — so two others, not five
+    expect(slugs(await entityStore.fetch(block, {}))).toEqual(['a', 'c'])
+    expect(fetcherSpy.mock.calls.map(([req]) => [req.limit, req.narrow?.limit])).toEqual([[3, 6]])
   })
 
   it('exclude — the order is narrow, sort, remove the record, limit', async () => {
@@ -461,13 +467,17 @@ describe('current: — how a section on a parametric page uses the page\'s recor
   // 2026-09-14 (its Live Content spec, §3.2).
   describe('a binding under the route key that names ANOTHER query', () => {
     const featured = [{ slug: 'b', n: 2 }, { slug: 'x', n: 9 }, { slug: 'd', n: 4 }]
-    const twoQueries = () => makeHarness({
-      fetcherImpl: (req) => {
-        const rows = req.path === '/data/featured.json' ? featured : posts
-        return Promise.resolve({ data: req.limit ? rows.slice(0, req.limit) : rows.slice() })
-      },
-    })
-    const featuredBinding = (extra) => ({ path: '/data/featured.json', as: 'posts', ...extra })
+    const twoQueries = () => {
+      const h = makeHarness({
+        fetcherImpl: (req) => {
+          const rows = req.path === '/data/featured.json' ? featured : posts
+          return Promise.resolve({ data: evaluateQuery(rows, req) })
+        },
+      })
+      h.website.config = { queries: { posts: { schema: '@/post' }, featured: { schema: '@/post' } } }
+      return h
+    }
+    const featuredBinding = (extra) => ({ query: 'featured', as: 'posts', ...extra })
 
     it('exclude — that query\'s records, without this page\'s record', async () => {
       const { entityStore, website, fetcherSpy } = twoQueries()
@@ -503,8 +513,8 @@ describe('current: — how a section on a parametric page uses the page\'s recor
     const asked = []
     const { entityStore, website } = makeHarness({
       fetcherImpl: (req) => {
-        asked.push({ limit: req.limit, match: req.match })
-        return Promise.resolve({ data: posts.slice(0, req.limit).map((p) => ({ ...p, $name: p.slug })) })
+        asked.push({ limit: req.narrow?.limit, match: req.narrow?.match })
+        return Promise.resolve({ data: evaluateQuery(posts.map((p) => ({ ...p, $name: p.slug })), req) })
       },
     })
     website.config = { services: { records: '/_records/ask/{locale}' }, queries: { posts: { schema: '@/post' } } }
@@ -832,13 +842,13 @@ describe('the record in hand reaches the detail address', () => {
 
 describe('R1 on a detail page — a record held in full is delivered, not fetched again', () => {
   // On the question door (the one live lane): the list question answers briefs,
-  // the same question narrowed by `$name` answers the record in full.
+  // the query's set narrowed by `$name` answers the record in full.
   const SERVICES = { records: '/_records/ask/{locale}' }
   const QUERIES = { members: { schema: '@std/person' } }
   const briefs = [{ $uuid: 'u1', $name: 'ada', title: 'Ada' }, { $uuid: 'u2', $name: 'lin', title: 'Lin' }]
   const fullAda = { $uuid: 'u1', $name: 'ada', title: 'Ada', bio: 'Full bio' }
-  // The record question carries `match`; the list question does not.
-  const isRecord = (req) => req.match && req.match.$name !== undefined
+  // The record question carries `narrow.match`; the list question does not.
+  const isRecord = (req) => req.narrow?.match?.$name !== undefined
 
   function liveHarness(fetcherImpl) {
     const h = makeHarness({ fetcherImpl })
@@ -851,7 +861,7 @@ describe('R1 on a detail page — a record held in full is delivered, not fetche
     return makePage({ parent, dynamicContext })
   }
 
-  it('asks list and record once, then delivers the record from the index on the next visit', async () => {
+  it('asks the record once, then delivers it from the cache on the next visit', async () => {
     const calls = []
     const { entityStore, website } = liveHarness((req) => {
       calls.push(isRecord(req) ? 'record' : 'list')
@@ -861,12 +871,13 @@ describe('R1 on a detail page — a record held in full is delivered, not fetche
     })
     const first = await entityStore.fetch(makeBlock({ page: detailPage() }, website), {})
     expect(first.data.members).toEqual([fullAda])
-    expect(calls.sort()).toEqual(['list', 'record'])
+    // ⭐ the record question checks the set, so no list is asked beside it (2026-09-14)
+    expect(calls).toEqual(['record'])
 
-    // second visit: both questions are cached under their own keys — no request
+    // second visit: the question is cached under its own key — no request
     const second = await entityStore.fetch(makeBlock({ page: detailPage() }, website), {})
     expect(second.data.members).toEqual([fullAda])
-    expect(calls).toHaveLength(2)
+    expect(calls).toHaveLength(1)
     const resolved = entityStore.resolve(makeBlock({ page: detailPage() }, website), {})
     expect(resolved.status).toBe('ready')
     expect(resolved.data.members).toEqual([fullAda])
@@ -900,47 +911,58 @@ describe('R1 on a detail page — a record held in full is delivered, not fetche
   })
 })
 
-describe('on a question door a detail page asks list and record TOGETHER — no scan gates the fetch', () => {
+describe('on a question door a detail page asks its RECORD alone — the question checks the set, no scan gates the fetch', () => {
+  // ⛔ Until 2026-09-14 the list was asked beside the record: the record question dropped
+  // the query's `sort` and `limit` and could not say whether the set held the record.
   const SERVICES = { records: '/_records/ask/{locale}' }
-  const QUERIES = { members: { name: 'members', schema: '@std/person' } }
+  const QUERIES = { members: { name: 'members', schema: '@std/person', sort: 'name', limit: 100 } }
 
-  it('dispatches both at once; the record\'s own answer is delivered, `[]` when none', async () => {
+  it('dispatches the record question alone — the query as saved plus `narrow.match` — and delivers its answer', async () => {
     const asked = []
     const { entityStore, website } = makeHarness({
       fetcherImpl: (req) => {
-        asked.push({ whole: req.whole, where: req.where, match: req.match })
+        asked.push({ whole: req.whole, where: req.where, sort: req.sort, limit: req.limit, narrow: req.narrow })
         if (req.whole === true) return Promise.resolve({ data: [{ $uuid: 'u1', $name: 'ada', name: 'Ada', bio: 'Full' }], meta: { whole: true } })
         return Promise.resolve({ data: [{ $uuid: 'u1', $name: 'ada', name: 'Ada' }], meta: { whole: false } })
       },
     })
     website.config = { services: SERVICES, queries: QUERIES }
     const dynamicContext = { paramName: 'slug', paramValue: 'ada' }
-    const parent = makePage({ fetch: { query: 'members', as: 'members' } })
+    // the list page narrows the query; the record question does not carry that narrowing
+    const parent = makePage({ fetch: { query: 'members', as: 'members', limit: 5 } })
     const page = makePage({ parent, dynamicContext })
 
     const result = await entityStore.fetch(makeBlock({ page }, website), {})
     expect(result.data.members).toEqual([{ $uuid: 'u1', $name: 'ada', name: 'Ada', bio: 'Full' }])
-    expect(asked).toHaveLength(2)
-    // ⭐ the record is the same question plus `match` — the author's `where` untouched
-    expect(asked.find((a) => a.whole === true).match).toEqual({ $name: 'ada' })
-    expect(asked.find((a) => a.whole === true).where).toBeUndefined()
+    // ⭐ one question: the set — its sort and limit — narrowed to the record; the author's `where` untouched
+    expect(asked).toEqual([{ whole: true, where: undefined, sort: 'name', limit: 100, narrow: { match: { $name: 'ada' } } }])
     // second visit: the record's answer is cached under its own key; the sync path delivers it
     const resolved = entityStore.resolve(makeBlock({ page }, website), {})
     expect(resolved.status).toBe('ready')
     expect(resolved.data.members[0].bio).toBe('Full')
   })
 
-  it('an empty answer is not-found, and a failed answer is absent with an error', async () => {
+  it('an empty answer is not-found — the record is not in the set', async () => {
     const { entityStore, website } = makeHarness({
-      fetcherImpl: (req) => req.whole === true
-        ? Promise.resolve({ data: [], meta: { whole: true } })
-        : Promise.resolve({ data: [], error: 'HTTP 502' }),
+      fetcherImpl: () => Promise.resolve({ data: [], meta: { whole: true } }),
     })
     website.config = { services: SERVICES, queries: QUERIES }
     const dynamicContext = { paramName: 'slug', paramValue: 'nope' }
     const page = makePage({ parent: makePage({ fetch: { query: 'members', as: 'members' } }), dynamicContext })
     const result = await entityStore.fetch(makeBlock({ page }, website), {})
     expect(result.data.members).toEqual([])
+    expect(result.errors).toBeNull()
+  })
+
+  it('a failed answer is absent, with an error', async () => {
+    const { entityStore, website } = makeHarness({
+      fetcherImpl: () => Promise.resolve({ data: [], error: 'HTTP 502' }),
+    })
+    website.config = { services: SERVICES, queries: QUERIES }
+    const dynamicContext = { paramName: 'slug', paramValue: 'ada' }
+    const page = makePage({ parent: makePage({ fetch: { query: 'members', as: 'members' } }), dynamicContext })
+    const result = await entityStore.fetch(makeBlock({ page }, website), {})
+    expect('members' in result.data).toBe(false)
     expect(result.errors).toEqual({ members: 'HTTP 502' })
   })
 })
@@ -1018,37 +1040,54 @@ describe('a parametric page over a `multi` field delivers the record a member ma
   })
 })
 
-describe('a record past a list\'s `limit` is still its page\'s record (ruled 2026-09-13)', () => {
-  // ⛔ Until then the compiled-file lane looked the record up in the list the
-  // `limit` had cut, so `/blog/e` under a `limit: 2` rendered "not found".
+describe('a parametric page\'s record is one of its route query\'s SET — past a fetch\'s `limit` it is found, past the query\'s it is not (ruled 2026-09-14)', () => {
+  // ⛔ Until 2026-09-13 the compiled-file lane looked the record up in the list the
+  // `limit` had cut, so `/blog/e` under a list's `limit: 2` rendered "not found". ⛔ From
+  // then until 2026-09-14 no `limit` counted, the query's included, so a record outside
+  // a query's `limit` still had a page.
   const posts = ['a', 'b', 'c', 'd', 'e'].map((slug) => ({ slug, title: slug.toUpperCase() }))
-  const listFetch = { path: '/data/posts.json', as: 'posts', limit: 2 }
-  const selection = { path: '/data/posts.json', as: 'posts' }
-  const dynamicContext = { paramName: 'slug', paramValue: 'e', params: { slug: 'e', path: 'e', dir: '' } }
-  const harness = () => makeHarness({
-    // the default fetcher's own cut: a request's `limit` slices what it read
-    fetcherImpl: (req) => Promise.resolve({ data: req.limit ? posts.slice(0, req.limit) : posts }),
-  })
+  const listFetch = { query: 'posts', as: 'posts', limit: 2 }
+  const on = (slug) => ({ paramName: 'slug', paramValue: slug, params: { slug, path: slug, dir: '' } })
+  const dynamicContext = on('e')
+  // the default fetcher's own order of work: the set, then the fetch's narrowing
+  const harness = (queries = { posts: { schema: '@/post' } }) => {
+    const h = makeHarness({ fetcherImpl: (req) => Promise.resolve({ data: evaluateQuery(posts, req) }) })
+    h.website.config = { queries }
+    return h
+  }
 
-  it('found in the route query\'s whole selection — the request carries no limit', async () => {
+  it('past a fetch\'s `limit`: found in the set — the request carries no `narrow`', async () => {
     const { entityStore, website, fetcherSpy } = harness()
     const page = makePage({ dynamicContext, parent: makePage({ fetch: listFetch }) })
     const result = await entityStore.fetch(makeBlock({ page }, website), {})
     expect(result.data.posts).toEqual([posts[4]])
-    expect(fetcherSpy.mock.calls.map(([req]) => req.limit)).toEqual([undefined])
+    expect(fetcherSpy.mock.calls.map(([req]) => req.narrow)).toEqual([undefined])
   })
 
-  it('resolve() reads the selection from the cache — a cached cut list alone is a miss, never "not found"', () => {
+  it('⛔ past the query\'s `limit`: not found — a query\'s count is part of what it selects', async () => {
+    const { entityStore, website, fetcherSpy } = harness({ posts: { schema: '@/post', limit: 3 } })
+    const parent = makePage({ fetch: { query: 'posts', as: 'posts' } })
+    const result = await entityStore.fetch(makeBlock({ page: makePage({ dynamicContext, parent }) }, website), {})
+    expect(result.data.posts).toEqual([])
+    expect(fetcherSpy.mock.calls.map(([req]) => req.limit)).toEqual([3])
+    // CONTROL — a record inside the set is found
+    const inside = await entityStore.fetch(makeBlock({ page: makePage({ dynamicContext: on('c'), parent }) }, website), {})
+    expect(inside.data.posts).toEqual([posts[2]])
+  })
+
+  it('resolve() reads the set from the cache — a cached narrowed list alone is a miss, never "not found"', () => {
     const { entityStore, dataStore, website } = harness()
     const page = makePage({ dynamicContext, parent: makePage({ fetch: listFetch }) })
-    dataStore.set(deriveCacheKey(listFetch), { data: posts.slice(0, 2) })
+    const narrowed = resolveFetchConfigs([listFetch], { queries: website.config.queries, locale: 'en', defaultLocale: 'en' }).get('posts')
+    expect(narrowed.narrow).toEqual({ limit: 2 })
+    dataStore.set(deriveCacheKey(narrowed), { data: posts.slice(0, 2) })
     expect(entityStore.resolve(makeBlock({ page }, website), {}).status).toBe('pending')
-    dataStore.set(deriveCacheKey(selection), { data: posts })
+    dataStore.set(deriveCacheKey(routeSelection(narrowed)), { data: posts })
     const ready = entityStore.resolve(makeBlock({ page }, website), {})
     expect(ready).toEqual({ status: 'ready', data: { posts: [posts[4]] } })
   })
 
-  it('CONTROL — the list page itself still gets the cut list', async () => {
+  it('CONTROL — the list page itself still gets the narrowed list', async () => {
     const { entityStore, website } = harness()
     const result = await entityStore.fetch(makeBlock({ page: makePage({ fetch: listFetch }) }, website), {})
     expect(result.data.posts).toEqual(posts.slice(0, 2))

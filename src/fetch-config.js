@@ -92,22 +92,28 @@ export function currentOf(cfg) {
 }
 
 /**
- * The list a `current: exclude` section asks for: its own view, one record longer,
- * so that removing the page's record still leaves `limit` others. The order is
- * narrow, sort, remove the record, limit — a `limit` counts the others.
+ * The list a `current: exclude` section asks for: its own view, with `narrow.limit`
+ * one higher, so that removing the page's record still leaves `limit` others. The
+ * order is the set, then the fetch's `where` and `sort`, remove the record, `limit` —
+ * so a fetch's `limit` counts the others.
+ *
+ * ⚠️ Only the fetch's own `limit` is raised. A query's `limit` defines its set (ruled
+ * 2026-09-14 [Diego]), so the others never reach past it: with no `limit` of the
+ * fetch's own, the section gets the set without the page's record.
  *
  * @param {Object} cfg - a resolved config under the route key
  * @returns {Object}
  */
 export function othersView(cfg) {
-  if (!cfg || typeof cfg.limit !== 'number' || cfg.limit <= 0) return cfg
-  return { ...cfg, limit: cfg.limit + 1 }
+  const limit = cfg?.narrow?.limit
+  if (typeof limit !== 'number' || limit <= 0) return cfg
+  return { ...cfg, narrow: { ...cfg.narrow, limit: limit + 1 } }
 }
 
 /**
  * The records a `current: exclude` section receives, from what `othersView` asked:
  * the list without the page's record — the first that matches the route's value, the
- * one `only` delivers — cut to the binding's `limit`.
+ * one `only` delivers — cut to the fetch's `narrow.limit`.
  *
  * @param {Array|*} records - what `othersView(cfg)` answered
  * @param {Object} cfg - the section's resolved config
@@ -118,7 +124,8 @@ export function othersOf(records, cfg, isCurrent) {
   if (!Array.isArray(records)) return records
   const at = records.findIndex(isCurrent)
   const others = at < 0 ? records : [...records.slice(0, at), ...records.slice(at + 1)]
-  return typeof cfg?.limit === 'number' && cfg.limit > 0 ? others.slice(0, cfg.limit) : others
+  const limit = cfg?.narrow?.limit
+  return typeof limit === 'number' && limit > 0 ? others.slice(0, limit) : others
 }
 
 /**
@@ -145,7 +152,7 @@ function localizeConfig(cfg, locale, defaultLocale) {
  * Say whether a resolved config has a PER-RECORD source — `detail` — so a
  * parametric page asks for its record on its own rather than finding it in the list.
  *
- *   - the records service → `true`: the record is the list's own question narrowed
+ *   - the records service → `true`: the record is the route query's set narrowed
  *     by the URL's value (`buildDetailConfig`);
  *   - an external query declaring `record:` → `true`: its own request;
  *   - a query declaring `deferred:` → `/data/<query>/{slug}.json`, the per-record
@@ -167,8 +174,8 @@ function localizeConfig(cfg, locale, defaultLocale) {
 function applyDeferredDetail(cfg, queries) {
   if (cfg.detail !== undefined) return cfg
 
-  // The records service answers a RECORD by the same question narrowed to it,
-  // so every asked config has a detail source; `buildDetailConfig` composes it.
+  // The records service answers a RECORD by the query's set narrowed to it, so
+  // every asked config has a detail source; `buildDetailConfig` composes it.
   if (cfg.ask) return { ...cfg, detail: true }
   // An external query's `record:` request.
   if (cfg.record && typeof cfg.record === 'object') return { ...cfg, detail: true }
@@ -271,13 +278,13 @@ function resolveQuerySource(cfg, services, { queries = null, locale = null, defa
     if (decl.record && typeof decl.record === 'object') out.record = decl.record
     // a live endpoint is the browser's to fetch, unless the binding says otherwise
     if (out.prerender === undefined) out.prerender = false
-    return narrowQuery(out, decl, decl.where)
+    return setAndNarrow(out, decl, decl.where)
   }
 
-  // ⭐ THE SERVICE FIRST. A host that answers questions gets the whole query —
-  // `schema`, `scope`, `where`, `sort`, `limit`, `depth` — and composes no
-  // per-query address at all (the records contract, §2). It needs the query's
-  // MODEL REF, which lives on the site's `config.queries` declaration; a
+  // ⭐ THE SERVICE FIRST. A host that answers questions gets the query as saved —
+  // `schema`, `scope`, `where`, `sort`, `limit` — and the fetch's `narrow` beside it,
+  // and composes no per-query address at all (the records contract, §2). It needs
+  // the query's MODEL REF, which lives on the site's `config.queries` declaration; a
   // payload that offers the service but carries no declaration cannot ask, and
   // says so. ⚠️ Dark until a host stamps the row; see `resolveRecordsService`.
   const ask = resolveRecordsService(services, locale ?? defaultLocale)
@@ -293,65 +300,88 @@ function resolveQuerySource(cfg, services, { queries = null, locale = null, defa
       // instead would turn a producer defect into a 404 that names the wrong
       // thing. The fetcher refuses an asked request with no `schema` before any
       // request is made, and the block's `dataError` says exactly this.
-      return { ...rest, ask, schema: null }
+      return setAndNarrow({ ...rest, ask, schema: null }, decl, decl?.where ?? null)
     }
-    return narrowQuery({ ...rest, ask, schema }, decl, decl.where)
+    return setAndNarrow({ ...rest, ask, schema }, decl, decl.where)
   }
 
   // ⭐ THE COMPILED FILE. The build applied the named query's fixed `where` when it
-  // wrote `/data/<query>.json`; what it could NOT apply is a clause bound to the
-  // route (`where: { tag: :dir }`) — a file is written once and the route differs
-  // per page — and it applies neither `scope` nor `limit`. So those travel here and
-  // are applied per page, exactly as the service applies them (`bindRouteVariables`,
-  // below). ⛔ Until 2026-09-11 nothing travelled: a named query's `scope: :dir` was
-  // ignored on this lane and `where: { tag: :dir }` was applied at build to the
-  // literal `':dir'`, compiling to no records (measured).
+  // wrote `/data/<query>.json`, in its `sort`; what it could NOT apply is a clause
+  // bound to the route (`where: { tag: :dir }`) — a file is written once and the
+  // route differs per page — and it applies neither `scope` nor `limit`. So the
+  // runtime makes the set per page from what travels here — `scope`, the routed
+  // clauses, the query's `sort` in the page's locale, its `limit` — exactly as the
+  // service makes it (`bindRouteVariables`, below; `evaluateQuery`). ⛔ Until
+  // 2026-09-11 nothing travelled: a named query's `scope: :dir` was ignored on this
+  // lane and `where: { tag: :dir }` was applied at build to the literal `':dir'`,
+  // compiling to no records (measured).
   const out = { ...cfg, path: queryDataUrl(cfg.query) }
   for (const key of QUERY_SUPPLIED) delete out[key]
-  return decl ? narrowQuery(out, decl, routeVariableClauses(decl.where)) : out
+  return setAndNarrow(out, decl, decl ? routeVariableClauses(decl.where) : null)
 }
 
 /**
- * ⭐ A BINDING NARROWS ITS QUERY, AND NEVER WIDENS IT — ruled 2026-09-13 [Diego]:
- * *"binding can narrow its query and pick its own order and count, but it can never
- * add records the query leaves out."* One composition, so the records service is
- * asked exactly what the compiled file is evaluated with:
+ * ⭐ A FETCH IS ITS QUERY'S SET, AND WHAT IT TAKES OF THE SET — two levels, ruled
+ * 2026-09-14 [Diego]:
  *
- *   - `scope` — the query's; a binding has none;
- *   - `where` — the query's and the binding's must BOTH hold, as `{ and: [ … ] }`;
- *   - `sort`, `limit` — the binding's, else the query's. A binding's `limit` is not
- *     bounded by the query's: a count is how many to show, never which records exist.
+ *   - **the top level is the query as saved** — its `scope`, `where`, `sort` and
+ *     `limit`. They define THE SET: the records its `scope` and `where` select, in its
+ *     `sort`, up to its `limit`. A query's `limit` is part of what it selects, so a
+ *     parametric page has a URL for each record of its route query's set, and no other;
+ *   - **`narrow` is the fetch's own `where`, `sort` and `limit`**, applied to the set:
+ *     its `where` filters what the set holds, its `sort` re-orders what is left, and its
+ *     `limit` cuts the rest — never past the set. Absent when the fetch takes the whole
+ *     set.
  *
- * ⛔ Until 2026-09-13 each field of a binding REPLACED the query's here, while the
- * static build had already baked the query's `where`, `sort` and `limit` into the
- * file — so a binding narrowed inside the query on a static site and replaced it on
- * a hosted one (measured: `where: { published: true }` plus `{ tag: x }` delivered
- * published records tagged x from the file and asked the service for `{ tag: x }`).
+ * Every lane evaluates the set first and then `narrow` — the records service at the
+ * source, the default fetcher and the build over a file or a response
+ * (`@uniweb/core`'s `evaluateQuery`) — and every question about one query carries the
+ * same top level, so a record question checks the set with the query's own `sort` and
+ * `limit` (`buildDetailConfig` adds `narrow.match`).
  *
- * @param {Object} out - the binding, addressed
- * @param {Object} decl - the query's declaration
+ * ⛔ Until 2026-09-14 the two levels were MERGED into one flat question — the fetch's
+ * `where` joined the query's with `and`, and its `sort` and `limit` replaced the
+ * query's. So *"the latest 3 about pandas, among the query's 100 most recent"* was
+ * asked as *"the latest 3 about pandas"*, whether or not they were among the 100; a
+ * fetch's `limit` could exceed its query's; and a record question dropped the query's
+ * `sort` and `limit`, so a record outside the 100 still had a page.
+ *
+ * A config that names a query ALWAYS carries the fetch's adaptations in `narrow`, with
+ * a declaration for the query or without one, so the top level never holds a
+ * fetch's field. A `narrow`, `match` or `cursor` a stale binding carries is not read:
+ * the resolver and the client compose those.
+ *
+ * @param {Object} out - the fetch, addressed
+ * @param {Object|null} decl - the query's declaration, when the payload carries one
  * @param {Object|null} queryWhere - the part of the query's `where` this lane still
- *   applies: all of it on the service, the routed clauses on the compiled file
+ *   applies: all of it on the service and for an external query, the routed clauses on
+ *   the compiled file
  * @returns {Object}
  */
-function narrowQuery(out, decl, queryWhere) {
-  const next = { ...out }
-  if (typeof decl.scope === 'string') next.scope = decl.scope
-  const where = bothHold(queryWhere, out.where)
-  if (where) next.where = where
-  else delete next.where
-  if (next.sort === undefined && decl.sort !== undefined && decl.sort !== null) next.sort = decl.sort
-  if (next.limit === undefined && typeof decl.limit === 'number' && decl.limit > 0) next.limit = decl.limit
+function setAndNarrow(out, decl, queryWhere) {
+  const { where, sort, limit, narrow: _narrow, match: _match, cursor: _cursor, ...next } = out
+  if (decl) {
+    if (typeof decl.scope === 'string') next.scope = decl.scope
+    if (someWhere(queryWhere)) next.where = queryWhere
+    if (decl.sort !== undefined && decl.sort !== null) next.sort = decl.sort
+    if (isCount(decl.limit)) next.limit = decl.limit
+  }
+  const narrow = {}
+  if (someWhere(where)) narrow.where = where
+  if (sort !== undefined && sort !== null && sort !== '') narrow.sort = sort
+  if (isCount(limit)) narrow.limit = limit
+  if (Object.keys(narrow).length > 0) next.narrow = narrow
   return next
 }
 
-/** Two where-objects that must both hold — `{ and: [a, b] }`, or whichever one there is. */
-function bothHold(a, b) {
-  const some = (w) => Boolean(w) && typeof w === 'object' && !Array.isArray(w) && Object.keys(w).length > 0
-  if (some(a) && some(b)) return { and: [a, b] }
-  if (some(b)) return b
-  if (some(a)) return a
-  return null
+/** A where-object that says something: a non-empty plain object. */
+function someWhere(where) {
+  return Boolean(where) && typeof where === 'object' && !Array.isArray(where) && Object.keys(where).length > 0
+}
+
+/** A `limit` that cuts: a number above 0. `0` and anything else mean every record. */
+function isCount(limit) {
+  return typeof limit === 'number' && limit > 0
 }
 
 /**
@@ -477,6 +507,11 @@ function unset(value) {
  * to an intentional list page. Only an authoring surface can catch that; this
  * function cannot.
  *
+ * ⭐ Both levels bind: the query's `scope` and `where`, and the fetch's own `where`
+ * inside `narrow` — a variable may be a value in either (`setAndNarrow`). A `narrow`
+ * left with nothing in it is dropped, so it cannot split a cache entry from the fetch
+ * that takes the whole set.
+ *
  * @param {Object} cfg - a resolved config
  * @param {Object|null} variables - `{ path, dir, slug, … }` from the route, or null off a parametric page
  * @returns {Object} the config, with placeholders bound or their clauses dropped
@@ -496,14 +531,24 @@ function bindRouteVariables(cfg, variables) {
       out = bound === null ? rest : { ...rest, where: soleMember(bound) }
     }
   }
+  const narrowWhere = cfg.narrow?.where
+  if (narrowWhere && typeof narrowWhere === 'object') {
+    const bound = bindWhere(narrowWhere, variables)
+    if (bound !== narrowWhere) {
+      const { where, ...narrowRest } = out.narrow
+      const narrow = bound === null ? narrowRest : { ...narrowRest, where: soleMember(bound) }
+      const { narrow: _unbound, ...rest } = out
+      out = Object.keys(narrow).length > 0 ? { ...rest, narrow } : rest
+    }
+  }
   return out
 }
 
 /**
  * An `and` or `or` left holding ONE member once its unbound clauses dropped is that
- * member. It is how a query whose `where` is all route clauses, joined with its
- * binding's (`narrowQuery`), asks the list page the binding's `where` alone — the same
- * question, and the same cache entry, as a binding of a query with no `where`.
+ * member — so an authored `{ and: [ { tag: :dir }, { featured: true } ] }` asks the
+ * list page, where `:dir` is unbound, `{ featured: true }`: the same question, and the
+ * same cache entry, as the where written without the routed clause.
  */
 function soleMember(where) {
   if (!where || typeof where !== 'object' || Array.isArray(where)) return where
@@ -622,23 +667,27 @@ export function withoutRouteVariables({ where = null, scope = null } = {}) {
 }
 
 /**
- * ⭐ THE RECORDS A ROUTE QUERY SELECTS, UNCUT — the list a parametric page finds its
- * record in, and the list its detail pages are made from. A `limit` is how many a
- * list shows, never which records have a page: a binding `limit: 3` on `/blog` leaves
- * `/blog/d` a record (ruled 2026-09-13 [Diego]). `sort` stays, as the selection's order.
+ * ⭐ THE SET — the records a route query selects, and the list a parametric page finds
+ * its record in and its pages are made from: the config as the query saved it, without
+ * the fetch's `narrow`. Its `sort` and `limit` are the query's and stay, because a
+ * query's `limit` is part of what it selects (ruled 2026-09-14 [Diego]): a parametric
+ * page has a URL for each record of its route query's set, and no other — a field
+ * note older than the 100 most recent has no page under a query of the 100 most
+ * recent. A fetch's narrowing never decides which pages exist: `limit: 3` on `/blog`
+ * leaves `/blog/d` a record, when the query selects it.
  *
- * ⛔ Until 2026-09-13 the compiled-file lane looked the record up in the LIMITED list,
- * so `/blog/d` rendered "not found" wherever its route query had a `limit`, and the
- * static build made no page for it. The records service never had this: its record
- * question drops `limit` (`buildDetailConfig`).
+ * ⛔ Until 2026-09-14 this dropped the `limit` of a merged config instead — the fetch's
+ * or the query's, indistinguishable once merged — so every record the query's `where`
+ * selected had a page, whatever its `limit`, and a fetch's `where` did decide. The
+ * records service's record question dropped `sort` and `limit` to the same effect.
  *
  * @param {Object} cfg - a resolved config
- * @returns {Object} the config itself when it has no `limit`, else a copy without one
+ * @returns {Object} the config itself when it has no `narrow`, else a copy without it
  */
 export function routeSelection(cfg) {
-  if (!cfg || typeof cfg !== 'object' || cfg.limit === undefined) return cfg
-  const { limit, ...rest } = cfg
-  return rest
+  if (!cfg || typeof cfg !== 'object' || cfg.narrow === undefined) return cfg
+  const { narrow, ...set } = cfg
+  return set
 }
 
 /**

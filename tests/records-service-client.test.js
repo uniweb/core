@@ -40,13 +40,17 @@ describe('resolveRecordsService — the stamp, and the locale as a route segment
 })
 
 describe('a query resolves to the service when the host offers one AND the payload carries the Model ref', () => {
-  it('composes the whole question: door, schema, the saved query\'s narrowing, depth, locale', () => {
-    const cfg = resolveFetchConfigs(authored({ limit: 5 }), opts()).get('members')
+  it('composes the whole question: door, schema, the query as saved, the fetch\'s narrow, depth, locale', () => {
+    const queries = { members: { ...QUERIES.members, limit: 100 } }
+    const cfg = resolveFetchConfigs(authored({ limit: 5 }), opts({ queries })).get('members')
     expect(cfg.ask).toBe('/_records/ask/en')
     expect(cfg.schema).toBe('@std/person')
+    // the top level is the query as saved — the set, its `limit` included
     expect(cfg.where).toEqual({ published: true })
     expect(cfg.sort).toBe('name')
-    expect(cfg.limit).toBe(5)
+    expect(cfg.limit).toBe(100)
+    // the fetch's count is its narrowing of the set
+    expect(cfg.narrow).toEqual({ limit: 5 })
     expect(cfg.whole).toBe(false)
     expect(cfg.locale).toBe('en')
     expect(cfg.detail).toBe(true)
@@ -54,12 +58,21 @@ describe('a query resolves to the service when the host offers one AND the paylo
     expect(cfg.endpoint).toBeUndefined()
   })
 
-  it('a binding narrows the saved query — its where joins the query\'s, its sort replaces it (ruled 2026-09-13)', () => {
-    // ⛔ The binding's where REPLACED the query's until then, so a page could ask the
-    // service for records the query leaves out.
-    const cfg = resolveFetchConfigs(authored({ where: { featured: true }, sort: 'date desc' }), opts()).get('members')
-    expect(cfg.where).toEqual({ and: [{ published: true }, { featured: true }] })
-    expect(cfg.sort).toBe('date desc')
+  it('a fetch\'s where, sort and limit are its `narrow` — the query\'s stay as saved (ruled 2026-09-14)', () => {
+    // ⛔ The fetch's where REPLACED the query's until 2026-09-13, so a page could ask the
+    // service for records the query leaves out; until 2026-09-14 it joined the query's with
+    // `and` and its sort and limit replaced the query's, in one flat question.
+    const cfg = resolveFetchConfigs(authored({ where: { featured: true }, sort: 'date desc', limit: 3 }), opts()).get('members')
+    expect(cfg.where).toEqual({ published: true })
+    expect(cfg.sort).toBe('name')
+    expect(cfg).not.toHaveProperty('limit')
+    expect(cfg.narrow).toEqual({ where: { featured: true }, sort: 'date desc', limit: 3 })
+  })
+
+  it('a fetch that takes the whole set carries no `narrow`', () => {
+    expect(resolveFetchConfigs(authored(), opts()).get('members')).not.toHaveProperty('narrow')
+    // an empty where, or a count of 0, narrows nothing
+    expect(resolveFetchConfigs(authored({ where: {}, limit: 0 }), opts()).get('members')).not.toHaveProperty('narrow')
   })
 
   it('⛔ a stamped service with no Model ref for the query is an asked config with `schema: null` — loud downstream, never a fallthrough', () => {
@@ -101,20 +114,25 @@ describe('a query resolves to the service when the host offers one AND the paylo
   })
 })
 
-describe('the record on the service is the same question, narrowed by the handle, in full', () => {
-  it('asks the route query unchanged plus `match` — the authored where untouched, sort and limit dropped', () => {
-    const list = resolveFetchConfigs(authored({ limit: 5 }), opts()).get('members')
+describe('the record on the service is the query\'s set, narrowed by the handle, in full', () => {
+  it('asks the route query as saved plus `narrow.match` — its where, sort and limit kept, so the answer checks the set', () => {
+    const queries = { members: { ...QUERIES.members, limit: 100 } }
+    const list = resolveFetchConfigs(authored({ limit: 5 }), opts({ queries })).get('members')
     const rec = buildDetailConfig(list, { paramName: 'slug', paramValue: 'ada' })
     expect(rec.ask).toBe('/_records/ask/en')
     expect(rec.schema).toBe('@std/person')
     // ⭐ `where` is the author's and `match` the visitor's (ruled 2026-09-11) —
     // the handle was merged into `where` until then, replacing a condition there
     expect(rec.where).toEqual({ published: true })
-    expect(rec.match).toEqual({ [ROUTE_HANDLE_KEY]: 'ada' })
+    // ⭐ the query's `sort` and `limit` define its set, so the record question carries
+    // them (ruled 2026-09-14) — it dropped both until then, and a record outside the
+    // 100 had a page
+    expect(rec.sort).toBe('name')
+    expect(rec.limit).toBe(100)
+    expect(rec.narrow).toEqual({ match: { [ROUTE_HANDLE_KEY]: 'ada' } })
+    expect(rec).not.toHaveProperty('match')
     expect(rec.whole).toBe(true)
     expect(rec.dynamicContext).toEqual({ paramName: 'slug', paramValue: 'ada' })
-    expect(rec.sort).toBeUndefined()
-    expect(rec.limit).toBeUndefined()
     expect(rec.as).toBe('members')
     expect(rec.locale).toBe('en')
     // and it has its own key — list (brief) and record (full) never collide
@@ -127,16 +145,29 @@ describe('the record on the service is the same question, narrowed by the handle
 
   it('the folder name picks the key — [slug] the handle, [uuid] the identity, any other the field', () => {
     const list = resolveFetchConfigs(authored({}), opts()).get('members')
-    expect(buildDetailConfig(list, { paramName: 'slug', paramValue: 'ada' }).match).toEqual({ $name: 'ada' })
-    expect(buildDetailConfig(list, { paramName: 'uuid', paramValue: '019e' }).match).toEqual({ $uuid: '019e' })
-    expect(buildDetailConfig(list, { paramName: 'id', paramValue: 42 }).match).toEqual({ id: '42' })
+    expect(buildDetailConfig(list, { paramName: 'slug', paramValue: 'ada' }).narrow.match).toEqual({ $name: 'ada' })
+    expect(buildDetailConfig(list, { paramName: 'uuid', paramValue: '019e' }).narrow.match).toEqual({ $uuid: '019e' })
+    expect(buildDetailConfig(list, { paramName: 'id', paramValue: 42 }).narrow.match).toEqual({ id: '42' })
   })
 
-  it('a condition the author put on the same key stays — the URL cannot replace it', () => {
-    const list = resolveFetchConfigs(authored({ where: { $name: { in: ['ada', 'lin'] } } }), opts()).get('members')
+  it('a condition the query puts on the same key stays — the URL cannot replace it', () => {
+    const queries = { members: { ...QUERIES.members, where: { published: true, $name: { in: ['ada', 'lin'] } } } }
+    const list = resolveFetchConfigs(authored(), opts({ queries })).get('members')
     const rec = buildDetailConfig(list, { paramName: 'slug', paramValue: 'zed' })
-    expect(rec.where).toEqual({ and: [{ published: true }, { $name: { in: ['ada', 'lin'] } }] })
-    expect(rec.match).toEqual({ $name: 'zed' })
+    expect(rec.where).toEqual({ published: true, $name: { in: ['ada', 'lin'] } })
+    expect(rec.narrow).toEqual({ match: { $name: 'zed' } })
+  })
+
+  it('⭐ a fetch\'s own narrowing never decides which records have pages — it drops from the record question', () => {
+    // Which pages exist is the query's to say, never a list's (ruled 2026-09-14).
+    const narrowed = resolveFetchConfigs(authored({ where: { $name: { in: ['ada', 'lin'] } }, sort: 'date desc', limit: 1 }), opts()).get('members')
+    const rec = buildDetailConfig(narrowed, { paramName: 'slug', paramValue: 'zed' })
+    expect(rec.where).toEqual({ published: true })
+    expect(rec.sort).toBe('name')
+    expect(rec.narrow).toEqual({ match: { $name: 'zed' } })
+    // so every section that asks the page's record asks ONE question, whatever it narrows
+    const plain = buildDetailConfig(resolveFetchConfigs(authored(), opts()).get('members'), { paramName: 'slug', paramValue: 'zed' })
+    expect(deriveCacheKey(rec)).toBe(deriveCacheKey(plain))
   })
 
   it('two records of one query are two cache entries — `match` is part of the question', () => {
