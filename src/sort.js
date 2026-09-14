@@ -104,9 +104,8 @@ export function sortToWire(sort) {
  * Numbers, ISO dates and booleans compare as values.
  *
  * ⭐ A RECORD WITH NO VALUE FOR THE KEY SORTS LAST, IN EITHER DIRECTION, and records
- * that compare equal keep their order — the language both lanes answer
- * (`kb/frontend/contracts/site-queries.md` §1.4, as the records service built it on
- * 2026-09-13). "No value" is what `exists: false` means: missing, `null`, `""` — and a
+ * that compare equal keep their order — the language both lanes answer (as a host's
+ * records service answers it since 2026-09-13). "No value" is what `exists: false` means: missing, `null`, `""` — and a
  * list, since nothing says which member orders the record (a dotted path that meets
  * a list reads no value). ⛔ Until 2026-09-14 a missing value sorted as the empty
  * string — first ascending, last descending — so a static site and a hosted one put
