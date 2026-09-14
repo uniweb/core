@@ -51,7 +51,7 @@
  */
 
 import { queryDataUrl, isDataUrl, recordDataUrl } from './data-paths.js'
-import { resolveRecordsService } from './records-service.js'
+import { resolveRecordsService, resolveAnswersService } from './records-service.js'
 // A leaf that imports nothing — `recordRouteBase` is the one rule for which page
 // addresses a record, and a route query is chosen at exactly that page.
 import { recordRouteBase } from './route-match.js'
@@ -295,7 +295,10 @@ function resolveQuerySource(cfg, services, { queries = null, locale = null, defa
       // request is made, and the block's `dataError` says exactly this.
       return { ...rest, ask, schema: null }
     }
-    return narrowQuery({ ...rest, ask, schema }, decl, decl.where)
+    // ⭐ The host's cache of that service's answers, when it offers one: the same question,
+    // posted alone (`resolveAnswersService`; the default fetcher decides which questions go).
+    const answers = resolveAnswersService(services, locale ?? defaultLocale)
+    return narrowQuery({ ...rest, ask, ...(answers ? { answers } : {}), schema }, decl, decl.where)
   }
 
   // ⭐ THE COMPILED FILE. The build applied the named query's fixed `where` when it

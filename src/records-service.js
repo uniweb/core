@@ -81,6 +81,9 @@ export function _resetRecordsServiceWarnings() {
  */
 export const RECORDS_SERVICE = 'records'
 
+/** The service name a host stamps to say it caches the records service's answers. */
+export const ANSWERS_SERVICE = 'answers'
+
 /**
  * The address a query is asked at, substituted for one locale, or `null` when
  * no host offers the service.
@@ -97,14 +100,41 @@ export const RECORDS_SERVICE = 'records'
  * @returns {string|null}
  */
 export function resolveRecordsService(services, locale) {
+  return resolveLocaleService(RECORDS_SERVICE, services, locale)
+}
+
+/**
+ * ⭐ THE ANSWERS SERVICE — the records service's answers, cached at the host's edge.
+ *
+ * A host that offers it stamps `config.services.answers` beside `records`, an address with
+ * the same `{locale}` slot. The runtime posts it ONE question — exactly the question it would
+ * send the records service, alone as the body — and gets that service's answer back, verbatim,
+ * under one key the host derives from the question itself. How long an answer is kept, and
+ * where, is the host's; the question, and what the page does with the answer, are ours.
+ *
+ * Presence is the switch, as for `records`: no row, and every question goes to the records
+ * service as before. It is read only beside a `records` row — a cached answer is still that
+ * service's answer.
+ *
+ * @param {Object|null} services - `config.services`
+ * @param {string|null} locale - the locale being rendered; required
+ * @returns {string|null}
+ */
+export function resolveAnswersService(services, locale) {
+  if (!resolveRecordsService(services, locale)) return null
+  return resolveLocaleService(ANSWERS_SERVICE, services, locale)
+}
+
+/** The host's service address for one locale, or null — the rule both services share. */
+function resolveLocaleService(name, services, locale) {
   if (!services || typeof services !== 'object' || Array.isArray(services)) return null
-  const endpoint = readEndpoint(services[RECORDS_SERVICE])
+  const endpoint = readEndpoint(services[name])
   if (!endpoint) return null
   if (typeof locale !== 'string' || locale.length === 0) return null
   if (!endpoint.includes('{locale}')) {
     warnOnce(
-      `records:${endpoint}`,
-      `config.services.${RECORDS_SERVICE} carries no {locale} placeholder; the service takes the ` +
+      `${name}:${endpoint}`,
+      `config.services.${name} carries no {locale} placeholder; the service takes the ` +
         `locale as a route segment. Ignoring it.`
     )
     return null
