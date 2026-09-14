@@ -92,6 +92,45 @@ export function currentOf(cfg) {
 }
 
 /**
+ * ⭐ HOW A FETCH ON A PARAMETRIC PAGE USES THE PAGE'S RECORD — `current:` FOLLOWS THE QUERY,
+ * NOT THE KEY (ruled 2026-09-14 [Diego]). The one test the entity store (`resolve`, `fetch`),
+ * the prefetch and the build's warning all make:
+ *
+ *   - **a fetch naming the route query** gets the page's record — `only` — unless its
+ *     `current:` says `exclude` or `include`, whatever its `as`: `{ query: articles, as:
+ *     related, current: exclude }` is the others under `related`;
+ *   - **a fetch naming another query** gets that query's records as it describes them,
+ *     and its `current:` is read when written: `exclude` takes the page's record out, `only`
+ *     keeps just that record;
+ *   - **a fetch naming no query** (a `path:` or `url:` config) is decided by its key, as
+ *     before: the route key's fetch gets the record. So is every fetch on a page whose
+ *     route query names none, since there is no query to compare.
+ *
+ * The page's record is found in any of them the way it is found in the route query's set —
+ * by the route's parameter (`matchesRouteParam`).
+ *
+ * ⛔ Until 2026-09-14 both were decided by the key: `current:` was read only under the route
+ * key, and there it defaulted to the record whatever query the fetch named. So `{ query:
+ * articles, as: related, current: exclude }` got every article, and `{ query: news, as:
+ * articles }` got the page's article out of `news`.
+ *
+ * @param {Object} cfg - a fetch config — resolved, or as authored with its `as`
+ * @param {{ key: string, config: Object }|null} route - the page's route query
+ *   (`pageRouteQuery`), or null off a parametric page
+ * @returns {'only'|'exclude'|'include'|null} null when the page's record plays no part: the
+ *   fetch gets its records as it describes them
+ */
+export function currentFor(cfg, route) {
+  if (!cfg || !route) return null
+  const named = (c) => (typeof c?.query === 'string' && c.query ? c.query : null)
+  const query = named(cfg)
+  const routeQueryName = named(route.config)
+  if (query === null || routeQueryName === null) return bindingKey(cfg) === route.key ? currentOf(cfg) : null
+  if (query === routeQueryName) return currentOf(cfg)
+  return CURRENT_MODES.includes(cfg.current) ? cfg.current : null
+}
+
+/**
  * The list a `current: exclude` section asks for: its own view, with `narrow.limit`
  * one higher, so that removing the page's record still leaves `limit` others. The
  * order is the set, then the fetch's `where` and `sort`, remove the record, `limit` —

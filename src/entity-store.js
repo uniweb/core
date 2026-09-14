@@ -14,7 +14,7 @@
  * and in-flight dedup.
  */
 
-import { resolveFetchConfigs, fetchEntries, pageRouteQuery, routeSelection, currentOf, othersView, othersOf, siteReaches } from './fetch-config.js'
+import { resolveFetchConfigs, fetchEntries, pageRouteQuery, routeSelection, currentFor, othersView, othersOf, siteReaches } from './fetch-config.js'
 import { fillRoutePattern, matchesRouteParam } from './route-match.js'
 import { buildDetailConfig } from './detail-url.js'
 
@@ -259,10 +259,10 @@ export default class EntityStore {
     let allCached = true
 
     for (const [schema, cfg] of configs) {
-      // `current:` applies under the key the page's URL narrows, and nowhere else.
-      const current = dynamicContext && route && schema === route.key ? currentOf(cfg) : null
+      // How this fetch uses the page's record: by the query it names (`currentFor`).
+      const current = dynamicContext ? currentFor(cfg, route) : null
       if (current === 'exclude') {
-        // The route query's records without this page's, `limit` counting the others.
+        // The query's records without this page's, `limit` counting the others.
         const cached = dispatcher?.peek(othersView(cfg), ctx)
         if (cached) {
           data[schema] = othersOf(cached.data, cfg, isPageRecord(dynamicContext))
@@ -282,8 +282,9 @@ export default class EntityStore {
       } else if (current === 'only') {
         // Detail page: deliver the focused record as a length-1 array under the
         // query key. A deferred/remote query fetches the full per-record;
-        // others use the matched record. Not found → []. Found in the route
-        // query's set, never in a list a fetch narrowed (`routeSelection`).
+        // others use the matched record. Not found → []. Found in the set of the
+        // query the fetch names — the route query's, or another's under `current: only`
+        // — never in a list a fetch narrowed (`routeSelection`).
         const cached = dispatcher?.peek(routeSelection(cfg), ctx)
         if (cached) {
           const { paramName, paramValue } = dynamicContext
@@ -316,8 +317,8 @@ export default class EntityStore {
           allCached = false
         }
       } else {
-        // Any other key — and `current: include`, the route query's list as the
-        // binding describes it, this page's record among the rest.
+        // A fetch the page's record plays no part in (`currentFor`), and `current:
+        // include`: the records as the fetch describes them, the page's among the rest.
         const cached = dispatcher?.peek(cfg, ctx)
         if (cached) {
           data[schema] = cached.data
@@ -379,10 +380,10 @@ export default class EntityStore {
     }
 
     for (const [schema, cfg] of configs) {
-      // `current:` applies under the key the page's URL narrows, and nowhere else.
-      const current = dynamicContext && route && schema === route.key ? currentOf(cfg) : null
+      // How this fetch uses the page's record: by the query it names (`currentFor`).
+      const current = dynamicContext ? currentFor(cfg, route) : null
       if (current === 'exclude') {
-        // The route query's records without this page's, the fetch's `limit` counting
+        // The query's records without this page's, the fetch's `limit` counting
         // the others: its `narrow.limit` asked one higher (`othersView`), so removing
         // the record still leaves enough.
         const view = othersView(cfg)
@@ -397,7 +398,7 @@ export default class EntityStore {
         }))
       } else if (current === 'only' && cfg.ask) {
         // ⭐ THE RECORDS SERVICE needs no list to find the record: the record is the
-        // route query's set narrowed by the route's handle, so its one question
+        // query's set narrowed by the route's handle, so its one question
         // answers the record if the set holds it and `[]` if not — no client-side
         // scan gating the fetch (F13, the live half).
         //
@@ -415,8 +416,8 @@ export default class EntityStore {
           data[schema] = answer.slice(0, 1) // a route resolves to ONE; `[]` is not found
         }))
       } else if (current === 'only') {
-        // Detail page: focused record as a length-1 array under the query key,
-        // found in the route query's set (`routeSelection`) — a record past a
+        // Detail page: focused record as a length-1 array under the fetch's key,
+        // found in its query's set (`routeSelection`) — a record past a
         // fetch's `limit` still has its page, and one past the query's has none.
         const { paramName, paramValue } = dynamicContext
         const selection = routeSelection(cfg)

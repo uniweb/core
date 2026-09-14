@@ -462,10 +462,65 @@ describe('current: — how a section on a parametric page uses the page\'s recor
     expect(entityStore.resolve(include, {})).toEqual({ status: 'ready', data: { posts: posts.slice(0, 3) } })
   })
 
-  // ⭐ `current:` applies under the route KEY, whatever query the binding names there — so a
-  // section can show another query's records beside the page's record. Asked by frontend,
-  // 2026-09-14 (its Live Content spec, §3.2).
-  describe('a binding under the route key that names ANOTHER query', () => {
+  // ⭐ `current:` FOLLOWS THE QUERY, NOT THE KEY (ruled 2026-09-14 [Diego]): a fetch naming
+  // the route query gets the page's record unless its `current:` says otherwise, whatever
+  // its `as`; a fetch naming another query gets that query's records, and its `current:` is
+  // read when written. ⛔ Until then both were decided by the fetch's KEY: `current:` was
+  // read only under the route key, and there it defaulted to the record whatever query the
+  // fetch named.
+  describe('§2.6 — a fetch of the route query under ANOTHER key', () => {
+    it('exclude — the others, under the key it names: `related`', async () => {
+      const { entityStore, website, fetcherSpy } = harness()
+      const block = makeBlock({ page: detail('b'), fetch: { query: 'posts', as: 'related', current: 'exclude', limit: 3 } }, website)
+      const result = await entityStore.fetch(block, {})
+      expect(result.data.related.map((p) => p.slug)).toEqual(['a', 'c', 'd'])
+      expect(result.data.posts.map((p) => p.slug)).toEqual(['b'])
+      expect(fetcherSpy.mock.calls.some(([req]) => req.as === 'related' && req.narrow?.limit === 4)).toBe(true)
+    })
+
+    it('no `current:` — the page\'s record, whatever the key', async () => {
+      const { entityStore, website } = harness()
+      const block = makeBlock({ page: detail('c'), fetch: { query: 'posts', as: 'post' } }, website)
+      expect((await entityStore.fetch(block, {})).data.post.map((p) => p.slug)).toEqual(['c'])
+    })
+
+    it('include — the records as the fetch describes them', async () => {
+      const { entityStore, website } = harness()
+      const block = makeBlock({ page: detail('c'), fetch: { query: 'posts', as: 'pager', current: 'include', limit: 2 } }, website)
+      expect((await entityStore.fetch(block, {})).data.pager.map((p) => p.slug)).toEqual(['a', 'b'])
+    })
+
+    it('the sync path gives the same answer from the cache', async () => {
+      const { entityStore, website } = harness()
+      const block = makeBlock({ page: detail('b'), fetch: { query: 'posts', as: 'related', current: 'exclude', limit: 3 } }, website)
+      await entityStore.fetch(block, {})
+      const answer = entityStore.resolve(block, {})
+      expect(answer.status).toBe('ready')
+      expect(answer.data.related.map((p) => p.slug)).toEqual(['a', 'c', 'd'])
+    })
+
+    it('on the records service: exclude asks the list one longer, and the default asks the record', async () => {
+      const asked = []
+      const { entityStore, website } = makeHarness({
+        fetcherImpl: (req) => {
+          asked.push({ as: req.as, limit: req.narrow?.limit, match: req.narrow?.match })
+          return Promise.resolve({ data: evaluateQuery(posts.map((p) => ({ ...p, $name: p.slug })), req) })
+        },
+      })
+      website.config = { services: { records: '/_records/ask/{locale}' }, queries: { posts: { schema: '@/post' } } }
+      const page = makePage({ parent: makePage({ route: '/posts', fetch: { query: 'posts', as: 'posts' } }), dynamicContext: on('a') })
+      const related = await entityStore.fetch(makeBlock({ page, fetch: { query: 'posts', as: 'related', current: 'exclude', limit: 2 } }, website), {})
+      expect(related.data.related.map((p) => p.slug)).toEqual(['b', 'c'])
+      const post = await entityStore.fetch(makeBlock({ page, fetch: { query: 'posts', as: 'post' } }, website), {})
+      expect(post.data.post.map((p) => p.slug)).toEqual(['a'])
+      expect(asked.filter((q) => q.as === 'related')).toEqual([{ as: 'related', limit: 3, match: undefined }])
+      expect(asked.filter((q) => q.as === 'post').map((q) => q.match)).toEqual([{ $name: 'a' }])
+    })
+  })
+
+  // A section can show another query's records beside the page's record — under the route
+  // key, and under any other key alike, since `current:` follows the query.
+  describe('a fetch that names ANOTHER query', () => {
     const featured = [{ slug: 'b', n: 2 }, { slug: 'x', n: 9 }, { slug: 'd', n: 4 }]
     const twoQueries = () => {
       const h = makeHarness({
@@ -499,9 +554,25 @@ describe('current: — how a section on a parametric page uses the page\'s recor
       const notInIt = makeBlock({ page: detail('c'), fetch: featuredBinding({ current: 'only' }) }, website)
       expect(slugs(await entityStore.fetch(notInIt, {}))).toEqual([])
     })
+
+    it('⛔ no `current:` — that query\'s records, even under the route key (2026-09-14)', async () => {
+      // Until then the route key decided, and this delivered the page's record: ['b'].
+      const { entityStore, website } = twoQueries()
+      const block = makeBlock({ page: detail('b'), fetch: featuredBinding() }, website)
+      expect(slugs(await entityStore.fetch(block, {}))).toEqual(['b', 'x', 'd'])
+    })
+
+    it('exclude under a key of its own — `current:` is read there too', async () => {
+      // Until 2026-09-14 a key the URL does not narrow ignored it: ['b', 'x', 'd'].
+      const { entityStore, website } = twoQueries()
+      const block = makeBlock({ page: detail('b'), fetch: { query: 'featured', as: 'highlights', current: 'exclude' } }, website)
+      const result = await entityStore.fetch(block, {})
+      expect(result.data.highlights.map((p) => p.slug)).toEqual(['x', 'd'])
+      expect(slugs(result)).toEqual(['b'])
+    })
   })
 
-  it('CONTROL — `current:` under a key the URL does not narrow changes nothing', async () => {
+  it('CONTROL — a fetch that names no query is decided by key: under another key `current:` changes nothing', async () => {
     const { entityStore, website } = harness()
     const page = detail('b')
     const block = makeBlock({ page, fetch: [{ path: '/data/tags.json', as: 'tags', current: 'exclude', limit: 2 }] }, website)

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isFetchRefinement, resolveFetchConfigs, routeQuery, pageRouteQuery, recordPages, routeSelection, sectionFetches, withoutRouteVariables, othersView, othersOf, currentOf } from '../src/fetch-config.js'
+import { isFetchRefinement, resolveFetchConfigs, routeQuery, pageRouteQuery, recordPages, routeSelection, sectionFetches, withoutRouteVariables, othersView, othersOf, currentOf, currentFor } from '../src/fetch-config.js'
 // Derived, never re-spelled: the convention is pinned once, in
 // `tests/data-paths.test.js`. See the note there before pinning it again.
 import { queryDataUrl, recordDataUrl } from '../src/data-paths.js'
@@ -670,6 +670,37 @@ describe('recordPages — the page each query\'s records link to, over a content
 
   it('the site\'s query routes a top-level parametric page', () => {
     expect(content([{ route: '/:slug' }], { query: 'people', as: 'people' }).get('people')).toMatchObject({ route: '/:slug' })
+  })
+})
+
+describe('currentFor — `current:` follows the query, not the key (ruled 2026-09-14)', () => {
+  // /blog/:slug, whose route query is `articles`, delivered under `articles`
+  const route = { key: 'articles', config: { query: 'articles', as: 'articles' } }
+
+  it('a fetch of the route query takes the record by default, under any key', () => {
+    expect(currentFor({ query: 'articles', as: 'articles' }, route)).toBe('only')
+    expect(currentFor({ query: 'articles', as: 'list' }, route)).toBe('only')
+    expect(currentFor({ query: 'articles', as: 'related', current: 'exclude' }, route)).toBe('exclude')
+    expect(currentFor({ query: 'articles', as: 'pager', current: 'include' }, route)).toBe('include')
+  })
+
+  it('a fetch of another query takes its records by default, and reads `current:` when written', () => {
+    expect(currentFor({ query: 'news', as: 'articles' }, route)).toBeNull()
+    expect(currentFor({ query: 'news', as: 'news' }, route)).toBeNull()
+    expect(currentFor({ query: 'news', as: 'articles', current: 'only' }, route)).toBe('only')
+    expect(currentFor({ query: 'news', as: 'highlights', current: 'exclude' }, route)).toBe('exclude')
+  })
+
+  it('a fetch naming no query — or a route query naming none — is decided by key', () => {
+    expect(currentFor({ path: '/data/articles.json', as: 'articles' }, route)).toBe('only')
+    expect(currentFor({ path: '/data/tags.json', as: 'tags', current: 'exclude' }, route)).toBeNull()
+    const unnamed = { key: 'articles', config: { path: '/data/articles.json', as: 'articles' } }
+    expect(currentFor({ query: 'articles', as: 'articles' }, unnamed)).toBe('only')
+    expect(currentFor({ query: 'articles', as: 'related', current: 'exclude' }, unnamed)).toBeNull()
+  })
+
+  it('CONTROL — off a parametric page the record plays no part', () => {
+    expect(currentFor({ query: 'articles', as: 'articles', current: 'exclude' }, null)).toBeNull()
   })
 })
 

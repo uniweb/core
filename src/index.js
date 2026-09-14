@@ -22,7 +22,7 @@ export { default as ObservableState } from './observable-state.js'
 export { substitutePlaceholders } from './substitute-placeholders.js'
 // `resolveRecordsService` / `RECORDS_SERVICE` are NOT re-exported here: `./fetch-config.js`
 // reads them and a consumer that needs them imports `@uniweb/core/records-service`.
-export { resolveFetchConfigs, routeQuery, pageRouteQuery, routeSelection, sectionFetches, siteReaches, withoutRouteVariables, CURRENT_MODES } from './fetch-config.js'
+export { resolveFetchConfigs, routeQuery, pageRouteQuery, routeSelection, sectionFetches, siteReaches, withoutRouteVariables, CURRENT_MODES, currentFor } from './fetch-config.js'
 export { buildDetailConfig, ROUTE_HANDLE_KEY } from './detail-url.js'
 // `isWildcardLanguages` is likewise internal — `./locale-config.js` reads it
 // and nothing else does. Same subpath escape hatch: `@uniweb/core/locale-config`.
