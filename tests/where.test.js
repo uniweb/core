@@ -252,6 +252,19 @@ describe('evaluate — dotted paths', () => {
     expect(match({ 'education.degree': { ne: 'PhD' } }, cvs).map((r) => r.id)).toEqual(['alan', 'none'])
     expect(match({ 'education.degree': { exists: false } }, cvs).map((r) => r.id)).toEqual(['none'])
   })
+
+  it('⛔ a path with an empty step, or starting at a `$` field, is outside the language — no records', () => {
+    const rows = [{ a: { b: 1 }, $meta: { x: 1 }, $name: 'ada' }]
+    expect(whereOutsideLanguage({ 'a..b': 1 })).toMatch(/empty step/)
+    expect(whereOutsideLanguage({ '.a': 1 })).toMatch(/empty step/)
+    expect(whereOutsideLanguage({ 'a.': { exists: true } })).toMatch(/empty step/)
+    expect(whereOutsideLanguage({ '$meta.x': 1 })).toMatch(/starts with `\$`/)
+    expect(match({ '$meta.x': 1 }, rows)).toEqual([])
+    expect(match({ or: [{ 'a..b': 1 }] }, rows)).toEqual([])
+    // CONTROL — a single `$` field is a field, not a path, and a well-formed path is inside
+    expect(whereOutsideLanguage({ $name: 'ada', 'a.b': 1 })).toBe(null)
+    expect(match({ $name: 'ada', 'a.b': 1 }, rows)).toHaveLength(1)
+  })
 })
 
 describe('evaluate — edge cases', () => {

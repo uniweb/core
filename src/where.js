@@ -66,12 +66,15 @@
  * empty argument. It never falls back to a wider answer. `whereOutsideLanguage`
  * says why, so a producer can refuse the declaration where the author wrote it.
  *
- * Dotted paths descend into nested objects: `tenure.start: { gte: 2015 }`. ⭐ A
+ * Dotted paths descend into nested objects: `tenure.start: { gte: 2015 }` — never one with
+ * an empty step, nor one starting at a `$` field (`field-path.js`). ⭐ A
  * path that meets a list descends into each item, and the values it reaches are
  * read as a list field — so `education.degree: PhD` matches a record any of whose
  * `education` entries has that degree. (Kept on this lane by ruling 2026-09-13
  * [Diego]; a host's records service may not answer them.)
  */
+
+import { fieldPathProblem } from './field-path.js'
 
 const OPERATORS = new Set([
   'eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'in', 'not_in', 'exists', 'contains', 'starts_with', 'ends_with',
@@ -145,7 +148,10 @@ function clauseProblem(key, value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return '`not` takes one object of conditions'
     return whereOutsideLanguage(value)
   }
-  // A field clause: a bare value, null, or an operator object.
+  // A field clause: a bare value, null, or an operator object — under a key that is a
+  // field or a path the language admits (`field-path.js`).
+  const pathProblem = fieldPathProblem(key)
+  if (pathProblem) return pathProblem
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return null
   const ops = Object.keys(value)
   if (ops.length === 0) return `the condition on \`${key}\` is empty`

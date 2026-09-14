@@ -18,11 +18,13 @@
  * Dotted paths descend into nested objects (`tenure.start`) — kept, like the
  * predicate evaluator's.
  *
- * Zero-dependency leaf: `@uniweb/build` reads it to materialize `/data/<name>.json`
+ * Zero-dependency beyond the `field-path.js` leaf: `@uniweb/build` reads it to materialize `/data/<name>.json`
  * and `@uniweb/runtime` reads it as the fallback over a fetched array, so the two
  * lanes cannot drift on the one thing a conformance test would otherwise have to
  * catch by luck.
  */
+
+import { fieldPathProblem } from './field-path.js'
 
 /**
  * Parse an authored `sort:` into `{ field, desc }`.
@@ -39,6 +41,7 @@ export function parseSort(sort) {
   if (sort === undefined || sort === null || sort === '') return null
   if (typeof sort === 'object') {
     if (typeof sort.field !== 'string' || sort.field.length === 0) return null
+    refuseFieldPath(sort.field, sort.field)
     return { field: sort.field, desc: sort.desc === true }
   }
   const text = String(sort).trim()
@@ -52,6 +55,7 @@ export function parseSort(sort) {
   if (text.startsWith('-')) {
     const field = text.slice(1).trim()
     if (!field || /\s/.test(field)) throw new Error(`[uniweb] sort: "${text}" is not a field name.`)
+    refuseFieldPath(field, text)
     return { field, desc: true }
   }
   const parts = text.split(/\s+/)
@@ -63,7 +67,14 @@ export function parseSort(sort) {
   if (lower !== 'asc' && lower !== 'desc') {
     throw new Error(`[uniweb] sort: "${text}" — direction must be \`asc\` or \`desc\`, not "${dir}".`)
   }
+  refuseFieldPath(field, text)
   return { field, desc: lower === 'desc' }
+}
+
+/** A sort field outside the language is refused where it is written (`field-path.js`). */
+function refuseFieldPath(field, text) {
+  const problem = fieldPathProblem(field)
+  if (problem) throw new Error(`[uniweb] sort: "${text}" — ${problem}.`)
 }
 
 /**

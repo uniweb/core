@@ -87,7 +87,7 @@ describe('sortRecords', () => {
     expect(sortRecords(items, 'd desc').map((i) => i.n)).toEqual([3, 2, 1])
   })
 
-  it('compares strings with localeCompare, so case does not scatter the order', () => {
+  it('collates strings, so case does not scatter the order', () => {
     expect(sortRecords(items, 's').map((i) => i.s)).toEqual(['apple', 'Banana', 'cherry'])
   })
 
@@ -164,6 +164,16 @@ describe('sortRecords', () => {
     expect(sortRecords(null, 'n')).toBeNull()
     const empty = []
     expect(sortRecords(empty, 'n')).toBe(empty)
+  })
+
+  it('⛔ refuses a sort path with an empty step, or starting at a `$` field — outside the language', () => {
+    expect(() => parseSort('a..b')).toThrow(/empty step/)
+    expect(() => parseSort('-.a')).toThrow(/empty step/)
+    expect(() => parseSort('$meta.x desc')).toThrow(/starts with `\$`/)
+    expect(() => parseSort({ field: 'a.', desc: true })).toThrow(/empty step/)
+    // CONTROL — a single `$` field and a well-formed path are fields
+    expect(parseSort('$name')).toEqual({ field: '$name', desc: false })
+    expect(parseSort('tenure.start desc')).toEqual({ field: 'tenure.start', desc: true })
   })
 
   it('refuses a multi-key sort at the call site, not silently by the first key', () => {
