@@ -908,7 +908,7 @@ export default class Website {
    *
    * This is what fills a delivered record's `$route` (`EntityStore`) when its fetch picks
    * no `detailPage`, and how a caller outside a parametric page learns which record field
-   * the page's URL is built on: `kit`'s `useEntityDetail` asks it so a hover card and the
+   * the page's URL is built on: `kit`'s `useWholeRecord` asks it so a hover card and the
    * page it links to address the record by the SAME field.
    *
    * ⛔ Replaces `detailTemplateFor(name)` (2026-09-14), which matched a binding key OR a

@@ -13,7 +13,8 @@
  * (`data-fetcher.js`), core injected the per-record default
  * (`fetch-config.js applyDeferredDetail`), core gated locale-prefixing on it
  * (`fetch-config.js localizeConfig`), the dev server matched it with a regex
- * (`build/src/site/plugin.js`), and kit's `useEntityDetail` requested it.
+ * (`build/src/site/plugin.js`), and kit's `useEntityDetail` — `useWholeRecord`
+ * since 2026-09-14 — requested it.
  *
  * They drifted. `useEntityDetail` was edited to `/_data/` on its own and
  * nothing else followed, so a public documented hook requested a URL that
@@ -73,12 +74,11 @@ export function queryDataUrl(name) {
  * URL of one record's full payload — every field, including deferred ones.
  * Emitted per record only when the query declares `deferred:`.
  *
- * Takes either a concrete slug (kit's `useEntityDetail`, which holds a
- * record) or the literal placeholder `{slug}` (core's `applyDeferredDetail`,
- * which builds a pattern that `substitutePlaceholders` resolves later
- * against the dynamic-route param). Both are plain interpolation; this
- * function does not encode, matching the behavior of the call sites it
- * replaced.
+ * Takes either a concrete slug — a caller holding the record — or the literal
+ * placeholder `{slug}` (core's `applyDeferredDetail`, which builds a pattern
+ * that `substitutePlaceholders` resolves later against the dynamic-route
+ * param). Both are plain interpolation; this function does not encode,
+ * matching the behavior of the call sites it replaced.
  *
  * @param {string} query - The query name.
  * @param {string} slug - A record slug, or a `{param}` placeholder.

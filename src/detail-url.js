@@ -45,7 +45,7 @@ function paramContext(paramName, paramValue, record) {
   // detail URL was `/data/articles/{slug}.json`, a guaranteed 404, on every
   // template page with `deferred:` fields (measured 2026-09-04). When the caller
   // holds the record — the entity store does (it matched it), and so does
-  // `useEntityDetail` — its slug fills the name the FILE was written under. A
+  // kit's `useWholeRecord` — its slug fills the name the FILE was written under. A
   // caller with no record in hand leaves `{slug}` literal rather than guessing
   // the capture is one: a visibly unresolved address beats a plausible wrong one.
   const handle = recordHandle(record)
