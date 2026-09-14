@@ -456,6 +456,41 @@ describe('current: — how a section on a parametric page uses the page\'s recor
     expect(entityStore.resolve(include, {})).toEqual({ status: 'ready', data: { posts: posts.slice(0, 3) } })
   })
 
+  // ⭐ `current:` applies under the route KEY, whatever query the binding names there — so a
+  // section can show another query's records beside the page's record. Asked by frontend,
+  // 2026-09-14 (its Live Content spec, §3.2).
+  describe('a binding under the route key that names ANOTHER query', () => {
+    const featured = [{ slug: 'b', n: 2 }, { slug: 'x', n: 9 }, { slug: 'd', n: 4 }]
+    const twoQueries = () => makeHarness({
+      fetcherImpl: (req) => {
+        const rows = req.path === '/data/featured.json' ? featured : posts
+        return Promise.resolve({ data: req.limit ? rows.slice(0, req.limit) : rows.slice() })
+      },
+    })
+    const featuredBinding = (extra) => ({ path: '/data/featured.json', as: 'posts', ...extra })
+
+    it('exclude — that query\'s records, without this page\'s record', async () => {
+      const { entityStore, website, fetcherSpy } = twoQueries()
+      const block = makeBlock({ page: detail('b'), fetch: featuredBinding({ current: 'exclude', limit: 2 }) }, website)
+      expect(slugs(await entityStore.fetch(block, {}))).toEqual(['x', 'd'])
+      expect(fetcherSpy.mock.calls.map(([req]) => req.path)).toEqual(['/data/featured.json'])
+    })
+
+    it('include — that query\'s records as the binding describes them', async () => {
+      const { entityStore, website } = twoQueries()
+      const block = makeBlock({ page: detail('b'), fetch: featuredBinding({ current: 'include' }) }, website)
+      expect(slugs(await entityStore.fetch(block, {}))).toEqual(['b', 'x', 'd'])
+    })
+
+    it('only — this page\'s record when that query selects it, and none when it does not', async () => {
+      const { entityStore, website } = twoQueries()
+      const inIt = makeBlock({ page: detail('b'), fetch: featuredBinding({ current: 'only' }) }, website)
+      expect(slugs(await entityStore.fetch(inIt, {}))).toEqual(['b'])
+      const notInIt = makeBlock({ page: detail('c'), fetch: featuredBinding({ current: 'only' }) }, website)
+      expect(slugs(await entityStore.fetch(notInIt, {}))).toEqual([])
+    })
+  })
+
   it('CONTROL — `current:` under a key the URL does not narrow changes nothing', async () => {
     const { entityStore, website } = harness()
     const page = detail('b')
