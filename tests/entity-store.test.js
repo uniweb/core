@@ -44,6 +44,16 @@ function makeBlock(overrides = {}, website = null) {
   }
 }
 
+/**
+ * The meta of a component that declares these `content.data` keys. ⭐ A section receives
+ * only the keys its component declares (ruled 2026-09-14), so every test here names what
+ * its component reads. `ANY` declares every key these tests read: each fetch fills its own
+ * key, as delivery by `as` did — the cascade and the `current:` rules are tested on their
+ * own, and what a declaration changes is tested under § *declared keys* below.
+ */
+const declaring = (...keys) => ({ data: Object.fromEntries(keys.map((key) => [key, null])) })
+const ANY = declaring('articles', 'members', 'posts', 'related', 'pubs', 'teams', 'post', 'people', 'categories', 'tags', 'pager', 'news', 'highlights', 'devfail', 'article', 'key', 'config')
+
 function makePage(overrides = {}) {
   return {
     // A page's route pattern — a parametric one, so a page given a `dynamicContext`
@@ -61,7 +71,7 @@ describe('EntityStore.resolve', () => {
   it('returns none when no fetch configs exist in the hierarchy', () => {
     const { entityStore, website } = makeHarness()
     const block = makeBlock({}, website)
-    expect(entityStore.resolve(block, {})).toEqual({ status: 'none', data: null })
+    expect(entityStore.resolve(block, ANY)).toEqual({ status: 'none', data: null })
   })
 
   it('delivers data by default when a cascade match is cached', () => {
@@ -73,12 +83,12 @@ describe('EntityStore.resolve', () => {
     const page = makePage({ fetch: fetchConfig })
     const block = makeBlock({ page }, website)
 
-    const result = entityStore.resolve(block, {})
+    const result = entityStore.resolve(block, ANY)
     expect(result.status).toBe('ready')
     expect(result.data.articles).toEqual(articles)
   })
 
-  it('returns none when inheritData: false', () => {
+  it('⭐ returns none for a component that declares nothing — `data: false`, or no `data:` at all (2026-09-14)', () => {
     const { entityStore, dataStore, website } = makeHarness()
     const fetchConfig = { path: '/data/articles.json', as: 'articles' }
     dataStore.set(deriveCacheKey(fetchConfig), { data: [{ slug: 'a' }] })
@@ -86,7 +96,11 @@ describe('EntityStore.resolve', () => {
     const page = makePage({ fetch: fetchConfig })
     const block = makeBlock({ page }, website)
 
-    expect(entityStore.resolve(block, { inheritData: false })).toEqual({ status: 'none', data: null })
+    expect(entityStore.resolve(block, { data: false })).toEqual({ status: 'none', data: null })
+    expect(entityStore.resolve(block, {})).toEqual({ status: 'none', data: null })
+    expect(entityStore.resolve(block, null)).toEqual({ status: 'none', data: null })
+    // ⛔ until then no `data:` meant every key that reached the section
+    expect(entityStore.resolve(block, ANY).data.articles).toEqual([{ slug: 'a' }])
   })
 
   it('returns pending on cache miss', () => {
@@ -95,7 +109,7 @@ describe('EntityStore.resolve', () => {
     const page = makePage({ fetch: fetchConfig })
     const block = makeBlock({ page }, website)
 
-    expect(entityStore.resolve(block, {})).toEqual({ status: 'pending', data: null })
+    expect(entityStore.resolve(block, ANY)).toEqual({ status: 'pending', data: null })
   })
 })
 
@@ -111,7 +125,7 @@ describe('EntityStore.fetch', () => {
     const page = makePage({ parent })
     const block = makeBlock({ page }, website)
 
-    const result = await entityStore.fetch(block, { inheritData: ['articles'] })
+    const result = await entityStore.fetch(block, ANY)
     expect(result.data.articles).toEqual(articles)
     expect(fetcherSpy).toHaveBeenCalledWith(expect.objectContaining(fetchConfig), expect.anything())
   })
@@ -126,7 +140,7 @@ describe('EntityStore.fetch', () => {
     const page = makePage({ parent })
     const block = makeBlock({ page }, website)
 
-    const result = await entityStore.fetch(block, { inheritData: ['articles'] })
+    const result = await entityStore.fetch(block, ANY)
     expect(result.data).toBeNull()
     expect(fetcherSpy).not.toHaveBeenCalled()
   })
@@ -140,7 +154,7 @@ describe('EntityStore.fetch', () => {
     website.config = { fetch: fetchConfig }
 
     const block = makeBlock({ page: makePage() }, website)
-    const result = await entityStore.fetch(block, {})
+    const result = await entityStore.fetch(block, ANY)
     expect(result.data.teams).toEqual(teams)
   })
 
@@ -150,11 +164,11 @@ describe('EntityStore.fetch', () => {
     })
     website.config = { fetch: { path: '/data/teams.json', as: 'teams' } }
     const child = makePage({ route: '/about/team', parent: makePage({ route: '/about' }) })
-    expect(await entityStore.fetch(makeBlock({ page: child }, website), {})).toEqual({ data: null, errors: null })
+    expect(await entityStore.fetch(makeBlock({ page: child }, website), ANY)).toEqual({ data: null, errors: null })
     expect(fetcherSpy).not.toHaveBeenCalled()
     // ⭐ a layout area is the site's own — it has no parent page, so the binding reaches it
     const header = makePage({ route: '/layout/header' })
-    const result = await entityStore.fetch(makeBlock({ page: header }, website), {})
+    const result = await entityStore.fetch(makeBlock({ page: header }, website), ANY)
     expect(result.data.teams).toEqual([{ name: 'Team A' }])
   })
 
@@ -174,7 +188,7 @@ describe('EntityStore.fetch', () => {
     const page = makePage({ fetch: pageConfig })
     const block = makeBlock({ page, fetch: blockConfig }, website)
 
-    const result = await entityStore.fetch(block, {})
+    const result = await entityStore.fetch(block, ANY)
     expect(result.data.articles).toEqual(blockArticles)
     expect(fetcherSpy).toHaveBeenCalledTimes(1)
     expect(fetcherSpy).toHaveBeenCalledWith(expect.objectContaining(blockConfig), expect.anything())
@@ -193,7 +207,7 @@ describe('EntityStore.fetch', () => {
     const page = makePage({ fetch: fetchConfig })
     const block = makeBlock({ page, dynamicContext }, website)
 
-    const result = await entityStore.fetch(block, {})
+    const result = await entityStore.fetch(block, ANY)
     // Detail route: the focused record lands under the collection key as a
     // single-element array; there is no singular `article` key.
     expect(result.data.articles).toEqual([{ slug: 'world', title: 'World' }])
@@ -222,7 +236,7 @@ describe('EntityStore.fetch', () => {
     const page = makePage({ parent, dynamicContext })
     const block = makeBlock({ page }, website)
 
-    const result = await entityStore.fetch(block, { inheritData: ['articles'] })
+    const result = await entityStore.fetch(block, ANY)
     expect(result.data.articles).toEqual([detailArticle])
     expect(fetcherSpy).toHaveBeenCalledWith(
       expect.objectContaining({ url: 'https://api.example.com/articles/my-post', as: 'articles', transform: 'data' }),
@@ -246,7 +260,7 @@ describe('EntityStore.fetch', () => {
     const page = makePage({ parent, dynamicContext })
     const block = makeBlock({ page }, website)
 
-    const result = await entityStore.fetch(block, {})
+    const result = await entityStore.fetch(block, ANY)
     expect(result.data.articles).toEqual([detailArticle])
     expect(fetcherSpy).toHaveBeenCalledTimes(1)
     expect(fetcherSpy).toHaveBeenCalledWith(
@@ -264,7 +278,7 @@ describe('EntityStore.fetch', () => {
     const page = makePage({ fetch: { query: 'articles', as: 'articles' } })
     const block = makeBlock({ page }, website)
 
-    const result = await entityStore.fetch(block, {})
+    const result = await entityStore.fetch(block, ANY)
     expect(result.data.articles).toEqual(articles)
     expect(fetcherSpy).toHaveBeenCalledTimes(1)
     expect(fetcherSpy).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://api.example.com/articles' }), expect.anything())
@@ -281,7 +295,7 @@ describe('EntityStore.fetch', () => {
     const page = makePage({ parent, dynamicContext })
     const block = makeBlock({ page }, website)
 
-    const result = await entityStore.fetch(block, {})
+    const result = await entityStore.fetch(block, ANY)
     expect(result.data.articles).toEqual([{ slug: 'my-post' }])
     expect(result.data.article).toBeUndefined()
     expect(fetcherSpy).toHaveBeenCalledWith(expect.objectContaining(fetchConfig), expect.anything())
@@ -298,7 +312,7 @@ describe('EntityStore.fetch', () => {
     const page = makePage({ fetch: fetchConfig })
     const block = makeBlock({ page }, website)
 
-    await entityStore.fetch(block, {})
+    await entityStore.fetch(block, ANY)
     expect(fetcherSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         path: `/fr${queryDataUrl('articles')}`,
@@ -318,7 +332,7 @@ describe('EntityStore.fetch', () => {
     const page = makePage({ fetch: fetchConfig })
     const block = makeBlock({ page }, website)
 
-    await entityStore.fetch(block, {})
+    await entityStore.fetch(block, ANY)
     expect(fetcherSpy).toHaveBeenCalledWith(expect.objectContaining(fetchConfig), expect.anything())
   })
 
@@ -332,7 +346,7 @@ describe('EntityStore.fetch', () => {
     const page = makePage({ fetch: fetchConfig })
     const block = makeBlock({ page }, website)
 
-    await entityStore.fetch(block, {})
+    await entityStore.fetch(block, ANY)
     expect(fetcherSpy).toHaveBeenCalledWith(expect.objectContaining(fetchConfig), expect.anything())
   })
 
@@ -350,7 +364,7 @@ describe('EntityStore.fetch', () => {
     const page = makePage({ fetch: fetchConfig })
     const block = makeBlock({ page }, website)
 
-    const result = entityStore.resolve(block, {})
+    const result = entityStore.resolve(block, ANY)
     expect(result.status).toBe('ready')
     expect(result.data.articles).toEqual(articles)
   })
@@ -372,7 +386,7 @@ describe('EntityStore.fetch', () => {
     const page = makePage({ fetch: fetchConfigs })
     const block = makeBlock({ page }, website)
 
-    const result = await entityStore.fetch(block, {})
+    const result = await entityStore.fetch(block, ANY)
     expect(result.data.articles).toEqual(articles)
     expect(result.data.categories).toEqual(categories)
     expect(fetcherSpy).toHaveBeenCalledTimes(2)
@@ -387,7 +401,7 @@ describe('EntityStore.fetch', () => {
     const block = makeBlock({ page }, website)
     const controller = new AbortController()
 
-    await entityStore.fetch(block, {}, { signal: controller.signal })
+    await entityStore.fetch(block, ANY, { signal: controller.signal })
     const ctxArg = fetcherSpy.mock.calls[0][1]
     expect(ctxArg?.signal).toBeDefined()
   })
@@ -412,15 +426,15 @@ describe('current: — how a section on a parametric page uses the page\'s recor
   it('only — the default: the record, as a list of one', async () => {
     const { entityStore, website } = harness()
     const page = detail('c')
-    expect(slugs(await entityStore.fetch(makeBlock({ page }, website), {}))).toEqual(['c'])
+    expect(slugs(await entityStore.fetch(makeBlock({ page }, website), ANY))).toEqual(['c'])
     const explicit = makeBlock({ page, fetch: { ...listFetch, current: 'only' } }, website)
-    expect(slugs(await entityStore.fetch(explicit, {}))).toEqual(['c'])
+    expect(slugs(await entityStore.fetch(explicit, ANY))).toEqual(['c'])
   })
 
   it('exclude — the records without this page\'s, and `limit` counts the others', async () => {
     const { entityStore, website, fetcherSpy } = harness()
     const block = makeBlock({ page: detail('b'), fetch: { ...listFetch, current: 'exclude', limit: 3 } }, website)
-    expect(slugs(await entityStore.fetch(block, {}))).toEqual(['a', 'c', 'd'])
+    expect(slugs(await entityStore.fetch(block, ANY))).toEqual(['a', 'c', 'd'])
     // the fetch's `narrow.limit` asked one higher, so removing the record still leaves three
     expect(fetcherSpy.mock.calls.map(([req]) => req.narrow?.limit)).toEqual([4])
   })
@@ -429,37 +443,37 @@ describe('current: — how a section on a parametric page uses the page\'s recor
     const { entityStore, website, fetcherSpy } = harness({ posts: { schema: '@/post', limit: 3 } })
     const block = makeBlock({ page: detail('b'), fetch: { ...listFetch, current: 'exclude', limit: 5 } }, website)
     // the set is a, b, c — so two others, not five
-    expect(slugs(await entityStore.fetch(block, {}))).toEqual(['a', 'c'])
+    expect(slugs(await entityStore.fetch(block, ANY))).toEqual(['a', 'c'])
     expect(fetcherSpy.mock.calls.map(([req]) => [req.limit, req.narrow?.limit])).toEqual([[3, 6]])
   })
 
   it('exclude — the order is narrow, sort, remove the record, limit', async () => {
     const { entityStore, website } = harness()
     const block = makeBlock({ page: detail('d'), fetch: { ...listFetch, current: 'exclude', sort: 'n desc', limit: 2 } }, website)
-    expect(slugs(await entityStore.fetch(block, {}))).toEqual(['e', 'c'])
+    expect(slugs(await entityStore.fetch(block, ANY))).toEqual(['e', 'c'])
   })
 
   it('exclude — a record outside the first `limit + 1` removes nothing, and the list is cut', async () => {
     const { entityStore, website } = harness()
     const block = makeBlock({ page: detail('e'), fetch: { ...listFetch, current: 'exclude', limit: 2 } }, website)
-    expect(slugs(await entityStore.fetch(block, {}))).toEqual(['a', 'b'])
+    expect(slugs(await entityStore.fetch(block, ANY))).toEqual(['a', 'b'])
   })
 
   it('include — all of them, this page\'s record among them: a pager', async () => {
     const { entityStore, website } = harness()
     const block = makeBlock({ page: detail('b'), fetch: { ...listFetch, current: 'include', limit: 3 } }, website)
-    expect(slugs(await entityStore.fetch(block, {}))).toEqual(['a', 'b', 'c'])
+    expect(slugs(await entityStore.fetch(block, ANY))).toEqual(['a', 'b', 'c'])
   })
 
   it('the sync path gives the same answers from the cache', async () => {
     const { entityStore, website } = harness()
     const exclude = makeBlock({ page: detail('b'), fetch: { ...listFetch, current: 'exclude', limit: 3 } }, website)
     const include = makeBlock({ page: detail('b'), fetch: { ...listFetch, current: 'include', limit: 3 } }, website)
-    expect(entityStore.resolve(exclude, {}).status).toBe('pending')
-    await entityStore.fetch(exclude, {})
-    await entityStore.fetch(include, {})
-    expect(entityStore.resolve(exclude, {})).toEqual({ status: 'ready', data: { posts: [posts[0], posts[2], posts[3]] } })
-    expect(entityStore.resolve(include, {})).toEqual({ status: 'ready', data: { posts: posts.slice(0, 3) } })
+    expect(entityStore.resolve(exclude, ANY).status).toBe('pending')
+    await entityStore.fetch(exclude, ANY)
+    await entityStore.fetch(include, ANY)
+    expect(entityStore.resolve(exclude, ANY)).toEqual({ status: 'ready', data: { posts: [posts[0], posts[2], posts[3]] } })
+    expect(entityStore.resolve(include, ANY)).toEqual({ status: 'ready', data: { posts: posts.slice(0, 3) } })
   })
 
   // ⭐ `current:` FOLLOWS THE QUERY, NOT THE KEY (ruled 2026-09-14 [Diego]): a fetch naming
@@ -472,7 +486,7 @@ describe('current: — how a section on a parametric page uses the page\'s recor
     it('exclude — the others, under the key it names: `related`', async () => {
       const { entityStore, website, fetcherSpy } = harness()
       const block = makeBlock({ page: detail('b'), fetch: { query: 'posts', as: 'related', current: 'exclude', limit: 3 } }, website)
-      const result = await entityStore.fetch(block, {})
+      const result = await entityStore.fetch(block, ANY)
       expect(result.data.related.map((p) => p.slug)).toEqual(['a', 'c', 'd'])
       expect(result.data.posts.map((p) => p.slug)).toEqual(['b'])
       expect(fetcherSpy.mock.calls.some(([req]) => req.as === 'related' && req.narrow?.limit === 4)).toBe(true)
@@ -481,20 +495,20 @@ describe('current: — how a section on a parametric page uses the page\'s recor
     it('no `current:` — the page\'s record, whatever the key', async () => {
       const { entityStore, website } = harness()
       const block = makeBlock({ page: detail('c'), fetch: { query: 'posts', as: 'post' } }, website)
-      expect((await entityStore.fetch(block, {})).data.post.map((p) => p.slug)).toEqual(['c'])
+      expect((await entityStore.fetch(block, ANY)).data.post.map((p) => p.slug)).toEqual(['c'])
     })
 
     it('include — the records as the fetch describes them', async () => {
       const { entityStore, website } = harness()
       const block = makeBlock({ page: detail('c'), fetch: { query: 'posts', as: 'pager', current: 'include', limit: 2 } }, website)
-      expect((await entityStore.fetch(block, {})).data.pager.map((p) => p.slug)).toEqual(['a', 'b'])
+      expect((await entityStore.fetch(block, ANY)).data.pager.map((p) => p.slug)).toEqual(['a', 'b'])
     })
 
     it('the sync path gives the same answer from the cache', async () => {
       const { entityStore, website } = harness()
       const block = makeBlock({ page: detail('b'), fetch: { query: 'posts', as: 'related', current: 'exclude', limit: 3 } }, website)
-      await entityStore.fetch(block, {})
-      const answer = entityStore.resolve(block, {})
+      await entityStore.fetch(block, ANY)
+      const answer = entityStore.resolve(block, ANY)
       expect(answer.status).toBe('ready')
       expect(answer.data.related.map((p) => p.slug)).toEqual(['a', 'c', 'd'])
     })
@@ -509,9 +523,9 @@ describe('current: — how a section on a parametric page uses the page\'s recor
       })
       website.config = { services: { records: '/_records/ask/{locale}' }, queries: { posts: { schema: '@/post' } } }
       const page = makePage({ parent: makePage({ route: '/posts', fetch: { query: 'posts', as: 'posts' } }), dynamicContext: on('a') })
-      const related = await entityStore.fetch(makeBlock({ page, fetch: { query: 'posts', as: 'related', current: 'exclude', limit: 2 } }, website), {})
+      const related = await entityStore.fetch(makeBlock({ page, fetch: { query: 'posts', as: 'related', current: 'exclude', limit: 2 } }, website), ANY)
       expect(related.data.related.map((p) => p.slug)).toEqual(['b', 'c'])
-      const post = await entityStore.fetch(makeBlock({ page, fetch: { query: 'posts', as: 'post' } }, website), {})
+      const post = await entityStore.fetch(makeBlock({ page, fetch: { query: 'posts', as: 'post' } }, website), ANY)
       expect(post.data.post.map((p) => p.slug)).toEqual(['a'])
       expect(asked.filter((q) => q.as === 'related')).toEqual([{ as: 'related', limit: 3, match: undefined }])
       expect(asked.filter((q) => q.as === 'post').map((q) => q.match)).toEqual([{ $name: 'a' }])
@@ -537,36 +551,36 @@ describe('current: — how a section on a parametric page uses the page\'s recor
     it('exclude — that query\'s records, without this page\'s record', async () => {
       const { entityStore, website, fetcherSpy } = twoQueries()
       const block = makeBlock({ page: detail('b'), fetch: featuredBinding({ current: 'exclude', limit: 2 }) }, website)
-      expect(slugs(await entityStore.fetch(block, {}))).toEqual(['x', 'd'])
+      expect(slugs(await entityStore.fetch(block, ANY))).toEqual(['x', 'd'])
       expect(fetcherSpy.mock.calls.map(([req]) => req.path)).toEqual(['/data/featured.json'])
     })
 
     it('include — that query\'s records as the binding describes them', async () => {
       const { entityStore, website } = twoQueries()
       const block = makeBlock({ page: detail('b'), fetch: featuredBinding({ current: 'include' }) }, website)
-      expect(slugs(await entityStore.fetch(block, {}))).toEqual(['b', 'x', 'd'])
+      expect(slugs(await entityStore.fetch(block, ANY))).toEqual(['b', 'x', 'd'])
     })
 
     it('only — this page\'s record when that query selects it, and none when it does not', async () => {
       const { entityStore, website } = twoQueries()
       const inIt = makeBlock({ page: detail('b'), fetch: featuredBinding({ current: 'only' }) }, website)
-      expect(slugs(await entityStore.fetch(inIt, {}))).toEqual(['b'])
+      expect(slugs(await entityStore.fetch(inIt, ANY))).toEqual(['b'])
       const notInIt = makeBlock({ page: detail('c'), fetch: featuredBinding({ current: 'only' }) }, website)
-      expect(slugs(await entityStore.fetch(notInIt, {}))).toEqual([])
+      expect(slugs(await entityStore.fetch(notInIt, ANY))).toEqual([])
     })
 
     it('⛔ no `current:` — that query\'s records, even under the route key (2026-09-14)', async () => {
       // Until then the route key decided, and this delivered the page's record: ['b'].
       const { entityStore, website } = twoQueries()
       const block = makeBlock({ page: detail('b'), fetch: featuredBinding() }, website)
-      expect(slugs(await entityStore.fetch(block, {}))).toEqual(['b', 'x', 'd'])
+      expect(slugs(await entityStore.fetch(block, ANY))).toEqual(['b', 'x', 'd'])
     })
 
     it('exclude under a key of its own — `current:` is read there too', async () => {
       // Until 2026-09-14 a key the URL does not narrow ignored it: ['b', 'x', 'd'].
       const { entityStore, website } = twoQueries()
       const block = makeBlock({ page: detail('b'), fetch: { query: 'featured', as: 'highlights', current: 'exclude' } }, website)
-      const result = await entityStore.fetch(block, {})
+      const result = await entityStore.fetch(block, ANY)
       expect(result.data.highlights.map((p) => p.slug)).toEqual(['x', 'd'])
       expect(slugs(result)).toEqual(['b'])
     })
@@ -576,7 +590,7 @@ describe('current: — how a section on a parametric page uses the page\'s recor
     const { entityStore, website } = harness()
     const page = detail('b')
     const block = makeBlock({ page, fetch: [{ path: '/data/tags.json', as: 'tags', current: 'exclude', limit: 2 }] }, website)
-    const result = await entityStore.fetch(block, {})
+    const result = await entityStore.fetch(block, ANY)
     expect(result.data.tags.map((p) => p.slug)).toEqual(['a', 'b'])
   })
 
@@ -591,7 +605,7 @@ describe('current: — how a section on a parametric page uses the page\'s recor
     website.config = { services: { records: '/_records/ask/{locale}' }, queries: { posts: { schema: '@/post' } } }
     const page = makePage({ parent: makePage({ route: '/posts', fetch: { query: 'posts', as: 'posts' } }), dynamicContext: on('a') })
     const block = makeBlock({ page, fetch: { query: 'posts', as: 'posts', current: 'exclude', limit: 2 } }, website)
-    const result = await entityStore.fetch(block, {})
+    const result = await entityStore.fetch(block, ANY)
     expect(result.data.posts.map((p) => p.slug)).toEqual(['b', 'c'])
     expect(asked).toEqual([{ limit: 3, match: undefined }])
   })
@@ -616,20 +630,20 @@ describe('a page nested inside a parametric page shares its route query (ruled 2
 
   it('the record of a route query declared two levels up — on the list page', async () => {
     const { entityStore, website } = harness()
-    const result = await entityStore.fetch(makeBlock({ page: tree({ list: membersFetch }) }, website), {})
+    const result = await entityStore.fetch(makeBlock({ page: tree({ list: membersFetch }) }, website), ANY)
     expect(result.data.members).toEqual([members[1]])
   })
 
   it('the record of a route query declared on the `[slug]` page itself', async () => {
     const { entityStore, website } = harness()
-    const result = await entityStore.fetch(makeBlock({ page: tree({ capturing: membersFetch }) }, website), {})
+    const result = await entityStore.fetch(makeBlock({ page: tree({ capturing: membersFetch }) }, website), ANY)
     expect(result.data.members).toEqual([members[1]])
   })
 
   it('a query the nested page declares under another key is its own data — `:slug` still names a member', async () => {
     const { entityStore, website } = harness()
     const page = tree({ list: membersFetch, nestedFetch: pubsFetch })
-    const result = await entityStore.fetch(makeBlock({ page }, website), {})
+    const result = await entityStore.fetch(makeBlock({ page }, website), ANY)
     expect(result.data.pubs).toEqual(pubs)
     expect(result.data.members).toEqual([members[1]])
   })
@@ -637,9 +651,120 @@ describe('a page nested inside a parametric page shares its route query (ruled 2
   it('CONTROL — only the route key reaches down: the list page\'s other keys do not cascade two levels', async () => {
     const { entityStore, website } = harness()
     const page = tree({ list: [membersFetch, pubsFetch] })
-    const result = await entityStore.fetch(makeBlock({ page }, website), {})
+    const result = await entityStore.fetch(makeBlock({ page }, website), ANY)
     expect(result.data.members).toEqual([members[1]])
     expect(result.data.pubs).toBeUndefined()
+  })
+})
+
+describe('⭐ declared keys — a section receives what its component declares, and automatic `as` fills it (ruled 2026-09-14)', () => {
+  // ⛔ Until then every fetch reaching a section was delivered under its `as`, and a
+  // component naming its key differently received nothing.
+  const posts = ['a', 'b', 'c', 'd', 'e'].map((slug) => ({ slug, $name: slug }))
+  const on = (slug) => ({ paramName: 'slug', paramValue: slug, params: { slug, path: slug, dir: '' } })
+  const harness = () => {
+    const h = makeHarness({ fetcherImpl: (req) => Promise.resolve({ data: evaluateQuery(posts, req) }) })
+    h.website.config = { queries: { posts: { schema: '@/post' }, teams: { schema: '@/team' } } }
+    return h
+  }
+  // /posts/:slug, whose parent page declares the route query
+  const detail = (slug) => makePage({ parent: makePage({ route: '/posts', fetch: { query: 'posts', as: 'posts' } }), dynamicContext: on(slug) })
+  const slugs = (list) => list?.map((p) => p.slug)
+
+  it('only the keys declared: a fetch filling none is not asked', async () => {
+    const { entityStore, website, fetcherSpy } = harness()
+    website.config.fetch = { query: 'teams', as: 'teams', path: '/data/teams.json' }
+    const page = makePage({ route: '/news', fetch: { query: 'posts', as: 'posts' } })
+    const result = await entityStore.fetch(makeBlock({ page }, website), declaring('posts'))
+    expect(Object.keys(result.data)).toEqual(['posts'])
+    expect(fetcherSpy.mock.calls.map(([req]) => req.as)).toEqual(['posts'])
+  })
+
+  it('a component declaring `post` receives the page\'s record — the route query fills the first key of its schema', async () => {
+    const { entityStore, website } = harness()
+    const result = await entityStore.fetch(makeBlock({ page: detail('c') }, website), { data: { post: '@/post' } })
+    expect(Object.keys(result.data)).toEqual(['post'])
+    expect(slugs(result.data.post)).toEqual(['c'])
+  })
+
+  it('`related` declared, the section\'s own `current: exclude` fetch fills it, and the page\'s fetch is not asked', async () => {
+    const { entityStore, website, fetcherSpy } = harness()
+    const block = makeBlock({ page: detail('b'), fetch: { query: 'posts', as: 'posts', current: 'exclude', limit: 3 } }, website)
+    const result = await entityStore.fetch(block, { data: { related: '@/post' } })
+    expect(slugs(result.data.related)).toEqual(['a', 'c', 'd'])
+    expect(fetcherSpy.mock.calls.map(([req]) => req.narrow?.limit)).toEqual([4])
+  })
+
+  it('`article` and `related` declared, `as: related` on the section\'s fetch: the others under `related`, the record under `article`', async () => {
+    const { entityStore, website } = harness()
+    const block = makeBlock({ page: detail('b'), fetch: { query: 'posts', as: 'related', current: 'exclude', limit: 2 } }, website)
+    const result = await entityStore.fetch(block, { data: { article: '@/post', related: '@/post' } })
+    expect(slugs(result.data.article)).toEqual(['b'])
+    expect(slugs(result.data.related)).toEqual(['a', 'c'])
+  })
+
+  it('the sync path fills the same keys from the cache', async () => {
+    const { entityStore, website } = harness()
+    const block = makeBlock({ page: detail('d') }, website)
+    const meta = { data: { post: '@/post' } }
+    expect(entityStore.resolve(block, meta).status).toBe('pending')
+    await entityStore.fetch(block, meta)
+    const answer = entityStore.resolve(block, meta)
+    expect(answer.status).toBe('ready')
+    expect(slugs(answer.data.post)).toEqual(['d'])
+  })
+
+  it('a key the section holds — a tagged data block — is not the store\'s to fill, and no fetch is asked for it', async () => {
+    const { entityStore, website, fetcherSpy } = harness()
+    const page = makePage({ route: '/news', fetch: { query: 'posts', as: 'posts' } })
+    const block = makeBlock({ page, heldData: { posts: [{ slug: 'authored' }] } }, website)
+    expect(entityStore.resolve(block, declaring('posts'))).toEqual({ status: 'none', data: null })
+    expect(await entityStore.fetch(block, declaring('posts'))).toEqual({ data: null, errors: null })
+    expect(fetcherSpy).not.toHaveBeenCalled()
+  })
+
+  it('⭐ a fetch\'s prerendered answer, held under its own key, fills the key it maps to — without asking again', () => {
+    // A static build bakes a section's own fetch into its content by `as`; the component names the key `latest`.
+    const { entityStore, website, fetcherSpy } = harness()
+    const baked = [{ slug: 'a' }, { slug: 'b' }]
+    const block = makeBlock({ page: makePage({ route: '/' }), fetch: { query: 'posts', as: 'posts', limit: 2 }, heldData: { posts: baked } }, website)
+    expect(entityStore.resolve(block, { data: { latest: '@/post' } })).toEqual({ status: 'ready', data: { latest: baked } })
+    expect(fetcherSpy).not.toHaveBeenCalled()
+  })
+
+  it('CONTROL — a held answer under a key belongs to the first fetch of that key, not to a less specific one', async () => {
+    const { entityStore, website } = harness()
+    // the section's own `posts` holds its answer and fills `first`; the page's `posts` fills `second` by asking
+    const block = makeBlock({
+      page: makePage({ route: '/news', fetch: { query: 'posts', as: 'posts', limit: 1 } }),
+      fetch: { query: 'posts', as: 'posts', limit: 2 },
+      heldData: { posts: [{ slug: 'held' }] },
+    }, website)
+    const result = await entityStore.fetch(block, { data: { first: '@/post', second: '@/post' } })
+    expect(slugs(result.data.first)).toEqual(['held'])
+    expect(slugs(result.data.second)).toEqual(['a'])
+  })
+
+  it('a failed fetch is reported under the key it fills', async () => {
+    const { entityStore, website } = makeHarness({ fetcherImpl: () => Promise.resolve({ data: [], error: 'HTTP 502: Bad Gateway' }) })
+    website.config = { queries: { posts: { schema: '@/post' } } }
+    const page = makePage({ route: '/news', fetch: { query: 'posts', as: 'posts' } })
+    const result = await entityStore.fetch(makeBlock({ page }, website), { data: { feed: '@/post' } })
+    expect(result.data).toEqual({})
+    expect(result.errors).toEqual({ feed: 'HTTP 502: Bad Gateway' })
+  })
+
+  it('a foundation\'s `main.js` keys reach a section whose component declares none — through a real Website', async () => {
+    const profile = [{ name: 'Ada' }]
+    const w = new Website({
+      content: { config: { name: 'T', defaultLanguage: 'en', queries: { profile: { schema: '@/profile' } }, fetch: { query: 'profile', as: 'profile' } }, theme: {}, pages: [{ route: '/', isIndex: true, title: 'Home', sections: [] }] },
+      foundation: { default: { capabilities: { data: { profile: '@/profile' } } } },
+      defaultFetcher: { resolve: () => Promise.resolve({ data: profile }) },
+    })
+    const block = { fetch: null, dynamicContext: null, page: { route: '/', fetch: null, parent: null, dynamicContext: null }, website: w }
+    const result = await w.entityStore.fetch(block, null)
+    expect(result.data.profile).toEqual(profile)
+    expect(w.declaredKeys({ data: { posts: '@/post' } })).toEqual([['posts', '@/post'], ['profile', '@/profile']])
   })
 })
 
@@ -661,7 +786,7 @@ describe('a record links to its query\'s page — `$route` (ruled 2026-09-14)', 
   it('fills each record\'s `$route` from its query\'s page when the fetch picks none (sync path), url-encoding the param', () => {
     const articles = [{ slug: 'a-post', title: 'A' }, { slug: 'b post', title: 'B' }]
     const { entityStore, block } = seed(articles, { fetch: plain, recordPage: (q) => (q === 'articles' ? { route: '/blog/:slug', paramName: 'slug' } : null) })
-    const result = entityStore.resolve(block, {})
+    const result = entityStore.resolve(block, ANY)
     expect(result.status).toBe('ready')
     expect(result.data.articles.map((a) => a.$route)).toEqual(['/blog/a-post', '/blog/b%20post'])
     // cached source records are NOT mutated (one record may back other sections)
@@ -673,37 +798,37 @@ describe('a record links to its query\'s page — `$route` (ruled 2026-09-14)', 
       detailPage: (ref) => (ref === 'page:detail' ? '/featured/:slug' : null),
       recordPage: () => ({ route: '/blog/:slug', paramName: 'slug' }),
     })
-    expect(entityStore.resolve(block, {}).data.articles[0].$route).toBe('/featured/x')
+    expect(entityStore.resolve(block, ANY).data.articles[0].$route).toBe('/featured/x')
   })
 
   it('fills on the async fetch path too', async () => {
     const h = makeHarness({ fetcherImpl: () => Promise.resolve({ data: [{ slug: 'x', title: 'X' }] }) })
     h.website.recordPageFor = () => ({ route: '/blog/:slug', paramName: 'slug' })
     const block = makeBlock({ page: makePage({ route: '/', fetch: plain }) }, h.website)
-    const result = await h.entityStore.fetch(block, {})
+    const result = await h.entityStore.fetch(block, ANY)
     expect(result.data.articles[0].$route).toBe('/blog/x')
   })
 
   it('a dangling `detailPage` falls back to the query\'s page', () => {
     const { entityStore, block } = seed([{ slug: 'a' }], { recordPage: () => ({ route: '/blog/:slug', paramName: 'slug' }) })
-    expect(entityStore.resolve(block, {}).data.articles[0].$route).toBe('/blog/a')
+    expect(entityStore.resolve(block, ANY).data.articles[0].$route).toBe('/blog/a')
   })
 
   it('no page for the query, and no `detailPage` — no link', () => {
     const { entityStore, block } = seed([{ slug: 'a' }], { fetch: plain })
-    expect(entityStore.resolve(block, {}).data.articles[0]).not.toHaveProperty('$route')
+    expect(entityStore.resolve(block, ANY).data.articles[0]).not.toHaveProperty('$route')
   })
 
   it('⭐ a record\'s own `route` is the author\'s field — never read, never overwritten', () => {
     const { entityStore, block } = seed([{ slug: 'a', route: 'north-trail' }], { fetch: plain, recordPage: () => ({ route: '/blog/:slug', paramName: 'slug' }) })
-    const record = entityStore.resolve(block, {}).data.articles[0]
+    const record = entityStore.resolve(block, ANY).data.articles[0]
     expect(record.route).toBe('north-trail')
     expect(record.$route).toBe('/blog/a')
   })
 
   it('skips a record missing the :param field — no broken href', () => {
     const { entityStore, block } = seed([{ title: 'no slug' }], { fetch: plain, recordPage: () => ({ route: '/blog/:slug', paramName: 'slug' }) })
-    expect(entityStore.resolve(block, {}).data.articles[0]).not.toHaveProperty('$route')
+    expect(entityStore.resolve(block, ANY).data.articles[0]).not.toHaveProperty('$route')
   })
 })
 
@@ -729,7 +854,7 @@ describe('`$route` through a real Website — a list on any page links to its qu
     const fetch = { query: 'articles', as: 'articles', limit: 2 }
     const resolved = resolveFetchConfigs([fetch], { queries: w.config.queries, locale: 'en', defaultLocale: 'en' }).get('articles')
     w.dataStore.set(deriveCacheKey(resolved), { data: records })
-    const result = w.entityStore.resolve(homeBlock(w, fetch), {})
+    const result = w.entityStore.resolve(homeBlock(w, fetch), ANY)
     expect(result.status).toBe('ready')
     expect(result.data.articles.map((a) => a.$route)).toEqual(['/blog/first', '/blog/second'])
   })
@@ -739,7 +864,7 @@ describe('`$route` through a real Website — a list on any page links to its qu
     const fetch = { query: 'articles', as: 'articles', detailPage: 'page:news-detail' }
     const resolved = resolveFetchConfigs([fetch], { queries: w.config.queries, locale: 'en', defaultLocale: 'en' }).get('articles')
     w.dataStore.set(deriveCacheKey(resolved), { data: records })
-    expect(w.entityStore.resolve(homeBlock(w, fetch), {}).data.articles[0].$route).toBe('/news/first')
+    expect(w.entityStore.resolve(homeBlock(w, fetch), ANY).data.articles[0].$route).toBe('/news/first')
   })
 })
 
@@ -751,7 +876,7 @@ describe('`$route` from a SECTION\'s own fetch', () => {
     h.website.resolveDetailPageTemplate = (ref) => (ref === 'page:section' ? '/section/:slug' : '/page/:slug')
     h.dataStore.set(deriveCacheKey(sectionCfg), { data: [{ slug: 'x' }] })
     const block = makeBlock({ fetch: sectionCfg, page: makePage({ route: '/', fetch: pageCfg }) }, h.website)
-    expect(h.entityStore.resolve(block, {}).data.articles[0].$route).toBe('/section/x')
+    expect(h.entityStore.resolve(block, ANY).data.articles[0].$route).toBe('/section/x')
   })
 })
 
@@ -813,7 +938,7 @@ describe('⛔ a failed fetch delivers NOTHING under its key, and says so', () =>
     const page = makePage({ fetch: { path: '/data/articles.json', as: 'articles' } })
     const block = makeBlock({ page }, website)
 
-    const result = await entityStore.fetch(block, {})
+    const result = await entityStore.fetch(block, ANY)
     expect('articles' in result.data).toBe(false)
     expect(result.data.articles).toBeUndefined()
     expect(result.errors).toEqual({ articles: 'HTTP 502: Bad Gateway' })
@@ -826,7 +951,7 @@ describe('⛔ a failed fetch delivers NOTHING under its key, and says so', () =>
     const page = makePage({ fetch: { path: '/data/articles.json', as: 'articles' } })
     const block = makeBlock({ page }, website)
 
-    const result = await entityStore.fetch(block, {})
+    const result = await entityStore.fetch(block, ANY)
     expect(result.data.articles).toEqual([])
     expect(result.errors).toBeNull()
   })
@@ -843,7 +968,7 @@ describe('⛔ a failed fetch delivers NOTHING under its key, and says so', () =>
     ] })
     const block = makeBlock({ page }, website)
 
-    const result = await entityStore.fetch(block, {})
+    const result = await entityStore.fetch(block, ANY)
     expect(result.data).toEqual({ categories: [{ name: 'Tech' }] })
     expect(result.errors).toEqual({ articles: 'down' })
   })
@@ -863,7 +988,7 @@ describe('⛔ a failed fetch delivers NOTHING under its key, and says so', () =>
     const page = makePage({ parent, dynamicContext })
     const block = makeBlock({ page }, website)
 
-    const result = await entityStore.fetch(block, {})
+    const result = await entityStore.fetch(block, ANY)
     expect(result.data.articles).toEqual([{ slug: 'my-post', title: 'Brief' }])
     expect(result.errors).toEqual({ articles: 'HTTP 500' })
   })
@@ -878,7 +1003,7 @@ describe('⛔ a failed fetch delivers NOTHING under its key, and says so', () =>
     const page = makePage({ parent, dynamicContext })
     const block = makeBlock({ page }, website)
 
-    const result = await entityStore.fetch(block, {})
+    const result = await entityStore.fetch(block, ANY)
     // `[]` here would have read as "no such record" — a delivered answer.
     expect(result.data.articles).toBeUndefined()
     expect(result.errors).toEqual({ articles: 'down' })
@@ -893,8 +1018,8 @@ describe('⛔ a failed fetch delivers NOTHING under its key, and says so', () =>
     const page = makePage({ fetch: { path: '/data/dev-fail.json', as: 'devfail' }, route: '/x' })
     const block = makeBlock({ page }, website)
 
-    await entityStore.fetch(block, {})
-    await entityStore.fetch(block, {})
+    await entityStore.fetch(block, ANY)
+    await entityStore.fetch(block, ANY)
     const lines = error.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('content.data.devfail'))
     expect(lines).toHaveLength(1)
     expect(lines[0]).toContain('/x')
@@ -923,7 +1048,7 @@ describe('the record in hand reaches the detail address', () => {
     const page = makePage({ parent, dynamicContext })
     const block = makeBlock({ page }, website)
 
-    const result = await entityStore.fetch(block, {})
+    const result = await entityStore.fetch(block, ANY)
     expect(result.data.articles).toEqual([full])
     expect(fetcherSpy).toHaveBeenCalledWith(
       expect.objectContaining({ path: '/data/articles/design-tips.json' }),
@@ -961,16 +1086,16 @@ describe('R1 on a detail page — a record held in full is delivered, not fetche
         ? Promise.resolve({ data: [fullAda], meta: { whole: true } })
         : Promise.resolve({ data: briefs, meta: { whole: false } })
     })
-    const first = await entityStore.fetch(makeBlock({ page: detailPage() }, website), {})
+    const first = await entityStore.fetch(makeBlock({ page: detailPage() }, website), ANY)
     expect(first.data.members).toEqual([fullAda])
     // ⭐ the record question checks the set, so no list is asked beside it (2026-09-14)
     expect(calls).toEqual(['record'])
 
     // second visit: the question is cached under its own key — no request
-    const second = await entityStore.fetch(makeBlock({ page: detailPage() }, website), {})
+    const second = await entityStore.fetch(makeBlock({ page: detailPage() }, website), ANY)
     expect(second.data.members).toEqual([fullAda])
     expect(calls).toHaveLength(1)
-    const resolved = entityStore.resolve(makeBlock({ page: detailPage() }, website), {})
+    const resolved = entityStore.resolve(makeBlock({ page: detailPage() }, website), ANY)
     expect(resolved.status).toBe('ready')
     expect(resolved.data.members).toEqual([fullAda])
   })
@@ -981,8 +1106,8 @@ describe('R1 on a detail page — a record held in full is delivered, not fetche
         ? Promise.resolve({ data: [fullAda], meta: { whole: true } })
         : Promise.resolve({ data: briefs, meta: { whole: false } }),
     )
-    await entityStore.fetch(makeBlock({ page: detailPage() }, website), {})
-    const list = await entityStore.fetch(makeBlock({ page: makePage({ fetch: { query: 'members', as: 'members' } }) }, website), {})
+    await entityStore.fetch(makeBlock({ page: detailPage() }, website), ANY)
+    const list = await entityStore.fetch(makeBlock({ page: makePage({ fetch: { query: 'members', as: 'members' } }) }, website), ANY)
     expect(list.data.members.find((r) => r.$uuid === 'u1').bio).toBe('Full bio')
     expect(list.data.members.find((r) => r.$uuid === 'u2')).toEqual(briefs[1])
   })
@@ -996,9 +1121,9 @@ describe('R1 on a detail page — a record held in full is delivered, not fetche
         ? Promise.resolve({ data: [{ $name: 'ada', bio: 'x' }], meta: { whole: true } })
         : Promise.resolve({ data: noIds, meta: { whole: false } })
     })
-    const first = await entityStore.fetch(makeBlock({ page: detailPage() }, website), {})
+    const first = await entityStore.fetch(makeBlock({ page: detailPage() }, website), ANY)
     expect(first.data.members).toEqual([{ $name: 'ada', bio: 'x' }])
-    await entityStore.fetch(makeBlock({ page: detailPage() }, website), {})
+    await entityStore.fetch(makeBlock({ page: detailPage() }, website), ANY)
     expect(calls.filter((c) => c === 'record')).toHaveLength(1) // cached by key, not by index
   })
 })
@@ -1024,12 +1149,12 @@ describe('on a question door a detail page asks its RECORD alone — the questio
     const parent = makePage({ fetch: { query: 'members', as: 'members', limit: 5 } })
     const page = makePage({ parent, dynamicContext })
 
-    const result = await entityStore.fetch(makeBlock({ page }, website), {})
+    const result = await entityStore.fetch(makeBlock({ page }, website), ANY)
     expect(result.data.members).toEqual([{ $uuid: 'u1', $name: 'ada', name: 'Ada', bio: 'Full' }])
     // ⭐ one question: the set — its sort and limit — narrowed to the record; the author's `where` untouched
     expect(asked).toEqual([{ whole: true, where: undefined, sort: 'name', limit: 100, narrow: { match: { $name: 'ada' } } }])
     // second visit: the record's answer is cached under its own key; the sync path delivers it
-    const resolved = entityStore.resolve(makeBlock({ page }, website), {})
+    const resolved = entityStore.resolve(makeBlock({ page }, website), ANY)
     expect(resolved.status).toBe('ready')
     expect(resolved.data.members[0].bio).toBe('Full')
   })
@@ -1041,7 +1166,7 @@ describe('on a question door a detail page asks its RECORD alone — the questio
     website.config = { services: SERVICES, queries: QUERIES }
     const dynamicContext = { paramName: 'slug', paramValue: 'nope' }
     const page = makePage({ parent: makePage({ fetch: { query: 'members', as: 'members' } }), dynamicContext })
-    const result = await entityStore.fetch(makeBlock({ page }, website), {})
+    const result = await entityStore.fetch(makeBlock({ page }, website), ANY)
     expect(result.data.members).toEqual([])
     expect(result.errors).toBeNull()
   })
@@ -1053,7 +1178,7 @@ describe('on a question door a detail page asks its RECORD alone — the questio
     website.config = { services: SERVICES, queries: QUERIES }
     const dynamicContext = { paramName: 'slug', paramValue: 'ada' }
     const page = makePage({ parent: makePage({ fetch: { query: 'members', as: 'members' } }), dynamicContext })
-    const result = await entityStore.fetch(makeBlock({ page }, website), {})
+    const result = await entityStore.fetch(makeBlock({ page }, website), ANY)
     expect('members' in result.data).toBe(false)
     expect(result.errors).toEqual({ members: 'HTTP 502' })
   })
@@ -1072,28 +1197,28 @@ describe('the route query names the key a parametric page narrows — at every l
   it('the site\'s query, on a parametric page whose page and parent declare none', async () => {
     const { entityStore, website } = harness()
     website.config = { fetch: membersFetch }
-    const result = await entityStore.fetch(makeBlock({ page: makePage({ dynamicContext }) }, website), {})
+    const result = await entityStore.fetch(makeBlock({ page: makePage({ dynamicContext }) }, website), ANY)
     expect(result.data.members).toEqual([members[0]])
   })
 
   it('the key the page\'s sections share, when no page, parent or site declares one — narrowed in the section that declares it', async () => {
     const { entityStore, website } = harness()
     const page = makePage({ dynamicContext, _bodySections: [{ fetch: membersFetch }, { fetch: membersFetch }] })
-    const result = await entityStore.fetch(makeBlock({ page, fetch: membersFetch }, website), {})
+    const result = await entityStore.fetch(makeBlock({ page, fetch: membersFetch }, website), ANY)
     expect(result.data.members).toEqual([members[0]])
   })
 
   it('sections that declare different keys name no route query — nothing narrows', async () => {
     const { entityStore, website } = harness()
     const page = makePage({ dynamicContext, _bodySections: [{ fetch: membersFetch }, { fetch: pubsFetch }] })
-    const result = await entityStore.fetch(makeBlock({ page, fetch: membersFetch }, website), {})
+    const result = await entityStore.fetch(makeBlock({ page, fetch: membersFetch }, website), ANY)
     expect(result.data.members).toEqual(members)
   })
 
   it('a section\'s own query under ANOTHER key is delivered as declared; the route key still reaches it narrowed', async () => {
     const { entityStore, website } = harness()
     const page = makePage({ dynamicContext, fetch: membersFetch })
-    const result = await entityStore.fetch(makeBlock({ page, fetch: pubsFetch }, website), {})
+    const result = await entityStore.fetch(makeBlock({ page, fetch: pubsFetch }, website), ANY)
     expect(result.data.pubs).toEqual(pubs)
     expect(result.data.members).toEqual([members[0]])
   })
@@ -1101,7 +1226,7 @@ describe('the route query names the key a parametric page narrows — at every l
   it('CONTROL — the page level chooses: its query wins over the key its sections share', async () => {
     const { entityStore, website } = harness()
     const page = makePage({ dynamicContext, fetch: membersFetch, _bodySections: [{ fetch: pubsFetch }] })
-    const result = await entityStore.fetch(makeBlock({ page, fetch: pubsFetch }, website), {})
+    const result = await entityStore.fetch(makeBlock({ page, fetch: pubsFetch }, website), ANY)
     expect(result.data.pubs).toEqual(pubs)
     expect(result.data.members).toEqual([members[0]])
   })
@@ -1119,7 +1244,7 @@ describe('a parametric page over a `multi` field delivers the record a member ma
     const { entityStore, website } = harness()
     const page = makePage({ fetch: fetchConfig })
     const dynamicContext = { paramName: 'dept', paramValue: 'geology', params: { slug: 'geology', path: 'geology', dir: '' } }
-    const result = await entityStore.fetch(makeBlock({ page, dynamicContext }, website), {})
+    const result = await entityStore.fetch(makeBlock({ page, dynamicContext }, website), ANY)
     expect(result.data.people).toEqual([people[1]])
   })
 
@@ -1127,7 +1252,7 @@ describe('a parametric page over a `multi` field delivers the record a member ma
     const { entityStore, website } = harness()
     const page = makePage({ fetch: fetchConfig })
     const dynamicContext = { paramName: 'dept', paramValue: 'biology', params: { slug: 'biology', path: 'biology', dir: '' } }
-    const result = await entityStore.fetch(makeBlock({ page, dynamicContext }, website), {})
+    const result = await entityStore.fetch(makeBlock({ page, dynamicContext }, website), ANY)
     expect(result.data.people).toEqual([people[0]])
   })
 })
@@ -1151,7 +1276,7 @@ describe('a parametric page\'s record is one of its route query\'s SET — past 
   it('past a fetch\'s `limit`: found in the set — the request carries no `narrow`', async () => {
     const { entityStore, website, fetcherSpy } = harness()
     const page = makePage({ dynamicContext, parent: makePage({ fetch: listFetch }) })
-    const result = await entityStore.fetch(makeBlock({ page }, website), {})
+    const result = await entityStore.fetch(makeBlock({ page }, website), ANY)
     expect(result.data.posts).toEqual([posts[4]])
     expect(fetcherSpy.mock.calls.map(([req]) => req.narrow)).toEqual([undefined])
   })
@@ -1159,11 +1284,11 @@ describe('a parametric page\'s record is one of its route query\'s SET — past 
   it('⛔ past the query\'s `limit`: not found — a query\'s count is part of what it selects', async () => {
     const { entityStore, website, fetcherSpy } = harness({ posts: { schema: '@/post', limit: 3 } })
     const parent = makePage({ fetch: { query: 'posts', as: 'posts' } })
-    const result = await entityStore.fetch(makeBlock({ page: makePage({ dynamicContext, parent }) }, website), {})
+    const result = await entityStore.fetch(makeBlock({ page: makePage({ dynamicContext, parent }) }, website), ANY)
     expect(result.data.posts).toEqual([])
     expect(fetcherSpy.mock.calls.map(([req]) => req.limit)).toEqual([3])
     // CONTROL — a record inside the set is found
-    const inside = await entityStore.fetch(makeBlock({ page: makePage({ dynamicContext: on('c'), parent }) }, website), {})
+    const inside = await entityStore.fetch(makeBlock({ page: makePage({ dynamicContext: on('c'), parent }) }, website), ANY)
     expect(inside.data.posts).toEqual([posts[2]])
   })
 
@@ -1173,15 +1298,15 @@ describe('a parametric page\'s record is one of its route query\'s SET — past 
     const narrowed = resolveFetchConfigs([listFetch], { queries: website.config.queries, locale: 'en', defaultLocale: 'en' }).get('posts')
     expect(narrowed.narrow).toEqual({ limit: 2 })
     dataStore.set(deriveCacheKey(narrowed), { data: posts.slice(0, 2) })
-    expect(entityStore.resolve(makeBlock({ page }, website), {}).status).toBe('pending')
+    expect(entityStore.resolve(makeBlock({ page }, website), ANY).status).toBe('pending')
     dataStore.set(deriveCacheKey(routeSelection(narrowed)), { data: posts })
-    const ready = entityStore.resolve(makeBlock({ page }, website), {})
+    const ready = entityStore.resolve(makeBlock({ page }, website), ANY)
     expect(ready).toEqual({ status: 'ready', data: { posts: [posts[4]] } })
   })
 
   it('CONTROL — the list page itself still gets the narrowed list', async () => {
     const { entityStore, website } = harness()
-    const result = await entityStore.fetch(makeBlock({ page: makePage({ fetch: listFetch }) }, website), {})
+    const result = await entityStore.fetch(makeBlock({ page: makePage({ fetch: listFetch }) }, website), ANY)
     expect(result.data.posts).toEqual(posts.slice(0, 2))
   })
 })

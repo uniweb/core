@@ -111,6 +111,13 @@ export default class Block {
       }
     }
 
+    // ⭐ WHAT THE SECTION HOLDS before any fetch answers it: its tagged data blocks, and
+    // its own fetches' answers a static build prerendered into it, by key. A declared key
+    // it holds is filled from here first (`runtime/src/prepare-props.js`), and a fetch
+    // whose answer is here is not asked again (`EntityStore`). Kept apart from
+    // `parsedContent.data`, which each render rebuilds from the declared keys.
+    this.heldData = this.parsedContent.data || {}
+
     // Flat content structure - no more nested main/items
     // parsedContent now has: title, pretitle, paragraphs, links, images, items, etc.
     this.items = this.parsedContent.items || []

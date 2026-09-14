@@ -8,6 +8,7 @@
     "./base-path": "./src/base-path.js",
     "./records-service": "./src/records-service.js",
     "./data-paths": "./src/data-paths.js",
+    "./data-keys": "./src/data-keys.js",
     "./datastore": "./src/datastore.js",
     "./detail-url": "./src/detail-url.js",
     "./fetch-config": "./src/fetch-config.js",

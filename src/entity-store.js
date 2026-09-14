@@ -15,14 +15,9 @@
  */
 
 import { resolveFetchConfigs, fetchEntries, pageRouteQuery, routeSelection, currentFor, othersView, othersOf, siteReaches } from './fetch-config.js'
+import { declaredKeys, fillDeclaredKeys } from './data-keys.js'
 import { fillRoutePattern, matchesRouteParam } from './route-match.js'
 import { buildDetailConfig } from './detail-url.js'
-
-/**
- * The binding keys a level's `fetch` declares — `as`, which is the query's name when
- * none is written, and a string entry is a query name (`fetchEntries`).
- */
-const bindingKeysOf = (fetch) => fetchEntries(fetch).map((cfg) => cfg.as).filter(Boolean)
 
 export default class EntityStore {
   /**
@@ -38,34 +33,36 @@ export default class EntityStore {
   }
 
   /**
-   * Which schemas does this component want delivered?
+   * The fetches that reach a block, one level each, most specific first: its own, its
+   * page's, its parent page's, a nested page's route binding, and the site's.
    *
-   * - meta missing → default-on: collect all available schemas.
-   * - meta.inheritData === false → opt out entirely.
-   * - Anything else → collect all (legacy inheritData arrays collapse here).
+   * ⭐ A page nested inside a parametric page receives its capturing page's route binding
+   * — the cascade reaches one parent up, and the binding may sit above that
+   * (`pageRouteQuery`). Its key only; the rest does not cascade. The site's binding
+   * reaches a layout section and a top-level page's sections, and nothing deeper
+   * (`siteReaches`).
    */
-  _getRequestedSchemas(meta) {
-    if (!meta) return []
-    if (meta.inheritData === false) return null
-    return []
+  _levels(block, route = this._route(block)) {
+    const page = block.page
+    return [
+      block.fetch,
+      page?.fetch,
+      page?.parent?.fetch,
+      route?.nested ? route.config : null,
+      siteReaches(page?.parent) ? block.website?.config?.fetch : null,
+    ]
   }
 
   /**
-   * Walk the four-level hierarchy and collect fetch configs for the
-   * requested schemas. First match per schema wins.
-   *
-   * This method's job is to read the four source slots off the object graph;
-   * the rule applied to them (precedence, first-match-per-schema, locale
-   * normalization, deferred-detail injection) lives in `./fetch-config.js`,
-   * shared with every other host that has to answer the same question. Do not
-   * re-inline it here — divergence between copies is what the extraction
-   * exists to prevent.
+   * The options each fetch of a block is resolved with. The rule applied to a fetch
+   * (locale normalization, route variables, deferred-detail injection) lives in
+   * `./fetch-config.js`, shared with every other host that has to answer the same
+   * question. Do not re-inline it here — divergence between copies is what the
+   * extraction exists to prevent.
    */
-  _findFetchConfigs(block, requested, route = this._route(block)) {
-    const blockFetch = block.fetch
-    const page = block.page
+  _resolveOptions(block) {
     const website = block.website
-    const dynamicContext = block.dynamicContext || page?.dynamicContext
+    const dynamicContext = block.dynamicContext || block.page?.dynamicContext
     // The route's variables, for a query that binds `:path` / `:dir` / `:slug` —
     // `routeBinding`'s, carried as `params` by every parametric page this runtime
     // or its build makes. A page that carries only its capture gets the same three
@@ -80,36 +77,69 @@ export default class EntityStore {
             }
           : null))
       : null
+    return {
+      locale: website?.getActiveLocale?.() ?? null,
+      defaultLocale: website?.getDefaultLocale?.() ?? null,
+      // ⚠️ `queries`, matching `resolveFetchConfigs`. This passed `collections`
+      // after the payload key was renamed — a dead option name, silently: the
+      // resolver simply saw no queries and stopped injecting `detail:`.
+      queries: website?.config?.queries ?? null,
+      // The host's services; its `records` row is the live-records lane.
+      // Absent on every static site and on local dev, which is why
+      // `resolveQuerySource` treats absence as the ordinary case and reads
+      // the compiled artifact without comment.
+      services: website?.config?.services ?? null,
+      variables,
+    }
+  }
 
-    return resolveFetchConfigs(
-      [
-        blockFetch,
-        page?.fetch,
-        page?.parent?.fetch,
-        // ⭐ A page nested inside a parametric page receives its capturing page's
-        // route binding — the cascade reaches one parent up, and the binding may sit
-        // above that (`pageRouteQuery`). Its key only; the rest does not cascade.
-        route?.nested ? route.config : null,
-        // The site's binding reaches a layout section and a top-level page's
-        // sections, and nothing deeper (`siteReaches`).
-        siteReaches(page?.parent) ? website?.config?.fetch : null,
-      ],
-      {
-        schemas: requested,
-        locale: website?.getActiveLocale?.() ?? null,
-        defaultLocale: website?.getDefaultLocale?.() ?? null,
-        // ⚠️ `queries`, matching `resolveFetchConfigs`. This passed `collections`
-        // after the payload key was renamed — a dead option name, silently: the
-        // resolver simply saw no queries and stopped injecting `detail:`.
-        queries: website?.config?.queries ?? null,
-        // The host's services; its `records` row is the live-records lane.
-        // Absent on every static site and on local dev, which is why
-        // `resolveQuerySource` treats absence as the ordinary case and reads
-        // the compiled artifact without comment.
-        services: website?.config?.services ?? null,
-        variables,
-      },
-    )
+  /**
+   * ⭐ WHAT THIS SECTION RECEIVES, AND FROM WHICH FETCH — ruled 2026-09-14 [Diego]. The keys
+   * its component declares and its foundation's (`website.declaredKeys`), each paired with
+   * the fetch that fills it by the one rule (`fillDeclaredKeys`, automatic `as`) over the
+   * levels that reach the block. A declared key the block already holds — a tagged data
+   * block, or its own fetch's prerendered answer under that name — is not the store's to
+   * fill, and a fetch that fills no declared key is not asked. Each filling fetch is
+   * resolved on its own, so two fetches of one `as` can fill two keys.
+   *
+   * ⭐ `held` is the answer the block already holds for a filling fetch, under the fetch's
+   * own key: a static build prerenders a section's own fetch into its content by `as`, so
+   * a component that names the key differently still receives it without the browser
+   * asking again. Only for the first fetch of that key reaching the block — the one whose
+   * answer a build put there.
+   *
+   * ⛔ Until 2026-09-14 every fetch reaching the block was resolved and delivered under its
+   * `as` — the first per key — whether the component read it or not, and a component
+   * declaring its key under another name received nothing.
+   *
+   * @returns {Map<string, { cfg: Object, held: * }>} declared key → the resolved config of
+   *   the fetch that fills it, and the answer the block holds for it (undefined when none)
+   */
+  _fills(block, meta, route) {
+    const website = block.website
+    const declared = website?.declaredKeys ? website.declaredKeys(meta) : declaredKeys(meta?.data)
+    const out = new Map()
+    if (declared.length === 0) return out
+    const holds = block.heldData || {}
+    const levels = this._levels(block, route)
+    const fills = fillDeclaredKeys(declared, levels, {
+      queries: website?.config?.queries ?? null,
+      held: declared.map(([key]) => key).filter((key) => holds[key] !== undefined),
+    })
+    // where the first fetch of each key reaching the block sits — the one a held answer
+    // belongs to
+    const firstOfKey = new Map()
+    levels.forEach((level, at) => fetchEntries(level).forEach((fetch, index) => {
+      if (!firstOfKey.has(fetch.as)) firstOfKey.set(fetch.as, `${at}:${index}`)
+    }))
+    const options = this._resolveOptions(block)
+    for (const [key, { fetch, level, index }] of fills) {
+      const cfg = resolveFetchConfigs([fetch], options).get(fetch.as)
+      if (!cfg) continue
+      const held = firstOfKey.get(fetch.as) === `${level}:${index}` ? holds[fetch.as] : undefined
+      out.set(key, { cfg, held })
+    }
+    return out
   }
 
   /**
@@ -174,17 +204,17 @@ export default class EntityStore {
   }
 
   /**
-   * `$route` on the records a section's OWN fetch put in its content before this store
-   * answered. ⭐ The static build prerenders a section's own fetch into the section's
-   * content (`parsedContent.data`), and a value the block already holds outranks what
-   * this store delivers (`runtime/src/prepare-props.js::mergeEntityData`) — so without
-   * this, a list a section fetches for itself reached its component with no links on a
-   * prerendered site. Linked by the rule a delivered list is linked by
-   * (`_applyRecordRoutes`), on every render and idempotently: held data that is already
-   * linked is left as it is, so its identity survives a re-render.
+   * `$route` on the records a section holds under its own fetch's key — what a static
+   * build prerendered into its content (`block.heldData`). ⭐ A declared key the block holds
+   * is filled from what it holds, not from this store (`runtime/src/prepare-props.js::
+   * assembleData`), so those records never passed `_applyRecordRoutes`; without this, a list
+   * a section fetches for itself reached its component with no links on a prerendered
+   * site. Linked by the same rule, on every render and idempotently: data that is already
+   * linked is left as it is, so its identity survives a re-render. (A held answer this store
+   * delivers under another key is linked where it is delivered.)
    *
-   * The block's data object is replaced, never written into — as `mergeEntityData`
-   * replaces it — since the object the build delivered may back more than this block.
+   * The block's data object is replaced, never written into, since the object the build
+   * delivered may back more than this block.
    *
    * @param {Object} block
    */
@@ -236,21 +266,10 @@ export default class EntityStore {
    */
   resolve(block, meta) {
     const dispatcher = this.website?.fetcher
-    let requested = this._getRequestedSchemas(meta)
-
-    // If the component hasn't declared data inheritance but the block itself
-    // has a fetch config, target the block's schema explicitly rather than
-    // collecting all cascade matches.
-    if (requested === null && block.fetch) {
-      const schemas = bindingKeysOf(block.fetch)
-      if (schemas.length > 0) requested = schemas
-    }
-
-    if (requested === null) return { status: 'none', data: null }
-
     const route = this._route(block)
-    const configs = this._findFetchConfigs(block, requested, route)
-    if (configs.size === 0) return { status: 'none', data: null }
+    const fills = this._fills(block, meta, route)
+    if (fills.size === 0) return { status: 'none', data: null }
+    const configs = new Map([...fills].map(([key, { cfg }]) => [key, cfg]))
 
     const dynamicContext = block.dynamicContext || block.page?.dynamicContext
     const ctx = this._ctx(block)
@@ -258,7 +277,12 @@ export default class EntityStore {
     const data = {}
     let allCached = true
 
-    for (const [schema, cfg] of configs) {
+    for (const [schema, { cfg, held }] of fills) {
+      if (held !== undefined) {
+        // The block holds this fetch's answer already — a static build prerendered it.
+        data[schema] = held
+        continue
+      }
       // How this fetch uses the page's record: by the query it names (`currentFor`).
       const current = dynamicContext ? currentFor(cfg, route) : null
       if (current === 'exclude') {
@@ -357,16 +381,10 @@ export default class EntityStore {
     const dispatcher = this.website?.fetcher
     if (!dispatcher) return { data: null, errors: null }
 
-    let requested = this._getRequestedSchemas(meta)
-    if (requested === null && block.fetch) {
-      const schemas = bindingKeysOf(block.fetch)
-      if (schemas.length > 0) requested = schemas
-    }
-    if (requested === null) return { data: null, errors: null }
-
     const route = this._route(block)
-    const configs = this._findFetchConfigs(block, requested, route)
-    if (configs.size === 0) return { data: null, errors: null }
+    const fills = this._fills(block, meta, route)
+    if (fills.size === 0) return { data: null, errors: null }
+    const configs = new Map([...fills].map(([key, { cfg }]) => [key, cfg]))
 
     const dynamicContext = block.dynamicContext || block.page?.dynamicContext
     const ctx = this._ctx(block, { signal })
@@ -379,7 +397,12 @@ export default class EntityStore {
       reportFetchFailure(this.dev, block, key, cfg, message)
     }
 
-    for (const [schema, cfg] of configs) {
+    for (const [schema, { cfg, held }] of fills) {
+      if (held !== undefined) {
+        // The block holds this fetch's answer already — a static build prerendered it.
+        data[schema] = held
+        continue
+      }
       // How this fetch uses the page's record: by the query it names (`currentFor`).
       const current = dynamicContext ? currentFor(cfg, route) : null
       if (current === 'exclude') {

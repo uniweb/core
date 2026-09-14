@@ -116,7 +116,8 @@ describe('the site\'s binding reaches layout sections and top-level pages, and n
     w.dataStore.set(JSON.stringify({ path: '/data/team.json', as: 'team' }), { data: team })
     return w
   }
-  const delivered = (w, block) => w.entityStore.resolve(block, {})
+  // a component that declares `team` (a section receives only what its component declares)
+  const delivered = (w, block) => w.entityStore.resolve(block, { data: { team: null } })
 
   it('a layout section gets it — the layout belongs to the site', () => {
     const w = make()

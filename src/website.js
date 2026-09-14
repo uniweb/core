@@ -13,6 +13,7 @@ import { normalizeSeo } from './seo.js'
 import { resolveDefaultLocale, localeLabel } from './locale-config.js'
 import { matchDynamicRoute, decodeRouteValue, matchesRouteParam, routeBinding, routeParamName, parentRouteOf } from './route-match.js'
 import { resolveFetchConfigs, pageRouteQuery, recordPages, routeSelection, siteReaches } from './fetch-config.js'
+import { declaredKeys } from './data-keys.js'
 import { buildDetailConfig } from './detail-url.js'
 import { findLayoutEntry } from './layout-name.js'
 import { resolveService } from './services.js'
@@ -883,6 +884,20 @@ export default class Website {
     }
 
     return resolvedHref
+  }
+
+  /**
+   * ⭐ THE `content.data` KEYS A COMPONENT RECEIVES — its `data:` (`meta.data`, as the build
+   * leans it), then its foundation's `main.js` `data:`, each with its schema ref
+   * (`declaredKeys`, `./data-keys.js`; ruled 2026-09-14 [Diego]). A component with no
+   * `data:` receives only its foundation's keys, which reach every section because its
+   * handlers run for every section.
+   *
+   * @param {Object|null} meta - the component's runtime meta (`uniweb.getComponentMeta`)
+   * @returns {Array<[string, string|null]>}
+   */
+  declaredKeys(meta) {
+    return declaredKeys(meta?.data, this._foundation?.default?.capabilities?.data)
   }
 
   /**

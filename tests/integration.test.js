@@ -101,6 +101,9 @@ function blockOn(page, website, extras = {}) {
   }
 }
 
+// The component's meta: a section receives the keys its component declares (2026-09-14).
+const ARTICLES = { data: { articles: null } }
+
 describe('integration — Website + foundation + state-aware fetcher', () => {
   it('site-level + page-level cascade delivers data through the dispatcher', async () => {
     const { foundation, fetches } = makeStatefulFoundation()
@@ -121,18 +124,18 @@ describe('integration — Website + foundation + state-aware fetcher', () => {
     const block = blockOn(articlesPage, website)
 
     // Resolve is sync — should be pending on first try (cache empty).
-    const resolved = website.entityStore.resolve(block, {})
+    const resolved = website.entityStore.resolve(block, ARTICLES)
     expect(resolved.status).toBe('pending')
 
     // Async fetch runs through the dispatcher, which runs the foundation's
     // route fetcher, which reads ctx.page.state.
-    const fetched = await website.entityStore.fetch(block, {})
+    const fetched = await website.entityStore.fetch(block, ARTICLES)
     expect(fetches).toHaveLength(1)
     expect(fetches[0].tag).toBe('featured')
     expect(fetched.data.articles).toEqual([{ slug: 'a-featured' }, { slug: 'b-featured' }])
 
     // Resolve is now ready from cache — no second fetcher call.
-    const resolved2 = website.entityStore.resolve(block, {})
+    const resolved2 = website.entityStore.resolve(block, ARTICLES)
     expect(resolved2.status).toBe('ready')
     expect(resolved2.data.articles).toEqual([{ slug: 'a-featured' }, { slug: 'b-featured' }])
     expect(fetches).toHaveLength(1)
@@ -182,7 +185,7 @@ describe('integration — Website + foundation + state-aware fetcher', () => {
     page.fetch = { ...page.fetch, __stateTag: page.state.get('tag') }
 
     const block = blockOn(page, website)
-    const r1 = await website.entityStore.fetch(block, {})
+    const r1 = await website.entityStore.fetch(block, ARTICLES)
     expect(r1.data.articles).toEqual([{ slug: 'item-red' }])
     expect(fetches).toHaveLength(1)
 
@@ -190,7 +193,7 @@ describe('integration — Website + foundation + state-aware fetcher', () => {
     page.state.set('tag', 'blue')
     page.fetch = { ...page.fetch, __stateTag: page.state.get('tag') }
 
-    const r2 = await website.entityStore.fetch(block, {})
+    const r2 = await website.entityStore.fetch(block, ARTICLES)
     expect(r2.data.articles).toEqual([{ slug: 'item-blue' }])
     expect(fetches).toHaveLength(2)
     expect(website.dataStore.has('articles:red')).toBe(true)
@@ -204,7 +207,7 @@ describe('integration — Website + foundation + state-aware fetcher', () => {
 
     page.state.set('tag', 'warm')
     const block = blockOn(page, website)
-    await website.entityStore.fetch(block, {})
+    await website.entityStore.fetch(block, ARTICLES)
     expect(fetches).toHaveLength(1)
 
     const origDataStore = website.dataStore
@@ -228,7 +231,7 @@ describe('integration — Website + foundation + state-aware fetcher', () => {
     // that makes live-edit feel instantaneous: reshaping the content
     // doesn't force re-fetching the data already in the cache.
     const block2 = blockOn(newPage, website)
-    const afterRebuild = await website.entityStore.fetch(block2, {})
+    const afterRebuild = await website.entityStore.fetch(block2, ARTICLES)
     expect(fetches).toHaveLength(1) // cache hit; no new fetcher call
     expect(afterRebuild.data.articles).toEqual([{ slug: 'a-warm' }, { slug: 'b-warm' }])
   })
@@ -249,8 +252,8 @@ describe('integration — Website + foundation + state-aware fetcher', () => {
     const b1 = blockOn(page, website)
     const b2 = blockOn(page, website)
 
-    const p1 = website.entityStore.fetch(b1, {})
-    const p2 = website.entityStore.fetch(b2, {})
+    const p1 = website.entityStore.fetch(b1, ARTICLES)
+    const p2 = website.entityStore.fetch(b2, ARTICLES)
 
     expect(fetcher.resolve).toHaveBeenCalledTimes(1)
 
