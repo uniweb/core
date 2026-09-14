@@ -68,6 +68,40 @@ describe('resolveFetchConfigs — precedence', () => {
     expect(configs.size).toBe(1)
     expect(configs.has('articles')).toBe(true)
   })
+})
+
+describe('a stored fetch as a published payload carries it — a string is a query name, and `as` defaults to it (2026-09-14)', () => {
+  // ⛔ The build writes both out when it parses, so a static payload never had these; a
+  // backend publishes a page's and a section's `fetch` as stored, and both were skipped on
+  // the runtime lane for having no `as` — the section received nothing (measured).
+  const queries = { people: { schema: '@std/person' }, team: { schema: '@std/person' } }
+
+  it('reads a bare string as the query it names, under its own key', () => {
+    const configs = resolveFetchConfigs(['people'], { queries })
+    expect([...configs.keys()]).toEqual(['people'])
+    expect(configs.get('people')).toMatchObject({ query: 'people', as: 'people', path: queryDataUrl('people') })
+    // in a list, beside an object entry
+    expect([...resolveFetchConfigs([['people', { query: 'team', as: 'members' }]], { queries }).keys()]).toEqual(['people', 'members'])
+  })
+
+  it('reads a `{ query }` with no `as` under the query\'s name — the same entry, and the same question, as with it', () => {
+    const bare = resolveFetchConfigs([{ query: 'people', limit: 3 }], { queries }).get('people')
+    const full = resolveFetchConfigs([{ query: 'people', as: 'people', limit: 3 }], { queries }).get('people')
+    expect(bare).toEqual(full)
+  })
+
+  it('a written `as` still decides the key', () => {
+    expect([...resolveFetchConfigs([{ query: 'people', as: 'staff' }], { queries }).keys()]).toEqual(['staff'])
+  })
+
+  it('a string that is not a query name — a path, a data file — is not a fetch', () => {
+    expect(resolveFetchConfigs(['/data/people.json', 'people.json', ''], { queries }).size).toBe(0)
+  })
+
+  it('the route query reads the same entries — a parent page that names its query as a string routes its child', () => {
+    expect(routeQuery({ parent: 'people' })).toMatchObject({ key: 'people', config: { query: 'people', as: 'people' }, level: 'parent' })
+    expect(routeQuery({ page: { query: 'team' } })).toMatchObject({ key: 'team', level: 'page' })
+  })
 
   it('restricts to the requested schemas when given, collects all when empty', () => {
     const sources = [

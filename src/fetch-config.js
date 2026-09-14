@@ -415,6 +415,47 @@ function bindingKey(cfg) {
 }
 
 /**
+ * One fetch entry as the runtime reads it. ⭐ **A STRING IS A QUERY NAME, and `as`
+ * DEFAULTS TO THE QUERY'S NAME — on every lane** (ruled 2026-09-13 [Diego]: *"a string
+ * is a query name, so, `fetch: "members"` … means `fetch: {query: "members"}`"*, and
+ * *"`as` defaults to `query`"*). The build writes both out when it parses a content
+ * file (`parseFetchConfig`), so a static payload never needs this. A payload a backend
+ * publishes carries a page's and a section's `fetch` as stored — where a bare `"people"`
+ * and a `{ query }` with no `as` are ordinary — and ⛔ **both were skipped here, for
+ * having no `as`, until 2026-09-14** (measured): a hosted section bound that way
+ * received nothing, and a parametric page whose parent named its query that way had no
+ * route query.
+ *
+ * A string that is not a query name — a path, a data file — is not one: `/data/…` is
+ * never authored (the build refuses it), and guessing at it here would fetch a file no
+ * query declares.
+ *
+ * @param {*} entry - a string, an object, or anything else a stored `fetch` holds
+ * @returns {Object|null} the entry with its `as`, or null when it is not a fetch
+ */
+function fetchEntry(entry) {
+  if (typeof entry === 'string') {
+    const name = entry.trim()
+    return name && !/[\\/]|\.(json|ya?ml)$/i.test(name) ? { query: name, as: name } : null
+  }
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null
+  if (entry.as === undefined && typeof entry.query === 'string' && entry.query) return { ...entry, as: entry.query }
+  return entry
+}
+
+/**
+ * A `fetch` as the runtime reads it — one entry, several, or none — each through
+ * `fetchEntry`, so a string and a `{ query }` with no `as` are read as the query they name.
+ *
+ * @param {*} fetch - a level's `fetch`, as a payload carries it
+ * @returns {Array<Object>}
+ */
+export function fetchEntries(fetch) {
+  if (!fetch) return []
+  return (Array.isArray(fetch) ? fetch : [fetch]).map(fetchEntry).filter(Boolean)
+}
+
+/**
  * Resolve the applicable fetch configs from an ordered list of sources.
  *
  * The rule: walk the sources in precedence order and take the FIRST match per
@@ -459,9 +500,7 @@ export function resolveFetchConfigs(sources, options = {}) {
   const collectAll = schemas.length === 0
 
   for (const source of sources) {
-    if (!source) continue
-    const configList = Array.isArray(source) ? source : [source]
-    for (const cfg of configList) {
+    for (const cfg of fetchEntries(source)) {
       const key = bindingKey(cfg)
       if (!key) continue
       if (configs.has(key)) continue
@@ -709,10 +748,9 @@ export function siteReaches(parent) {
   return !parent
 }
 
-/** A `fetch` as a list: one declaration, several, or none. */
+/** A `fetch` as a list: one declaration, several, or none — each read as the runtime reads it. */
 function fetchList(fetch) {
-  if (!fetch) return []
-  return Array.isArray(fetch) ? fetch.filter(Boolean) : [fetch]
+  return fetchEntries(fetch)
 }
 
 /**

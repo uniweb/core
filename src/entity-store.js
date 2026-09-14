@@ -14,16 +14,15 @@
  * and in-flight dedup.
  */
 
-import { resolveFetchConfigs, pageRouteQuery, routeSelection, currentOf, othersView, othersOf, siteReaches } from './fetch-config.js'
+import { resolveFetchConfigs, fetchEntries, pageRouteQuery, routeSelection, currentOf, othersView, othersOf, siteReaches } from './fetch-config.js'
 import { fillRoutePattern, matchesRouteParam } from './route-match.js'
+import { buildDetailConfig } from './detail-url.js'
 
 /**
- * A fetch config's binding key — the `content.data.<key>` a component reads.
- * `as` is the name; `schema` is what it was called until 2026-09-02 and still
- * arrives on any payload published before then. See `fetch-config.js`.
+ * The binding keys a level's `fetch` declares — `as`, which is the query's name when
+ * none is written, and a string entry is a query name (`fetchEntries`).
  */
-const bindingKeyOf = (cfg) => cfg?.as
-import { buildDetailConfig } from './detail-url.js'
+const bindingKeysOf = (fetch) => fetchEntries(fetch).map((cfg) => cfg.as).filter(Boolean)
 
 export default class EntityStore {
   /**
@@ -204,8 +203,7 @@ export default class EntityStore {
     // has a fetch config, target the block's schema explicitly rather than
     // collecting all cascade matches.
     if (requested === null && block.fetch) {
-      const blockFetchList = Array.isArray(block.fetch) ? block.fetch : [block.fetch]
-      const schemas = blockFetchList.filter(bindingKeyOf).map(bindingKeyOf)
+      const schemas = bindingKeysOf(block.fetch)
       if (schemas.length > 0) requested = schemas
     }
 
@@ -321,8 +319,7 @@ export default class EntityStore {
 
     let requested = this._getRequestedSchemas(meta)
     if (requested === null && block.fetch) {
-      const blockFetchList = Array.isArray(block.fetch) ? block.fetch : [block.fetch]
-      const schemas = blockFetchList.filter(bindingKeyOf).map(bindingKeyOf)
+      const schemas = bindingKeysOf(block.fetch)
       if (schemas.length > 0) requested = schemas
     }
     if (requested === null) return { data: null, errors: null }
