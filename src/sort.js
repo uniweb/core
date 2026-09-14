@@ -81,8 +81,16 @@ export function sortToWire(sort) {
 /**
  * Sort records by one key. Returns a new array; the input is not mutated.
  *
- * Strings compare with `localeCompare` so `apple` sorts before `Banana`; anything
- * else compares with `<`/`>`, which is right for numbers and ISO date strings.
+ * ⭐ TEXT SORTS BY THE COLLATION OF THE PAGE'S LOCALE — ruled 2026-09-14 [Diego]: *"collation
+ * in the page's locale is the correct answer."* So `apple` sorts before `Banana`, and
+ * `Álvarez` before `Zamora` on a Spanish page, the way a reader of that language expects;
+ * the records service collates in the question's locale. The collation is the locale's
+ * default, with no options: no numeric ordering (`item 10` before `item 2`), and case and
+ * accents only break ties between the same letters. ⛔ Until then a text compared with
+ * `localeCompare` and no locale — the JavaScript runtime's own — so a browser and a host's
+ * prerender could order one list differently. With no locale, or one the runtime cannot
+ * collate, `en` stands in: the CLDR root order, which English does not tailor.
+ * Numbers, ISO dates and booleans compare as values.
  *
  * ⭐ A RECORD WITH NO VALUE FOR THE KEY SORTS LAST, IN EITHER DIRECTION, and records
  * that compare equal keep their order — the language both lanes answer
@@ -95,12 +103,16 @@ export function sortToWire(sort) {
  *
  * @param {Array<Object>} items
  * @param {string|{field:string, desc?:boolean}|null|undefined} sort
+ * @param {Object} [options]
+ * @param {string|null} [options.locale] - the page's locale, which texts are collated in
  * @returns {Array<Object>}
  */
-export function sortRecords(items, sort) {
+export function sortRecords(items, sort, { locale = null } = {}) {
   const spec = parseSort(sort)
   if (!spec || !Array.isArray(items) || items.length === 0) return items
   const { field, desc } = spec
+  const collate = collatorFor(locale)
+  const compareValues = (a, b) => compareValuesIn(a, b, collate)
   return [...items].sort((a, b) => {
     const av = readPath(a, field)
     const bv = readPath(b, field)
@@ -124,17 +136,36 @@ function hasSortValue(v) {
  * backend on 2026-09-14. A total order, so a sort never fails; `where` still holds no
  * comparison across kinds. ⛔ Until then `<` / `>` coerced a number against a text.
  *
- * ⚠️ Text uses `localeCompare` with no locale, which is the JavaScript runtime's own —
- * a browser and a host's prerender can disagree, and the records service compares code
- * points. Which order both lanes use is put to Diego (2026-09-14).
+ * Two texts compare with `collate` — the page's locale (`sortRecords`).
  */
-function compareValues(a, b) {
+function compareValuesIn(a, b, collate) {
   const ka = kindRank(a)
   const kb = kindRank(b)
   if (ka !== kb) return ka < kb ? -1 : 1
-  if (typeof a === 'string') return a.localeCompare(b)
+  if (typeof a === 'string') return collate(a, b)
   if (ka === KIND_OTHER) return 0
   return a > b ? 1 : a < b ? -1 : 0
+}
+
+/** One `Intl.Collator` per locale, made on first use. */
+const collators = new Map()
+const FALLBACK_LOCALE = 'en'
+
+function collatorFor(locale) {
+  const wanted = typeof locale === 'string' && locale ? locale : FALLBACK_LOCALE
+  let compare = collators.get(wanted)
+  if (!compare) {
+    let collator
+    try {
+      collator = new Intl.Collator(wanted)
+    } catch {
+      // A tag the runtime cannot collate in (malformed, or unknown to its ICU data).
+      collator = new Intl.Collator(FALLBACK_LOCALE)
+    }
+    compare = collator.compare
+    collators.set(wanted, compare)
+  }
+  return compare
 }
 
 const KIND_OTHER = 3

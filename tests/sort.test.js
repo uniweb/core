@@ -113,6 +113,28 @@ describe('sortRecords', () => {
     expect(sortRecords(rows, 'p.v desc').map((r) => r.id)).toEqual(['obj', 'list'])
   })
 
+  it('⭐ text sorts by the collation of the page\'s locale — the same letters, a different order', () => {
+    const words = [{ w: 'ä' }, { w: 'z' }]
+    expect(sortRecords(words, 'w', { locale: 'de' }).map((r) => r.w)).toEqual(['ä', 'z'])
+    expect(sortRecords(words, 'w', { locale: 'sv' }).map((r) => r.w)).toEqual(['z', 'ä'])
+  })
+
+  it('accents and case break ties, not the order of the letters — Álvarez before Zamora', () => {
+    const names = ['Zamora', 'Álvarez', 'apple', 'Banana'].map((n) => ({ n }))
+    expect(sortRecords(names, 'n', { locale: 'es' }).map((r) => r.n)).toEqual(['Álvarez', 'apple', 'Banana', 'Zamora'])
+  })
+
+  it('no numeric ordering: `item 10` sorts before `item 2`, as the locale\'s default collation does', () => {
+    const items = [{ t: 'item 2' }, { t: 'item 10' }]
+    expect(sortRecords(items, 't', { locale: 'en' }).map((r) => r.t)).toEqual(['item 10', 'item 2'])
+  })
+
+  it('with no locale, or one the runtime cannot collate in, `en` stands in — never the runtime\'s own locale', () => {
+    const words = [{ w: 'ä' }, { w: 'z' }]
+    expect(sortRecords(words, 'w').map((r) => r.w)).toEqual(['ä', 'z'])
+    expect(sortRecords(words, 'w', { locale: 'not a locale!' }).map((r) => r.w)).toEqual(['ä', 'z'])
+  })
+
   it('two kinds in one field are ordered by kind — booleans, numbers, texts, then objects — and within a kind', () => {
     const rows = [
       { id: 'text-b', v: 'b' }, { id: 'obj', v: { x: 1 } }, { id: 'num-10', v: 10 },
