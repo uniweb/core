@@ -144,7 +144,7 @@ export default class EntityStore {
 
   /**
    * The ROUTE QUERY of the block's page — the query its URL names one record of —
-   * worked out from the same sources `_findFetchConfigs` walks, at the page that
+   * worked out from the same sources `_levels` reads, at the page that
    * captured the URL's variable (`pageRouteQuery`, `./fetch-config.js`): its fetch,
    * its parent's, the site's, and, when none of those declares one, the key its
    * sections share. So what a section receives and what the URL narrows are read
