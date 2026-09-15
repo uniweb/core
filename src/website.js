@@ -11,7 +11,7 @@ import FetcherDispatcher from './fetcher-dispatcher.js'
 import ObservableState from './observable-state.js'
 import { normalizeSeo } from './seo.js'
 import { resolveDefaultLocale, localeLabel } from './locale-config.js'
-import { matchDynamicRoute, decodeRouteValue, matchesRouteParam, routeBinding, routeParamName, parentRouteOf } from './route-match.js'
+import { matchDynamicRoute, decodeRouteValue, matchesRouteParam, recordTitle, routeBinding, routeParamName, parentRouteOf } from './route-match.js'
 import { resolveFetchConfigs, pageRouteQuery, recordPages, routeSelection, siteReaches } from './fetch-config.js'
 import { declaredKeys } from './data-keys.js'
 import { buildDetailConfig } from './detail-url.js'
@@ -679,7 +679,11 @@ export default class Website {
       }
 
       if (currentItem) {
-        if (currentItem.title) pageData.title = currentItem.title
+        // ⭐ The record names the page by the one rule its search result is named by
+        // too (`recordTitle`: `title`, `name`, then its handle). ⛔ Until 2026-09-14 this
+        // read `title` alone, so a person record kept the template's title — `:slug`.
+        const title = recordTitle(currentItem)
+        if (title) pageData.title = title
         if (currentItem.description || currentItem.excerpt) {
           pageData.description = currentItem.description || currentItem.excerpt
         }

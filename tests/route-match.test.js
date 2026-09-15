@@ -12,7 +12,7 @@
  * a caller can rely on. A host matching identically depends on all of it.
  */
 
-import { recordHandle, routeParamValue, routeParamValues, matchesRouteParam, recordRouteBase,
+import { recordHandle, recordTitle, routeParamValue, routeParamValues, matchesRouteParam, recordRouteBase,
   matchDynamicRoute,
   findPageForRoute,
   routePatternToRegex,
@@ -348,6 +348,24 @@ describe('the placement handle — `$name` on a live record, `slug` on a file-la
     expect(recordHandle({ $name: '', slug: 'ada' })).toBe('ada')
     expect(recordHandle({ title: 'no handle' })).toBeUndefined()
     expect(recordHandle(null)).toBeUndefined()
+  })
+
+  it('recordTitle — `title`, then `name`, then the handle (ruled 2026-09-14)', () => {
+    expect(recordTitle({ $name: 'ada', title: 'On Engines', name: 'Ada Lovelace' })).toBe('On Engines')
+    expect(recordTitle({ $name: 'ada', name: 'Ada Lovelace' })).toBe('Ada Lovelace')
+    expect(recordTitle({ $name: 'ada' })).toBe('ada')
+    expect(recordTitle({ slug: 'ada' })).toBe('ada')
+    // a number is text a title can carry — `title: 2024` in YAML
+    expect(recordTitle({ slug: 'y', title: 2024 })).toBe('2024')
+  })
+
+  it('recordTitle skips what is not text, and what is blank', () => {
+    // A localized map or a rich document would render as `[object Object]`.
+    expect(recordTitle({ $name: 'ada', title: { en: 'Map' }, name: 'Ada Lovelace' })).toBe('Ada Lovelace')
+    expect(recordTitle({ $name: 'ada', title: '   ', name: '' })).toBe('ada')
+    expect(recordTitle({ title: Number.NaN })).toBeUndefined()
+    expect(recordTitle({})).toBeUndefined()
+    expect(recordTitle(null)).toBeUndefined()
   })
 
   it('routeParamValue reads the handle for `slug` and the field for any other param', () => {

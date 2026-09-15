@@ -129,6 +129,53 @@ describe('the page is about one record, so the record is asked first (F3)', () =
   })
 })
 
+describe('the record names the page by the one title rule — `recordTitle` (ruled 2026-09-14)', () => {
+  // ⛔ Until then the page read `title` alone, so a record with a `name` and no `title`
+  // kept the template's title. Measured on a served site whose template title was the
+  // route token: the page read `:slug` while its body rendered the person.
+  const personSite = () => site(LIVE)
+
+  it('a live record — `$name`, a `name`, no `title` — titles the page by its name', () => {
+    const w = personSite()
+    w.dataStore.set(recordKey(w, 'alice'), {
+      data: [{ $uuid: 'u1', $name: 'alice', name: 'Alice Nguyen' }],
+    })
+    const page = w.getPage('/blog/alice')
+    expect(page.title).toBe('Alice Nguyen')
+    expect(page.notFound).toBeFalsy()
+  })
+
+  it('a record with neither `title` nor `name` is titled by its handle, never the template\'s title', () => {
+    const w = personSite()
+    w.dataStore.set(recordKey(w, 'alice'), { data: [{ $uuid: 'u1', $name: 'alice' }] })
+    expect(w.getPage('/blog/alice').title).toBe('alice')
+  })
+
+  it('on the file lane the list\'s record is titled by the same rule', () => {
+    const w = site()
+    w.dataStore.set(deriveCacheKey({ query: 'articles', as: 'articles', path: '/data/articles.json' }), {
+      data: [{ slug: 'ada', name: 'Ada Lovelace' }],
+    })
+    expect(w.getPage('/blog/ada').title).toBe('Ada Lovelace')
+  })
+
+  it('a value that is not text does not name the page — the next step does', () => {
+    const w = personSite()
+    w.dataStore.set(recordKey(w, 'alice'), {
+      data: [{ $name: 'alice', title: { en: 'A map' }, name: 'Alice Nguyen' }],
+    })
+    expect(w.getPage('/blog/alice').title).toBe('Alice Nguyen')
+  })
+
+  it('CONTROL — `title` still wins over `name`', () => {
+    const w = personSite()
+    w.dataStore.set(recordKey(w, 'hello'), {
+      data: [{ $name: 'hello', title: 'Hello World', name: 'Not this' }],
+    })
+    expect(w.getPage('/blog/hello').title).toBe('Hello World')
+  })
+})
+
 describe('recordPageFor — the page a query\'s records link to (ruled 2026-09-14)', () => {
   const pagesOf = (pages) => new Website({ content: { config: { name: 'T', defaultLanguage: 'en' }, theme: {}, pages } })
 

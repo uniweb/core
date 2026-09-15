@@ -67,6 +67,7 @@ export {
   splitPathCapture,
   joinPathCapture,
   recordHandle,
+  recordTitle,
   routeParamValue,
   routeParamValues,
   matchesRouteParam,

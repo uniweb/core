@@ -262,6 +262,36 @@ export function recordHandle(record) {
 }
 
 /**
+ * A record's DISPLAY TITLE — what the page about it, and a search result for it, are called.
+ *
+ * ⭐ ONE RULE, read by every producer of that title (ruled 2026-09-14 [Diego]): the
+ * parametric page (`Website._createDynamicPage`, so the SPA and a host's render), the
+ * static build's page expansion, and the record search index (`@uniweb/projections`).
+ *
+ *     title  →  name  →  the record's handle (`recordHandle`: `$name`, else `slug`)
+ *
+ * ⛔ Until then a page read `title` alone while the search index read `title || name`,
+ * so a record with a `name` and no `title` — a person — titled its search result and
+ * left its page carrying the template's own title, which on the site where this was
+ * measured was the route token itself: `:slug` (2026-09-14).
+ *
+ * Only a non-empty string (or a finite number — `title: 2024` in YAML) names a record.
+ * A localized map or a rich document is structure this rule cannot render, and
+ * `String()` of one is `[object Object]`.
+ *
+ * @param {Object} record
+ * @returns {string|undefined}
+ */
+export function recordTitle(record) {
+  if (!record || typeof record !== 'object') return undefined
+  for (const value of [record.title, record.name, recordHandle(record)]) {
+    if (typeof value === 'string' && value.trim() !== '') return value
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  }
+  return undefined
+}
+
+/**
  * The record field a route param is matched on — ONE MAP, read by the local match
  * (`routeParamValue`, below) and by the records service's record question (`match`,
  * `./detail-url.js`), so the two lanes cannot disagree about what a folder's name
