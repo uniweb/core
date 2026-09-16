@@ -21,6 +21,18 @@ import { applyBasePath } from './base-path.js'
  *      does not provide, and on a static site, where no host speaks, the whole
  *      answer.
  *
+ * ## ⛔ THE TWO TIERS ARE NOT TWO SOURCES OF ONE KIND OF THING
+ *
+ * ⭐ **A site's block is an EXPRESSION OF INTENT — a request for something. The
+ * host's is THE ANSWER.** That is the real reason step 1 wins below, and it is
+ * not a detail of precedence: an operator's declaration can be answered
+ * differently by the deployment that serves it, and is routinely settled later
+ * than the moment it was written.
+ *
+ * ⇒ **So never read a site's declaration as what the site HAS**, and never
+ * report a resolved address back as what the operator asked for. The two are
+ * different kinds of statement that happen to share a spelling.
+ *
  * Absent from both means the site has no such service, and the caller acts on
  * that rather than guessing an address. That is the same rule for every service,
  * and it is why this module exists: it was previously implemented three times —
@@ -79,6 +91,14 @@ import { applyBasePath } from './base-path.js'
  * tiers, no "paid" anywhere. That is not squeamishness: this package is public,
  * and a framework that encodes which capabilities cost money ships the business
  * model into open source.
+ *
+ * ⛔ **AND IT COVERS A FIELD'S JUSTIFICATION, NOT ONLY ITS NAME.** A field naming
+ * no tier still breaks this if the reason it exists is to help someone manage
+ * what a host charges for: the commercial surface has then been designed around,
+ * which is the same coupling wearing a neutral spelling. ⇒ **Ask what a field is
+ * FOR, not only what it says** — a neutral spelling with a commercial purpose
+ * passes every check that reads only the name. (One such field was proposed and
+ * rejected on this ground, 2026-09-15.)
  *
  * ⛔ **There is deliberately no explanatory string, and there was one — it was
  * a mistake.** Until 2026-08-13 a declining host could supply a `reason` that
