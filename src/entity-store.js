@@ -14,10 +14,10 @@
  * and in-flight dedup.
  */
 
-import { resolveFetchConfigs, fetchEntries, pageRouteQuery, routeSelection, currentFor, othersView, othersOf, siteReaches } from './fetch-config.js'
-import { declaredKeys, fillDeclaredKeys } from './data-keys.js'
-import { fillRoutePattern, matchesRouteParam } from './route-match.js'
-import { buildDetailConfig } from './detail-url.js'
+import { resolveFetchConfigs, pageRouteQuery } from './fetch-config.js'
+import { declaredKeys } from './data-keys.js'
+import { fillRoutePattern } from './route-match.js'
+import { fetchLevels, blockFills, planFor, runPlan, runPlanSync } from './page-data.js'
 
 export default class EntityStore {
   /**
@@ -33,24 +33,20 @@ export default class EntityStore {
   }
 
   /**
-   * The fetches that reach a block, one level each, most specific first: its own, its
-   * page's, its parent page's, a nested page's route binding, and the site's.
-   *
-   * ⭐ A page nested inside a parametric page receives its capturing page's route binding
-   * — the cascade reaches one parent up, and the binding may sit above that
-   * (`pageRouteQuery`). Its key only; the rest does not cascade. The site's binding
-   * reaches a layout section and a top-level page's sections, and nothing deeper
-   * (`siteReaches`).
+   * The fetches that reach a block — `fetchLevels` (`./page-data.js`), the one rule, read
+   * off this block's graph. ⛔ Do not spell the levels out here: every lane that has
+   * needed this answer has written its own list, and each list has drifted
+   * (`kb/framework/plans/what-a-page-needs.md`).
    */
   _levels(block, route = this._route(block)) {
     const page = block.page
-    return [
-      block.fetch,
-      page?.fetch,
-      page?.parent?.fetch,
-      route?.nested ? route.config : null,
-      siteReaches(page?.parent) ? block.website?.config?.fetch : null,
-    ]
+    return fetchLevels({
+      own: block.fetch,
+      page: page?.fetch,
+      parent: page?.parent ?? null,
+      route,
+      site: block.website?.config?.fetch,
+    })
   }
 
   /**
@@ -117,29 +113,32 @@ export default class EntityStore {
    */
   _fills(block, meta, route) {
     const website = block.website
-    const declared = website?.declaredKeys ? website.declaredKeys(meta) : declaredKeys(meta?.data)
-    const out = new Map()
-    if (declared.length === 0) return out
-    const holds = block.heldData || {}
-    const levels = this._levels(block, route)
-    const fills = fillDeclaredKeys(declared, levels, {
+    return blockFills({
+      declared: website?.declaredKeys ? website.declaredKeys(meta) : declaredKeys(meta?.data),
+      levels: this._levels(block, route),
+      holds: block.heldData || {},
       queries: website?.config?.queries ?? null,
-      held: declared.map(([key]) => key).filter((key) => holds[key] !== undefined),
+      options: this._resolveOptions(block),
     })
-    // where the first fetch of each key reaching the block sits — the one a held answer
-    // belongs to
-    const firstOfKey = new Map()
-    levels.forEach((level, at) => fetchEntries(level).forEach((fetch, index) => {
-      if (!firstOfKey.has(fetch.as)) firstOfKey.set(fetch.as, `${at}:${index}`)
-    }))
-    const options = this._resolveOptions(block)
-    for (const [key, { fetch, level, index }] of fills) {
-      const cfg = resolveFetchConfigs([fetch], options).get(fetch.as)
-      if (!cfg) continue
-      const held = firstOfKey.get(fetch.as) === `${level}:${index}` ? holds[fetch.as] : undefined
-      out.set(key, { cfg, held })
-    }
-    return out
+  }
+
+  /**
+   * The plan for a block — one program per declared key (`planFor`, `./page-data.js`),
+   * which both `resolve` and `fetch` run. They differ in where an answer comes from and in
+   * nothing else.
+   */
+  _plan(block, fills, route) {
+    const dispatcher = this.website?.fetcher
+    return planFor(fills, {
+      dynamicContext: block.dynamicContext || block.page?.dynamicContext,
+      route,
+      peekRecord: (id) => dispatcher?.peekRecord?.(id),
+    })
+  }
+
+  /** The filling config of each key — what `_applyRecordRoutes` links records by. */
+  _configs(fills) {
+    return new Map([...fills].map(([key, { cfg }]) => [key, cfg]))
   }
 
   /**
@@ -234,17 +233,6 @@ export default class EntityStore {
   }
 
   /**
-   * Build a detail-URL fetch config from a query config + dynamic context.
-   *
-   * Delegates to the exported resolver so a host fetching this record
-   * server-side reaches the identical rule — see `./detail-url.js` for why the
-   * four `detail:` forms are a contract rather than an implementation detail.
-   */
-  _buildDetailConfig(queryConfig, dynamicContext) {
-    return buildDetailConfig(queryConfig, dynamicContext)
-  }
-
-  /**
    * Build the `ctx` handed to the dispatcher for a given block.
    * @private
    */
@@ -269,99 +257,21 @@ export default class EntityStore {
     const route = this._route(block)
     const fills = this._fills(block, meta, route)
     if (fills.size === 0) return { status: 'none', data: null }
-    const configs = new Map([...fills].map(([key, { cfg }]) => [key, cfg]))
 
-    const dynamicContext = block.dynamicContext || block.page?.dynamicContext
     const ctx = this._ctx(block)
+    const result = runPlanSync(this._plan(block, fills, route), {
+      peek: (request) => dispatcher?.peek(request, ctx),
+    })
+    if (result.status !== 'ready') return { status: 'pending', data: null }
 
-    const data = {}
-    let allCached = true
-
-    for (const [schema, { cfg, held }] of fills) {
-      if (held !== undefined) {
-        // The block holds this fetch's answer already — a static build prerendered it.
-        data[schema] = held
-        continue
-      }
-      // How this fetch uses the page's record: by the query it names (`currentFor`).
-      const current = dynamicContext ? currentFor(cfg, route) : null
-      if (current === 'exclude') {
-        // The query's records without this page's, `limit` counting the others.
-        const cached = dispatcher?.peek(othersView(cfg), ctx)
-        if (cached) {
-          data[schema] = othersOf(cached.data, cfg, isPageRecord(dynamicContext))
-        } else {
-          allCached = false
-        }
-      } else if (current === 'only' && cfg.ask) {
-        // The records service: the record's own answer is cached under its own key.
-        const detailCfg = this._buildDetailConfig(cfg, dynamicContext)
-        const detailCached = detailCfg ? dispatcher?.peek(detailCfg, ctx) : null
-        if (detailCached) {
-          const answer = Array.isArray(detailCached.data) ? detailCached.data : (detailCached.data ? [detailCached.data] : [])
-          data[schema] = answer.slice(0, 1)
-        } else {
-          allCached = false
-        }
-      } else if (current === 'only') {
-        // Detail page: deliver the focused record as a length-1 array under the
-        // query key. A deferred/remote query fetches the full per-record;
-        // others use the matched record. Not found → []. Found in the set of the
-        // query the fetch names — the route query's, or another's under `current: only`
-        // — never in a list a fetch narrowed (`routeSelection`).
-        const cached = dispatcher?.peek(routeSelection(cfg), ctx)
-        if (cached) {
-          const { paramName, paramValue } = dynamicContext
-          const items = cached.data
-          const match = Array.isArray(items)
-            ? items.find((item) => matchesRouteParam(item, paramName, paramValue))
-            : null
-          if (!match) {
-            data[schema] = []
-          } else if (cfg.detail) {
-            // ⭐ Held in full already? Then it IS the record — no detail probe.
-            // The list is materialized from the record index, so `match` is the
-            // record at its latest depth; the index says which depth that is.
-            const held = heldWhole(dispatcher, match)
-            const detailCfg = held ? null : this._buildDetailConfig(cfg, { ...dynamicContext, record: match })
-            const detailCached = detailCfg ? dispatcher?.peek(detailCfg, ctx) : null
-            if (held) {
-              data[schema] = [held]
-            } else if (detailCfg && detailCached) {
-              data[schema] = [detailCached.data]
-            } else if (detailCfg) {
-              allCached = false
-            } else {
-              data[schema] = [match]
-            }
-          } else {
-            data[schema] = [match]
-          }
-        } else {
-          allCached = false
-        }
-      } else {
-        // A fetch the page's record plays no part in (`currentFor`), and `current:
-        // include`: the records as the fetch describes them, the page's among the rest.
-        const cached = dispatcher?.peek(cfg, ctx)
-        if (cached) {
-          data[schema] = cached.data
-        } else {
-          allCached = false
-        }
-      }
-    }
-
-    if (allCached) {
-      this._applyRecordRoutes(data, configs, block.website)
-      return { status: 'ready', data }
-    }
-    return { status: 'pending', data: null }
+    this._applyRecordRoutes(result.data, this._configs(fills), block.website)
+    return result
   }
 
   /**
-   * Async fetch — dispatches missing configs through the FetcherDispatcher
-   * and assembles the result. List-first detail ordering preserved.
+   * Async fetch — the same plan, run by dispatching. List-first detail ordering preserved:
+   * a record found in its query's set is asked for in full only after the set answers, and
+   * only that key waits.
    *
    * ⛔ A FAILED FETCH DELIVERS NOTHING UNDER ITS KEY, AND SAYS SO. Until 2026-09-04
    * a failure wrote `[]` into `content.data` — the fetcher returns `{ data: [], error }`,
@@ -384,136 +294,15 @@ export default class EntityStore {
     const route = this._route(block)
     const fills = this._fills(block, meta, route)
     if (fills.size === 0) return { data: null, errors: null }
-    const configs = new Map([...fills].map(([key, { cfg }]) => [key, cfg]))
 
-    const dynamicContext = block.dynamicContext || block.page?.dynamicContext
     const ctx = this._ctx(block, { signal })
+    const { data, errors } = await runPlan(this._plan(block, fills, route), {
+      dispatch: (request) => dispatcher.dispatch(request, ctx),
+      onFailure: (key, cfg, message) => reportFetchFailure(this.dev, block, key, cfg, message),
+    })
 
-    const data = {}
-    const errors = {}
-    const parallelFetches = []
-    const fail = (key, cfg, message) => {
-      errors[key] = message
-      reportFetchFailure(this.dev, block, key, cfg, message)
-    }
-
-    for (const [schema, { cfg, held }] of fills) {
-      if (held !== undefined) {
-        // The block holds this fetch's answer already — a static build prerendered it.
-        data[schema] = held
-        continue
-      }
-      // How this fetch uses the page's record: by the query it names (`currentFor`).
-      const current = dynamicContext ? currentFor(cfg, route) : null
-      if (current === 'exclude') {
-        // The query's records without this page's, the fetch's `limit` counting
-        // the others: its `narrow.limit` asked one higher (`othersView`), so removing
-        // the record still leaves enough.
-        const view = othersView(cfg)
-        parallelFetches.push(dispatcher.dispatch(view, ctx).then((result) => {
-          if (result?.error) {
-            fail(schema, view, result.error)
-            return
-          }
-          if (result?.data !== undefined && result?.data !== null) {
-            data[schema] = othersOf(result.data, cfg, isPageRecord(dynamicContext))
-          }
-        }))
-      } else if (current === 'only' && cfg.ask) {
-        // ⭐ THE RECORDS SERVICE needs no list to find the record: the record is the
-        // query's set narrowed by the route's handle, so its one question
-        // answers the record if the set holds it and `[]` if not — no client-side
-        // scan gating the fetch (F13, the live half).
-        //
-        // ⛔ The list was asked beside it until 2026-09-14, for the record index to
-        // file its briefs, while the record question dropped the query's `sort` and
-        // `limit` and so could not say whether the set held the record. It checks the
-        // set now, and the list sent the whole set to render one record of it.
-        const detailCfg = this._buildDetailConfig(cfg, dynamicContext)
-        parallelFetches.push(dispatcher.dispatch(detailCfg, ctx).then((result) => {
-          if (result?.error) {
-            fail(schema, detailCfg, result.error)
-            return
-          }
-          const answer = Array.isArray(result?.data) ? result.data : (result?.data ? [result.data] : [])
-          data[schema] = answer.slice(0, 1) // a route resolves to ONE; `[]` is not found
-        }))
-      } else if (current === 'only') {
-        // Detail page: focused record as a length-1 array under the fetch's key,
-        // found in its query's set (`routeSelection`) — a record past a
-        // fetch's `limit` still has its page, and one past the query's has none.
-        const { paramName, paramValue } = dynamicContext
-        const selection = routeSelection(cfg)
-
-        let records = peekArray(dispatcher, selection, ctx)
-        if (records === null) {
-          const result = await dispatcher.dispatch(selection, ctx)
-          if (result?.error) {
-            fail(schema, selection, result.error)
-            continue
-          }
-          records = Array.isArray(result?.data) ? result.data : null
-        }
-
-        const match = records?.find(
-          (item) => matchesRouteParam(item, paramName, paramValue)
-        ) ?? null
-
-        if (!match) {
-          data[schema] = []
-          continue
-        }
-
-        const held = cfg.detail ? heldWhole(dispatcher, match) : null
-        if (held) {
-          // R1: the record index holds it in full — a detail fetch would only
-          // re-fetch what the page already has.
-          data[schema] = [held]
-        } else if (cfg.detail) {
-          const detailCfg = this._buildDetailConfig(cfg, { ...dynamicContext, record: match })
-          if (detailCfg) {
-            parallelFetches.push(
-              dispatcher.dispatch(detailCfg, ctx).then((result) => {
-                // The list already matched the record, so the brief is a HELD
-                // value: a failed detail fetch keeps it and reports, rather than
-                // delivering `[[]]` — which is what `result.data ?? match` did,
-                // because a failure's `data` is `[]`, not null.
-                if (result?.error) {
-                  fail(schema, detailCfg, result.error)
-                  data[schema] = [match]
-                  return
-                }
-                const record = (result?.data !== undefined && result?.data !== null)
-                  ? result.data
-                  : match
-                data[schema] = [record]
-              })
-            )
-          } else {
-            data[schema] = [match]
-          }
-        } else {
-          data[schema] = [match]
-        }
-      } else {
-        // Any other key — and `current: include`, the list as the binding describes it.
-        parallelFetches.push(
-          dispatcher.dispatch(cfg, ctx).then((result) => {
-            if (result?.error) {
-              fail(schema, cfg, result.error)
-              return
-            }
-            if (result?.data !== undefined && result?.data !== null) {
-              data[schema] = result.data
-            }
-          })
-        )
-      }
-    }
-
-    if (parallelFetches.length > 0) await Promise.all(parallelFetches)
-    this._applyRecordRoutes(data, configs, block.website)
-    return { data, errors: Object.keys(errors).length ? errors : null }
+    this._applyRecordRoutes(data, this._configs(fills), block.website)
+    return { data, errors }
   }
 }
 
@@ -538,32 +327,6 @@ function reportFetchFailure(dev, block, key, cfg, message) {
     `[uniweb] fetch for content.data.${key} failed on ${page} (${where}): ${message}. ` +
       `The key is left absent — not [] — and block.dataError carries this message.`
   )
-}
-
-/**
- * The record the index holds in FULL for a list match, or null — the R1 gate.
- * A record with no identity (`$uuid`) is never indexed, so the answer for it is
- * null and the detail fetch proceeds as before.
- */
-function heldWhole(dispatcher, match) {
-  const id = match?.$uuid
-  if (typeof id !== 'string' || !id || typeof dispatcher?.peekRecord !== 'function') return null
-  const held = dispatcher.peekRecord(id)
-  return held?.whole === true ? held.record : null
-}
-
-/** Matches the record a parametric page is about — the one `current: only` delivers. */
-function isPageRecord({ paramName, paramValue }) {
-  return (item) => matchesRouteParam(item, paramName, paramValue)
-}
-
-/**
- * Sync-peek helper: return the cached array for a config, or null on miss.
- */
-function peekArray(dispatcher, cfg, ctx) {
-  const cached = dispatcher.peek(cfg, ctx)
-  if (!cached) return null
-  return Array.isArray(cached.data) ? cached.data : null
 }
 
 /**
