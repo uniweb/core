@@ -67,6 +67,19 @@ describe('the probe reads the key the store writes', () => {
     expect(page.title).toBe('Not found')
   })
 
+  it('⭐ a set that is loaded and EMPTY is a not-found too — changed 2026-09-19', () => {
+    // ⛔ The probe used to ask `items.length > 0`, so a query with no records read as UNKNOWN:
+    // every one of its pages kept the template's title, claimed no not-found, and was re-created
+    // on every visit. A set that is loaded and holds nothing has answered the question.
+    const w = site(LIVE)
+    w.dataStore.set(listKey(w), { data: [] })
+    const page = w.getPage('/blog/hello')
+    expect(page.notFound).toBe(true)
+    expect(page.title).toBe('Not found')
+    // answered, so the page is cached rather than rebuilt on the next visit
+    expect(w.getPage('/blog/hello')).toBe(page)
+  })
+
   it('on a non-default locale the list is cached under its localized path', () => {
     const w = site({ languages: ['en', 'fr'] })
     w.setActiveLocale?.('fr')

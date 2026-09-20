@@ -46,20 +46,26 @@ import { buildDetailConfig } from './detail-url.js'
  * Plain data in and out, so a caller holding payload objects gets the same answer as one holding
  * the object graph.
  *
+ * ⭐ `includeRoute` is for a caller looking for the PAGE'S OWN record rather than feeding a section:
+ * the route query's declaration may sit on a section, and so be in no other level, and the page
+ * still has to find the record it is about. A block sees that declaration only when it is nested,
+ * because otherwise it is already among the levels above.
+ *
  * @param {Object} where
  * @param {*} [where.own] - the block's own `fetch`
  * @param {*} [where.page] - its page's `fetch`
  * @param {Object|null} [where.parent] - its parent PAGE, or null
  * @param {{ config: *, nested: boolean }|null} [where.route] - the page's route query
  * @param {*} [where.site] - the site's `fetch`
+ * @param {boolean} [where.includeRoute] - include the route query's declaration wherever it came from
  * @returns {Array<*>} one level each, falsy where a level declares nothing
  */
-export function fetchLevels({ own = null, page = null, parent = null, route = null, site = null } = {}) {
+export function fetchLevels({ own = null, page = null, parent = null, route = null, site = null, includeRoute = false } = {}) {
   return [
     own,
     page,
     parent?.fetch ?? null,
-    route?.nested ? route.config : null,
+    includeRoute || route?.nested ? route?.config ?? null : null,
     siteReaches(parent) ? site : null,
   ]
 }
@@ -138,14 +144,25 @@ function heldWhole(peekRecord, match) {
  * @param {{ key: string, config: Object, nested: boolean }|null} where.route - the page's route query
  * @param {*} [where.held] - what the block already holds for this key
  * @param {Function} [where.peekRecord] - the record index, for the R1 gate
+ * @param {'only'|'exclude'|'include'|null} [where.current] - override how this page's record is
+ *   used. ⭐ For a caller asking for the PAGE'S OWN record: a page is about one record whatever a
+ *   section's declaration says about how that section uses it.
+ * @param {boolean} [where.opportunistic] - answer from whatever is already cached and never
+ *   report a miss. ⭐ For a caller that runs BEFORE any fetch and must not cause one: the page
+ *   naming itself from its record. On a question door the record has its own answer, but a list
+ *   page may already hold the set, and the record is in it — so a miss falls through to the set,
+ *   and a record found there answers with the brief it holds. No value at all means *unknown*,
+ *   which is not the same as `[]`, *not in the set*.
  * @returns {Generator<Object, { value?: *, error?: string, errorConfig?: Object }>}
  */
-export function* keyProgram(cfg, { dynamicContext = null, route = null, held = undefined, peekRecord = null } = {}) {
+export function* keyProgram(cfg, { dynamicContext = null, route = null, held = undefined, peekRecord = null, current: forced = null, opportunistic = false } = {}) {
+  /** A step this caller can do without: a miss answers `{ missing: true }` instead of stopping. */
+  const maybe = (request) => (opportunistic ? { request, optional: true } : request)
   // The block holds this fetch's answer already — a static build prerendered it.
   if (held !== undefined) return { value: held }
 
   // How this fetch uses the page's record: by the query it names (`currentFor`).
-  const current = dynamicContext ? currentFor(cfg, route) : null
+  const current = forced ?? (dynamicContext ? currentFor(cfg, route) : null)
 
   if (current === 'exclude') {
     // The query's records without this page's, its `limit` counting the others.
@@ -164,11 +181,15 @@ export function* keyProgram(cfg, { dynamicContext = null, route = null, held = u
     // No per-record source, or a route carrying no value: an unanswerable question, and asking it
     // is worse than leaving the key absent. ⚠️ `resolve` reported this as `pending` and `fetch`
     // dispatched a null config; neither was intended (unified 2026-09-19).
-    if (!detailCfg) return {}
-    const answer = yield detailCfg
-    if (answer.error) return { error: answer.error, errorConfig: detailCfg }
-    const list = Array.isArray(answer.data) ? answer.data : (answer.data ? [answer.data] : [])
-    return { value: list.slice(0, 1) } // a route resolves to ONE; `[]` is not found
+    if (!detailCfg && !opportunistic) return {}
+    const answer = detailCfg ? yield maybe(detailCfg) : { missing: true }
+    if (!answer.missing) {
+      if (answer.error) return { error: answer.error, errorConfig: detailCfg }
+      const list = Array.isArray(answer.data) ? answer.data : (answer.data ? [answer.data] : [])
+      return { value: list.slice(0, 1) } // a route resolves to ONE; `[]` is not found
+    }
+    // Opportunistic, and the record's own answer is not held: the set may be, and the record is
+    // in it. Falls through to the set below, which is where every other lane finds it.
   }
 
   if (current === 'only') {
@@ -176,7 +197,10 @@ export function* keyProgram(cfg, { dynamicContext = null, route = null, held = u
     // `narrow` (`routeSelection`): a record past a fetch's `limit` still has its page, and one
     // past the query's has none.
     const selection = routeSelection(cfg)
-    const answer = yield selection
+    const answer = yield maybe(selection)
+    // Opportunistic and nothing held: UNKNOWN, which is not `[]`. A caller naming a page from its
+    // record leaves the name alone rather than calling the record missing.
+    if (answer.missing) return {}
     if (answer.error) return { error: answer.error, errorConfig: selection }
     const items = Array.isArray(answer.data) ? answer.data : null
     const { paramName, paramValue } = dynamicContext
@@ -193,9 +217,10 @@ export function* keyProgram(cfg, { dynamicContext = null, route = null, held = u
     // is built with the record in hand and never from the route's value alone.
     const detailCfg = buildDetailConfig(cfg, { ...dynamicContext, record: match })
     if (!detailCfg) return { value: [match] }
-    const detail = yield detailCfg
-    // The list already matched the record, so the brief is a HELD value: a failed detail keeps it
-    // and reports, rather than delivering `[[]]`.
+    const detail = yield maybe(detailCfg)
+    // The list already matched the record, so the brief is a HELD value: a failed detail — or,
+    // for an opportunistic caller, one not yet held — keeps it rather than delivering `[[]]`.
+    if (detail.missing) return { value: [match] }
     if (detail.error) return { value: [match], error: detail.error, errorConfig: detailCfg }
     const record = detail.data !== undefined && detail.data !== null ? detail.data : match
     return { value: [record] }
@@ -207,6 +232,11 @@ export function* keyProgram(cfg, { dynamicContext = null, route = null, held = u
   if (answer.error) return { error: answer.error, errorConfig: cfg }
   if (answer.data === undefined || answer.data === null) return {}
   return { value: answer.data }
+}
+
+/** A yielded step: a request, or a request a caller can do without (`opportunistic`). */
+function asStep(step) {
+  return step && step.request ? { request: step.request, optional: !!step.optional } : { request: step, optional: false }
 }
 
 /**
@@ -248,8 +278,14 @@ export function runPlanSync(plan, { peek }) {
         if (out.value !== undefined) data[key] = out.value
         break
       }
-      const cached = peek(step.value)
+      const { request, optional } = asStep(step.value)
+      const cached = peek(request)
       if (!cached) {
+        if (optional) {
+          // The program can do without this one and says what it makes of that.
+          sent = { missing: true }
+          continue
+        }
         // Not cached: this key is not answerable without a request, so the block is not ready.
         program.return()
         complete = false
@@ -292,7 +328,7 @@ export async function runPlan(plan, { dispatch, onFailure = null }) {
         }
         return
       }
-      const result = await dispatch(step.value)
+      const result = await dispatch(asStep(step.value).request)
       sent = { data: result?.data, error: result?.error }
     }
   }))

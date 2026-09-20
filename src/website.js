@@ -11,10 +11,10 @@ import FetcherDispatcher from './fetcher-dispatcher.js'
 import ObservableState from './observable-state.js'
 import { normalizeSeo } from './seo.js'
 import { resolveDefaultLocale, localeLabel } from './locale-config.js'
-import { matchDynamicRoute, decodeRouteValue, matchesRouteParam, recordTitle, routeBinding, routeParamName, parentRouteOf } from './route-match.js'
-import { resolveFetchConfigs, pageRouteQuery, recordPages, routeSelection, siteReaches } from './fetch-config.js'
+import { matchDynamicRoute, decodeRouteValue, recordTitle, routeBinding, routeParamName, parentRouteOf } from './route-match.js'
+import { resolveFetchConfigs, pageRouteQuery, recordPages } from './fetch-config.js'
 import { declaredKeys } from './data-keys.js'
-import { buildDetailConfig } from './detail-url.js'
+import { fetchLevels, planFor, runPlanSync } from './page-data.js'
 import { findLayoutEntry } from './layout-name.js'
 import { resolveService } from './services.js'
 
@@ -624,19 +624,31 @@ export default class Website {
       // missed on exactly those lanes: no title, no not-found, and the page was
       // never cached (`recordsLoaded` false on every visit). Silent, on a
       // visitor's page — the "write key ≠ read key" failure.
-      let items = []
+      // ⭐ THE PAGE'S RECORD, BY THE RULE ITS SECTIONS ARE FED BY — the plan for the route
+      // key, run against the cache (`./page-data.js`). It is the `current: only` program on
+      // either lane: the records service asks the record alone and its answer is definitive,
+      // and off the service the record is found in the query's SET — the query as saved, its
+      // `limit` included, never a list a fetch narrowed — and only then asked for in full.
+      //
+      // ⛔ This walked and probed on its own until 2026-09-19, which is how it came to peek a
+      // key the store never wrote (no title, no not-found, never cached — F3, 2026-09-04) and
+      // to read a list a fetch had narrowed, calling a record past that `limit` "Not found"
+      // (2026-09-13). Both were fixed here and nowhere else, twice over.
       let currentItem = null
-      // ⭐ On the records service the record's own question checks the route query's
-      // set (`buildDetailConfig`), so once it has answered, its answer is definitive —
-      // the record, or `[]` for not found — with no list to consult.
-      let recordAnswered = false
+      // The cache could answer: a record, or its absence from a set that IS loaded.
+      let answered = false
 
       if (this.fetcher) {
-        // The same sources the store walks for a section that declares nothing,
-        // plus the route binding itself — which sits above the parent on a nested
-        // page, or on a section when the key came from the sections.
         const fetchConfig = resolveFetchConfigs(
-          [originalData.fetch, parentPage?.fetch, route.config, siteReaches(parentPage) ? this.config?.fetch : null],
+          // The same levels the store walks, plus the route query's own declaration wherever
+          // it came from — it may sit on a section, and the page still has a record to find.
+          fetchLevels({
+            page: originalData.fetch,
+            parent: parentPage ?? null,
+            route,
+            site: this.config?.fetch,
+            includeRoute: true,
+          }),
           {
             schemas: [route.key],
             locale: this.getActiveLocale(),
@@ -648,34 +660,26 @@ export default class Website {
         ).get(route.key)
         if (fetchConfig) {
           const ctx = { website: this }
-          // ⭐ The page is about ONE record, so ask for that record first: a
-          // cached detail fetch (a live lane's record address, a deferred
-          // query's per-record file) carries the title even when the list was
-          // never fetched — a cold load on a detail URL — where a scan of the
-          // list finds nothing and silently sets no title (F3, 2026-09-04).
-          const detailCfg = fetchConfig.detail
-            ? buildDetailConfig(fetchConfig, { paramName, paramValue })
-            : null
-          const detailCached = detailCfg ? this.fetcher.peek(detailCfg, ctx) : null
-          // The service answers the record question as a list of one (a question's
-          // answer is always a list); a per-record file answers the bare record.
-          const raw = detailCached?.data
-          const record = Array.isArray(raw) ? raw[0] : raw
-          if (record && typeof record === 'object') currentItem = record
-          if (fetchConfig.ask && detailCached && Array.isArray(raw)) recordAnswered = true
-
-          // ⭐ The route query's set (`routeSelection`) — the query as saved, its `limit`
-          // included, never a list a fetch narrowed: a record past a fetch's `limit` is a
-          // record, and one past the query's is not (ruled 2026-09-14 [Diego]). ⛔ Until
-          // 2026-09-13 this read the cut list and declared a record past a list's
-          // `limit` "Not found".
-          const cached = this.fetcher.peek(routeSelection(fetchConfig), ctx)
-          items = Array.isArray(cached?.data) ? cached.data : []
+          const plan = planFor(new Map([[route.key, { cfg: fetchConfig }]]), {
+            dynamicContext: { paramName, paramValue },
+            route,
+            peekRecord: (id) => this.fetcher.peekRecord?.(id),
+            // A page is about ONE record, whatever a section's `current:` says about how that
+            // section uses it.
+            current: 'only',
+            // This runs before anything has been fetched and must not cause a fetch: it names the
+            // page from whatever is held — the record's own answer, or the record inside a set a
+            // list page already holds — and says nothing when neither is.
+            opportunistic: true,
+          })
+          const out = runPlanSync(plan, { peek: (request) => this.fetcher.peek(request, ctx) })
+          const found = out.data?.[route.key]
+          if (found !== undefined) {
+            // The cache answered: the record, or `[]` for a set that does not hold it.
+            answered = true
+            currentItem = found.length > 0 ? found[0] : null
+          }
         }
-      }
-
-      if (!currentItem) {
-        currentItem = items.find(item => matchesRouteParam(item, paramName, paramValue)) ?? null
       }
 
       if (currentItem) {
@@ -687,21 +691,19 @@ export default class Website {
         if (currentItem.description || currentItem.excerpt) {
           pageData.description = currentItem.description || currentItem.excerpt
         }
-      } else if (items.length > 0 || recordAnswered) {
-        // The set is loaded and this ID isn't in it, or the record question answered
-        // `[]` — definitive not found
+      } else if (answered) {
+        // The cache answered and the record is not there: the set is loaded and this ID is
+        // not in it, or the record question answered `[]` — definitive not found.
         pageData.title = 'Not found'
         pageData.notFound = true
       }
 
-      // Track whether the records were available at creation time.
-      // Note: the matched record and the sibling list are intentionally NOT
-      // stored on dynamicContext — nothing reads them (its shape is
-      // { templateRoute, params, paramName, paramValue }; the record reaches
-      // components via content.data, the others via
-      // `fetch: { query, current: exclude }`). The local
-      // `currentItem`/`items` above drive title/description/notFound.
-      pageData._recordsLoaded = items.length > 0 || currentItem !== null || recordAnswered
+      // Track whether the records were available at creation time — which is exactly
+      // whether the plan could be answered from the cache. Note: the matched record and the
+      // sibling list are intentionally NOT stored on dynamicContext — nothing reads them
+      // (its shape is { templateRoute, params, paramName, paramValue }; the record reaches
+      // components via content.data, the others via `fetch: { query, current: exclude }`).
+      pageData._recordsLoaded = answered
     }
 
     // Create the page instance
