@@ -111,6 +111,30 @@ export function blockFills({ declared, levels, holds = {}, queries = null, optio
   return out
 }
 
+/**
+ * The fetch a parametric page's OWN record is asked for with — its route query, resolved.
+ *
+ * ⭐ A page's existence is not a section's business: it is asked whether or not a section declares
+ * the route key, which is why this is its own entry point and why the levels include the route
+ * query's declaration wherever it came from (`includeRoute`). Its two callers — the page naming
+ * itself from the cache, and a host's data step asking for it — cannot drift apart.
+ *
+ * @param {Object} where
+ * @param {*} [where.pageFetch] - the parametric page's own `fetch`
+ * @param {Object|null} [where.parent] - its parent page
+ * @param {{ key: string, config: * }} where.route - its route query (`pageRouteQuery`)
+ * @param {*} [where.site] - the site's `fetch`
+ * @param {Object} [where.options] - what the fetch is resolved with (`resolveFetchConfigs`)
+ * @returns {Object|undefined} the resolved config, or undefined when the page declares none
+ */
+export function pageRecordConfig({ pageFetch = null, parent = null, route, site = null, options = {} }) {
+  if (!route?.key) return undefined
+  return resolveFetchConfigs(
+    fetchLevels({ page: pageFetch, parent, route, site, includeRoute: true }),
+    { ...options, schemas: [route.key] },
+  ).get(route.key)
+}
+
 /** The record a parametric page is about — the one `current: only` delivers. */
 function isPageRecord({ paramName, paramValue }) {
   return (item) => matchesRouteParam(item, paramName, paramValue)

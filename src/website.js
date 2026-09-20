@@ -14,7 +14,7 @@ import { resolveDefaultLocale, localeLabel } from './locale-config.js'
 import { matchDynamicRoute, decodeRouteValue, recordTitle, routeBinding, routeParamName, parentRouteOf } from './route-match.js'
 import { resolveFetchConfigs, pageRouteQuery, recordPages } from './fetch-config.js'
 import { declaredKeys } from './data-keys.js'
-import { fetchLevels, planFor, runPlanSync } from './page-data.js'
+import { pageRecordConfig, planFor, runPlanSync } from './page-data.js'
 import { findLayoutEntry } from './layout-name.js'
 import { resolveService } from './services.js'
 
@@ -195,6 +195,34 @@ export default class Website {
     this._routeTranslations = this._buildRouteTranslations(config)
     this.versionedScopes = versionedScopes
     this.assets = assets
+  }
+
+  /**
+   * ⭐ A DISPATCHER OF THIS SITE'S TRANSPORTS OVER A CACHE OF THE CALLER'S — for a caller that
+   * fetches this site's data without touching what the page is rendering from, and with a
+   * transport of its own.
+   *
+   * The one caller is a host's data step: it is handed the transport per request (a function does
+   * not survive every isolate boundary, so it cannot be wired in at construction), and it must
+   * fetch fresh rather than serve whatever an earlier request left in the graph's cache. What it
+   * must NOT do is answer with the framework default where the site chose a foundation transport,
+   * which is what building a plain fetcher of its own would do — hence this.
+   *
+   * @param {Object} options
+   * @param {import('./datastore.js').default} options.dataStore - the caller's cache
+   * @param {{ resolve: Function }|null} [options.defaultFetcher] - its transport, for every
+   *   request the site routes to no named transport
+   * @returns {FetcherDispatcher}
+   */
+  dispatcherFor({ dataStore, defaultFetcher = null }) {
+    return new FetcherDispatcher({
+      foundation: this._foundation,
+      extensions: this._extensions,
+      dataStore,
+      defaultFetcher,
+      transport: this._transport,
+      dev: this._dev,
+    })
   }
 
   /**
@@ -639,25 +667,19 @@ export default class Website {
       let answered = false
 
       if (this.fetcher) {
-        const fetchConfig = resolveFetchConfigs(
-          // The same levels the store walks, plus the route query's own declaration wherever
-          // it came from — it may sit on a section, and the page still has a record to find.
-          fetchLevels({
-            page: originalData.fetch,
-            parent: parentPage ?? null,
-            route,
-            site: this.config?.fetch,
-            includeRoute: true,
-          }),
-          {
-            schemas: [route.key],
+        const fetchConfig = pageRecordConfig({
+          pageFetch: originalData.fetch,
+          parent: parentPage ?? null,
+          route,
+          site: this.config?.fetch,
+          options: {
             locale: this.getActiveLocale(),
             defaultLocale: this.getDefaultLocale(),
             queries: this.config?.queries ?? null,
             services: this.config?.services ?? null,
             variables,
           },
-        ).get(route.key)
+        })
         if (fetchConfig) {
           const ctx = { website: this }
           const plan = planFor(new Map([[route.key, { cfg: fetchConfig }]]), {

@@ -17,7 +17,7 @@
 import { resolveFetchConfigs, pageRouteQuery } from './fetch-config.js'
 import { declaredKeys } from './data-keys.js'
 import { fillRoutePattern } from './route-match.js'
-import { fetchLevels, blockFills, planFor, runPlan, runPlanSync } from './page-data.js'
+import { fetchLevels, blockFills, pageRecordConfig, planFor, runPlan, runPlanSync } from './page-data.js'
 
 export default class EntityStore {
   /**
@@ -127,8 +127,7 @@ export default class EntityStore {
    * which both `resolve` and `fetch` run. They differ in where an answer comes from and in
    * nothing else.
    */
-  _plan(block, fills, route) {
-    const dispatcher = this.website?.fetcher
+  _plan(block, fills, route, dispatcher = this.website?.fetcher) {
     return planFor(fills, {
       dynamicContext: block.dynamicContext || block.page?.dynamicContext,
       route,
@@ -139,6 +138,48 @@ export default class EntityStore {
   /** The filling config of each key — what `_applyRecordRoutes` links records by. */
   _configs(fills) {
     return new Map([...fills].map(([key, { cfg }]) => [key, cfg]))
+  }
+
+  /**
+   * ⭐ THE PAGE'S OWN RECORD, ASKED — the question `Website#_createDynamicPage` peeks to name the
+   * page and to know whether it exists at all.
+   *
+   * A host's data step asks it whether or not a section declares the route key, because a page's
+   * existence is not a section's business: a parametric page with no section reading its record is
+   * a pseudo-error, but its 404 is not. The question is `pageRecordConfig`'s, so the asker and the
+   * page cannot ask two different things.
+   *
+   * @param {Object} page - a concrete parametric page (it carries `dynamicContext`)
+   * @param {Object} [options]
+   * @param {Object} [options.dispatcher] - fetch through this one (a host's data step)
+   * @returns {Promise<{ data: Object, errors: Object|null }|null>} null off a parametric page, or
+   *   when the page's route query resolves to nothing
+   */
+  async fetchPageRecord(page, { dispatcher = this.website?.fetcher } = {}) {
+    const dynamicContext = page?.dynamicContext
+    if (!dynamicContext || !dispatcher) return null
+
+    // A block-shaped probe standing for the page itself: its levels, its route query.
+    const probe = { fetch: null, page, website: this.website, dynamicContext: null }
+    const route = this._route(probe)
+    const cfg = route && pageRecordConfig({
+      pageFetch: page.fetch,
+      parent: page.parent ?? null,
+      route,
+      site: this.website?.config?.fetch,
+      options: this._resolveOptions(probe),
+    })
+    if (!cfg) return null
+
+    const plan = planFor(new Map([[route.key, { cfg }]]), {
+      dynamicContext,
+      route,
+      // The page is about ONE record, whatever a section's `current:` says.
+      current: 'only',
+      peekRecord: (id) => dispatcher.peekRecord?.(id),
+    })
+    const ctx = this._ctx(probe)
+    return runPlan(plan, { dispatch: (request) => dispatcher.dispatch(request, ctx) })
   }
 
   /**
@@ -284,11 +325,13 @@ export default class EntityStore {
    *
    * @param {Object} [options]
    * @param {AbortSignal} [options.signal] - Forwarded to the dispatcher.
+   * @param {Object} [options.dispatcher] - ⭐ Fetch through this one instead of the graph's: a
+   *   host's data step holds the request's transport and a cache of its own (`Website#dispatcherFor`).
+   *   The plan is the same; only where the answers come from and land differs.
    * @returns {Promise<{ data: Object|null, errors: Object|null }>} `data` keyed by
    *   binding key; `errors` keyed the same way, `null` when every fetch succeeded.
    */
-  async fetch(block, meta, { signal } = {}) {
-    const dispatcher = this.website?.fetcher
+  async fetch(block, meta, { signal, dispatcher = this.website?.fetcher } = {}) {
     if (!dispatcher) return { data: null, errors: null }
 
     const route = this._route(block)
@@ -296,7 +339,7 @@ export default class EntityStore {
     if (fills.size === 0) return { data: null, errors: null }
 
     const ctx = this._ctx(block, { signal })
-    const { data, errors } = await runPlan(this._plan(block, fills, route), {
+    const { data, errors } = await runPlan(this._plan(block, fills, route, dispatcher), {
       dispatch: (request) => dispatcher.dispatch(request, ctx),
       onFailure: (key, cfg, message) => reportFetchFailure(this.dev, block, key, cfg, message),
     })
