@@ -205,6 +205,27 @@ export default class FetcherDispatcher {
   }
 
   /**
+   * ⭐ FILE AN ANSWER SOMEONE ELSE FETCHED, under the key THIS dispatcher will look for it.
+   *
+   * A build and a host both arrive with answers in hand — baked into a payload, or fetched by a
+   * data step — and the only thing that makes them findable is being filed where `peek` looks.
+   *
+   * ⛔ That is not `deriveCacheKey` for every request, and a caller cannot know which ones.
+   * A fetcher may declare its own `cacheKey` — the documented case is a request whose identity
+   * depends on state its address does not carry — and the site chooses which key goes to which
+   * transport. So the derivation has exactly one home, this class (see the header), and hydrating
+   * by hand files a keyed transport's answer where nothing looks: measured 2026-09-20, every page
+   * of such a site prerendered empty and the browser refetched it, with no error anywhere.
+   *
+   * @param {Object} request - the resolved config the answer belongs to
+   * @param {{ data: *, meta?: Object }} entry - the answer, in the shape `peek` returns
+   * @param {Object} [ctx] - `{ website }`, for the site's transport selection
+   */
+  hydrate(request, entry, ctx = {}) {
+    this._dataStore.set(this._cacheKey(this._selectFetcher(request, ctx), request), entry)
+  }
+
+  /**
    * The record held under an identity, if any, with its depth — the entity
    * store asks this before fetching a detail record, so a record already held
    * in full is delivered rather than fetched again (R1).

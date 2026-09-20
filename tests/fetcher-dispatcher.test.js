@@ -305,6 +305,53 @@ describe('FetcherDispatcher', () => {
     })
   })
 
+  describe('hydrate — filing an answer someone else fetched', () => {
+    // ⛔ A build and a host both arrive with answers in hand, and a caller that keys them itself
+    // files a keyed transport's answer where nothing looks: measured 2026-09-20, every page of
+    // such a site prerendered empty and the browser refetched it, with no error anywhere.
+    const keyed = { resolve: vi.fn(), cacheKey: (r) => `mine:${r.as}` }
+
+    it('files it where THIS dispatcher will look — a transport that keys its own requests', () => {
+      const dataStore = new DataStore()
+      const d = new FetcherDispatcher({
+        foundation: buildFoundationTransports({ mine: keyed }),
+        dataStore,
+        defaultFetcher: { resolve: vi.fn() },
+      })
+      const ctx = websiteCtx({ transports: { members: 'mine' } })
+      const request = { path: '/data/members.json', as: 'members' }
+
+      d.hydrate(request, { data: ['ada'] }, ctx)
+
+      expect(d.peek(request, ctx)).toEqual({ data: ['ada'] })
+      // and it is NOT under the default derivation, which is what a caller would have used
+      expect(dataStore.get(deriveCacheKey(request))).toBeNull()
+      expect(dataStore.get('mine:members')).toEqual({ data: ['ada'] })
+    })
+
+    it('CONTROL — with no transport chosen it is the default derivation, unchanged', () => {
+      const dataStore = new DataStore()
+      const d = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher: { resolve: vi.fn() } })
+      const request = { path: '/data/members.json', as: 'members' }
+
+      d.hydrate(request, { data: ['ada'] }, {})
+
+      expect(d.peek(request, {})).toEqual({ data: ['ada'] })
+      expect(dataStore.get(deriveCacheKey(request))).toEqual({ data: ['ada'] })
+    })
+
+    it('carries `meta` through, so the record index files what it holds', () => {
+      const dataStore = new DataStore()
+      const d = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher: { resolve: vi.fn() } })
+      const request = { path: '/data/members/ada.json', as: 'members' }
+
+      d.hydrate(request, { data: { $uuid: 'u1', name: 'Ada' }, meta: { whole: true } }, {})
+
+      expect(d.peek(request, {})?.meta).toEqual({ whole: true })
+      expect(d.peekRecord('u1')?.whole).toBe(true)
+    })
+  })
+
   describe('in-flight dedup', () => {
     it('two concurrent dispatches share one fetcher call', async () => {
       const dataStore = new DataStore()
