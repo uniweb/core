@@ -25,6 +25,9 @@ export { substitutePlaceholders } from './substitute-placeholders.js'
 export { resolveFetchConfigs, routeQuery, pageRouteQuery, routeSelection, sectionFetches, siteReaches, withoutRouteVariables, CURRENT_MODES, currentFor } from './fetch-config.js'
 export { buildDetailConfig, ROUTE_HANDLE_KEY } from './detail-url.js'
 export { declaredKeys, sameSchema, fillDeclaredKeys } from './data-keys.js'
+// ⭐ What a page needs — the one rule. `fetchLevels` is the part every lane has an answer for
+// (which fetches reach a block); the drivers and the per-key program are `@uniweb/core/page-data`.
+export { fetchLevels } from './page-data.js'
 // `isWildcardLanguages` is likewise internal — `./locale-config.js` reads it
 // and nothing else does. Same subpath escape hatch: `@uniweb/core/locale-config`.
 export {
