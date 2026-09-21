@@ -4,8 +4,8 @@
  *
  * ⚠️ `<name>` IS A QUERY'S NAME. `/data/<name>.json` is a named query's
  * MATERIALIZATION — the answer when no host declares a live lane — and never the
- * definition of anything. The records themselves live in `entities/{schema}/`,
- * and `records.yml` decides which of them are published.
+ * definition of anything. The records themselves are the files in
+ * `records/{schema}/` — every file there is one.
  *
  * Why this module exists. The path `/data/<name>.json` was a bare string
  * literal in six places across three packages: the build wrote it
