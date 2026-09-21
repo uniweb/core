@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { applyScope, withinScope } from '../src/scope.js'
 
 // A query's `scope:` over records that carry their placement (`path`, the folder
-// `records.yml` put them in). It replaced `where: { path: { under } }`, retired
+// `records/folder.yml` put them in). It replaced `where: { path: { under } }`, retired
 // 2026-09-11 — these are the containment cases that operator's tests pinned.
 const records = [
   { slug: 'index',   path: '' },

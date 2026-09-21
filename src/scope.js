@@ -2,7 +2,7 @@
  * A query's `scope:` — the folder branch it reads — evaluated over records that
  * carry their placement.
  *
- * A record's `path` is the folder `records.yml` placed it in (`build/src/site/
+ * A record's `path` is the folder `records/folder.yml` placed it in (`build/src/site/
  * query-processor.js`). A scope contains that folder and every folder below it, at
  * SEGMENT boundaries: `field` holds `field` and `field/2025`, never `fieldwork`.
  * The root (`''`) holds everything.

@@ -539,7 +539,7 @@ export function fillRoutePattern(pattern, values) {
     // A catch-all is filled from the record's placement and handle — the split
     // rule in reverse (`joinPathCapture`) — with each SEGMENT encoded and the
     // slashes between them kept as structure. `dir` is the placement; a record
-    // carries it as `path` (the folder `records.yml` put it in), which is why
+    // carries it as `path` (the folder `records/folder.yml` put it in), which is why
     // `path` here is read as the DIRECTORY and never as a composed capture.
     const handle = recordHandle(values)
     if (joinPathCapture({ dir: values.dir ?? values.path, slug: handle }) === null) return null
