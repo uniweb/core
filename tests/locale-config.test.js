@@ -187,10 +187,10 @@ describe('validateLanguageConfig', () => {
     expect(ok.errors).toEqual([])
   })
 
-  test('legacy object entry warns but still resolves', () => {
-    const res = validateLanguageConfig({ languages: ['en', { code: 'fr' }] })
-    expect(codes(res.warnings)).toContain('invalid-language-entry')
-    expect(res.errors).toEqual([])
+  test('an object entry is an error — a language is named by its code', () => {
+    const res = validateLanguageConfig({ languages: ['en', { code: 'fr', label: 'French' }] })
+    expect(codes(res.errors)).toContain('object-language-entry')
+    expect(res.errors[0].message).toMatch(/plain string 'fr'/)
   })
 
   test('duplicates and invalid entries warn', () => {
@@ -228,6 +228,9 @@ describe('localeLabel', () => {
 
   test('an unknown code falls back to the code uppercased', () => {
     expect(localeLabel('xx')).toBe('XX')
+    // A code the table does not list is named in its own language, where the platform knows it.
+    expect(localeLabel('ca')).toBe('Català')
+    expect(localeLabel('eu')).toBe('Euskara')
     expect(localeLabel({ code: 'xx' })).toBe('XX')
   })
 

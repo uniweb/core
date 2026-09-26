@@ -17,9 +17,9 @@
 
 /**
  * Extract a locale code from a declared-language entry. The contract is
- * strings-only; legacy `{ code, label }` objects are tolerated on read
- * (they appeared in older configs and the runtime's buildLocalesList
- * accepted them) but are never produced. The `'*'` wildcard marker
+ * strings-only; legacy `{ code, label }` objects are tolerated on READ — a
+ * payload built from an older config still renders — and refused where a site
+ * is built or pushed (`validateLanguageConfig`). The `'*'` wildcard marker
  * (auto-discover from `locales/`) is not a locale code.
  *
  * @param {*} entry - Declared-language entry.
@@ -101,10 +101,22 @@ export const LOCALE_DISPLAY_NAMES = {
  */
 export function localeLabel(entry) {
   if (typeof entry === 'string') {
-    return LOCALE_DISPLAY_NAMES[entry] || entry.toUpperCase()
+    return LOCALE_DISPLAY_NAMES[entry] || nativeName(entry) || entry.toUpperCase()
   }
   if (!entry || typeof entry.code !== 'string' || !entry.code) return ''
-  return entry.label || LOCALE_DISPLAY_NAMES[entry.code] || entry.code.toUpperCase()
+  return entry.label || LOCALE_DISPLAY_NAMES[entry.code] || nativeName(entry.code) || entry.code.toUpperCase()
+}
+
+// A language's name in itself (`sv` → `Svenska`, `pt-BR` → `Português (Brasil)`), where the
+// platform knows it — so a code the table above does not list still has a name, and a site
+// never needs to write one. Null when it does not know the code.
+function nativeName(code) {
+  try {
+    const name = new Intl.DisplayNames([code], { type: 'language' }).of(code)
+    return name && name !== code ? name.charAt(0).toLocaleUpperCase(code) + name.slice(1) : null
+  } catch {
+    return null
+  }
 }
 
 export function isWildcardLanguages(value) {
@@ -189,9 +201,12 @@ export function resolvePublishableLocales(config = {}) {
  * - `default-not-publishable` — the effective default is excluded from the
  *   publishable set.
  *
+ * - `object-language-entry` — a `{ code, label }` entry: languages are named by
+ *   their code (`localeLabel` gives the name). Read tolerantly, never built or pushed.
+ *
  * Warnings:
- * - `invalid-language-entry` / `invalid-publish-language-entry` — non-string
- *   entries (dropped by normalization).
+ * - `invalid-language-entry` / `invalid-publish-language-entry` — entries that
+ *   name no code (dropped by normalization).
  * - `duplicate-language` — repeated codes (deduped).
  * - `dangling-publish-language` — listed but not declared (ignored at
  *   publish, preserved in the file/wire).
@@ -225,10 +240,14 @@ export function validateLanguageConfig(config = {}) {
         })
         continue
       }
+      // ⛔ An object names a language by `code` and gives it a `label` — a label no sync can
+      // carry (a backend's list is of codes), so a site that pushed it lost it, and the push
+      // itself was refused (measured 2026-09-26). A language's name comes from its code
+      // (`localeLabel`), in every lane alike.
       if (typeof entry !== 'string') {
-        warnings.push({
-          code: entryCode,
-          message: `${field} entry for '${code}' uses the legacy object form — use the plain string '${code}'`
+        errors.push({
+          code: 'object-language-entry',
+          message: `${field} entry for '${code}' is an object — write the plain string '${code}' (a language's name comes from its code)`
         })
       }
       if (seen.has(code)) {
