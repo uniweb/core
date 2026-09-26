@@ -527,10 +527,31 @@ export default class Website {
     const indexMatch = this.pages.find((page) => page.isIndex && page.getNavRoute() === normalizedRoute)
     if (indexMatch) return indexMatch
 
-    // Priority 3: Dynamic route pattern matching
-    // Check cache first
-    if (this._dynamicPageCache.has(normalizedRoute)) {
-      return this._dynamicPageCache.get(normalizedRoute)
+    // Priority 3: Dynamic route pattern matching — on the canonical route, then on the display route,
+    // as Priorities 1 and 1b match a static page in either payload shape. A published payload's
+    // parametric page carries its locale's own pattern (`/noticias/:slug`), which only the display
+    // route matches. ⛔ Until 2026-09-26 only the canonical route was tried, so a backend-served
+    // site's `/es/noticias/x` showed the not-found page without asking for its record. The canonical
+    // route goes first so a file-lane site — whose patterns are all canonical — matches as before.
+    for (const candidate of new Set([normalizedRoute, normalizedStripped])) {
+      const found = this._matchDynamicPage(candidate)
+      if (found) return found
+    }
+
+    return undefined
+  }
+
+  /**
+   * The dynamic page a concrete route names, from the cache or a fresh match of the dynamic
+   * patterns — or undefined.
+   *
+   * @private
+   * @param {string} route - a concrete route, in the form the page patterns are matched against
+   * @returns {Page|undefined}
+   */
+  _matchDynamicPage(route) {
+    if (this._dynamicPageCache.has(route)) {
+      return this._dynamicPageCache.get(route)
     }
 
     // Try to match against dynamic route patterns
@@ -538,23 +559,22 @@ export default class Website {
       // Check if this is a dynamic page (has :param in route)
       if (!page.route.includes(':')) continue
 
-      const match = this._matchDynamicRoute(page.route, normalizedRoute)
+      const match = this._matchDynamicRoute(page.route, route)
       if (match) {
         // Create a dynamic page instance with the concrete route and params
-        const result = this._createDynamicPage(page, normalizedRoute, match.params)
+        const result = this._createDynamicPage(page, route, match.params)
         if (result) {
           const { page: dynamicPage, recordsLoaded } = result
           // Only cache when the records were available at creation time.
           // If DataStore was empty, skip caching so the next render recreates
           // the page with fresh data (correct title, not-found state, etc.).
           if (recordsLoaded) {
-            this._dynamicPageCache.set(normalizedRoute, dynamicPage)
+            this._dynamicPageCache.set(route, dynamicPage)
           }
           return dynamicPage
         }
       }
     }
-
     return undefined
   }
 
