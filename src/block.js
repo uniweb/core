@@ -13,42 +13,71 @@ import { normalizeTokenValue } from '@uniweb/theming'
 import { sectionDomId } from './section-id.js'
 
 /**
- * Lift container fences out of a content document.
+ * Lift the insets out of a content document — both forms, as the author wrote them.
  *
- * A ` ```@Component{params} ` fence parses to an `inset_block` node carrying a
- * body of real block content. This rewrites each one to the `inset_placeholder`
- * a leaf inset leaves behind, so a container resolves through exactly the same
- * path: `getInset(refId)` → a Block → the foundation's component. Kit and the
- * SSR renderer already handle placeholders, so neither needs to know containers
- * exist.
+ * - A LEAF inset — `![alt](@Component){params}`, `[text](@Component)`, and the
+ *   `[@key]` / `[#id]` shorthands — parses to an `inset_ref` node. It becomes an
+ *   `inset_placeholder` in place, inline where it was inline, and a leaf ref:
+ *   the component, its params, and the `[…]` text as the inset's title.
+ * - A CONTAINER — a ` ```@Component{params} ` fence — parses to an `inset_block`
+ *   node carrying a body of real block content. It becomes a placeholder too, and
+ *   its body becomes the child Block's content.
  *
- * PURE with respect to the input. `blockData.content` is shared with the sync /
- * pull machinery, which must keep seeing `inset_block` — that is the canonical
- * stored shape. Nodes on the path to a container are cloned; everything else is
- * passed through by reference, so a document with no containers costs one array
- * walk and allocates nothing.
+ * Both then resolve through one path: `getInset(refId)` → a Block → the
+ * foundation's component. Kit and the SSR renderer handle placeholders, so neither
+ * needs to know which form a placeholder came from.
  *
- * Containers are NOT recursed into here. A container's body becomes its child
- * Block's content, and that Block's constructor lifts its own containers — so
- * nesting resolves one level at a time, each at the level that owns it.
+ * ⭐ Doing it HERE, at render-graph construction, is the point: what the author wrote
+ * is the stored shape. `blockData.content` is shared with the sync / pull machinery
+ * and an editor, which keep seeing `inset_ref` and `inset_block`, and a document that
+ * never went through a build — a record body, a free-form translation — resolves its
+ * insets the same way. ⛔ *Until 2026-09-27 only containers were lifted here; leaf
+ * insets were extracted by the site build into the section's `insets[]`, so any
+ * document the build did not extract rendered none of them.* A stored `insets[]` is
+ * still read (the constructor below), and `leafStart` numbers the lifted leaves after
+ * it so their refIds cannot collide.
+ *
+ * PURE with respect to the input: nodes on the path to an inset are cloned; everything
+ * else is passed through by reference, so a document with no insets costs one walk and
+ * allocates nothing.
+ *
+ * Containers are NOT recursed into here — neither for containers nor for leaves. A
+ * container's body becomes its child Block's content, and that Block's constructor
+ * lifts its own — so nesting resolves one level at a time, each at the level that owns
+ * it.
  *
  * @param {Object} content - ProseMirror document (never mutated)
- * @returns {{ content: Object, refs: Array<{refId, type, params, content}> }}
+ * @param {number} [leafStart=0] - the first leaf refId number (`inset_<leafStart>`)
+ * @returns {{
+ *   content: Object,
+ *   leaves: Array<{refId, type, params, title, embedKind}>,
+ *   containers: Array<{refId, type, params, content}>,
+ * }}
  */
-function liftContainers(content) {
-  if (!content || !Array.isArray(content.content)) return { content, refs: [] }
+function liftInsets(content, leafStart = 0) {
+  if (!content || !Array.isArray(content.content)) return { content, leaves: [], containers: [] }
 
-  const refs = []
+  const leaves = []
+  const containers = []
 
   const visit = (nodes) => {
     let changed = false
     const out = nodes.map((node) => {
       if (!node) return node
 
+      if (node.type === 'inset_ref') {
+        const { component, alt, embedKind, ...params } = node.attrs || {}
+        const refId = `inset_${leafStart + leaves.length}`
+        const kind = embedKind || 'visual'
+        leaves.push({ refId, type: component, params, title: alt || null, embedKind: kind })
+        changed = true
+        return { type: 'inset_placeholder', attrs: { refId, embedKind: kind } }
+      }
+
       if (node.type === 'inset_block') {
         const { component, ...params } = node.attrs || {}
-        const refId = `container_${refs.length}`
-        refs.push({
+        const refId = `container_${containers.length}`
+        containers.push({
           refId,
           type: component,
           params,
@@ -72,8 +101,8 @@ function liftContainers(content) {
 
   const next = visit(content.content)
   return next === content.content
-    ? { content, refs }
-    : { content: { ...content, content: next }, refs }
+    ? { content, leaves, containers }
+    : { content: { ...content, content: next }, leaves, containers }
 }
 
 export default class Block {
@@ -91,14 +120,16 @@ export default class Block {
     // 2. Pre-parsed content with main/items structure
     // For now, store raw and parse on demand
     //
-    // Container fences (```@Component around a body) arrive as `inset_block`
-    // nodes and are lifted out HERE, into the same placeholder + refId shape
-    // the build gives leaf insets. Doing it at render-graph construction
-    // rather than at build time is deliberate: `inset_block` is the canonical
-    // STORED shape, so the content that syncs and round-trips must keep
-    // carrying it. `blockData.content` is left untouched — the lift produces a
-    // new tree and only this Block's view of it changes.
-    const lifted = liftContainers(blockData.content)
+    // Insets arrive as the author wrote them — `inset_ref` for a leaf, `inset_block`
+    // for a ```@Component fence — and are lifted out HERE into placeholders plus
+    // inset Blocks (`liftInsets`). Doing it at render-graph construction rather than
+    // at build time is deliberate: what the author wrote is the canonical STORED
+    // shape, so the content that syncs and round-trips keeps carrying it.
+    // `blockData.content` is left untouched — the lift produces a new tree and only
+    // this Block's view of it changes. Leaves are numbered after a stored `insets[]`
+    // (content from before the lift moved here), so the two cannot share a refId.
+    const storedInsets = Array.isArray(blockData.insets) ? blockData.insets : []
+    const lifted = liftInsets(blockData.content, storedInsets.length)
     this.rawContent = lifted.content || {}
     this.parsedContent = this.parseContent(lifted.content)
 
@@ -182,26 +213,26 @@ export default class Block {
       ? blockData.subsections.map((block, i) => new Block(block, `${id}_${i}`, this.page))
       : []
 
-    // Insets — inline @-referenced components positioned in content flow
+    // Insets — inline @-referenced components positioned in content flow: a stored
+    // `insets[]` first, then the leaves lifted from the content, in document order.
+    // Each receives its `[…]` text as `content.title` and its `{…}` as params.
     this.insets = []
-    const insetData = blockData.insets
-    if (insetData?.length > 0) {
-      for (let i = 0; i < insetData.length; i++) {
-        const ref = insetData[i]
-        const title = ref.title || ''
-        const child = new Block(
-          {
-            type: ref.type,
-            params: ref.params || {},
-            content: { title },
-            stableId: ref.refId,
-            refId: ref.refId,
-          },
-          `${id}_inset_${i}`,
-          this.page
-        )
-        this.insets.push(child)
-      }
+    const insetData = [...storedInsets, ...lifted.leaves]
+    for (let i = 0; i < insetData.length; i++) {
+      const ref = insetData[i]
+      const title = ref.title || ''
+      const child = new Block(
+        {
+          type: ref.type,
+          params: ref.params || {},
+          content: { title },
+          stableId: ref.refId,
+          refId: ref.refId,
+        },
+        `${id}_inset_${i}`,
+        this.page
+      )
+      this.insets.push(child)
     }
 
     // Containers, appended AFTER the leaf insets so `block.insets[0]` keeps
@@ -210,9 +241,9 @@ export default class Block {
     // content, so the foundation's component receives a fully parsed
     // `content` — title, paragraphs, items, sequence — exactly as a section
     // does. Nested containers resolve for free: the child Block runs this
-    // same constructor over its own body.
-    for (let i = 0; i < lifted.refs.length; i++) {
-      const ref = lifted.refs[i]
+    // same constructor over its own body, leaf insets included.
+    for (let i = 0; i < lifted.containers.length; i++) {
+      const ref = lifted.containers[i]
       this.insets.push(
         new Block(
           {
