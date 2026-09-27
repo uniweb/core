@@ -237,7 +237,7 @@ export default class EntityStore {
       if (!Array.isArray(items) || items.length === 0) continue
       const template = recordRouteTemplate(cfg, website)
       if (!template) continue
-      const linked = items.map((item) => withRecordRoute(item, template))
+      const linked = items.map((item) => withRecordRoute(item, template, cfg.routeField))
       // an unchanged list keeps its identity, so a render that re-links changes nothing
       if (linked.some((item, i) => item !== items[i])) data[key] = linked
     }
@@ -402,8 +402,8 @@ function recordRouteTemplate(cfg, website) {
  * ⭐ The encoding is `fillRoutePattern`'s: the one encoder for a record's href, which the
  * route matcher decodes (F14, 2026-09-04).
  */
-function withRecordRoute(item, template) {
+function withRecordRoute(item, template, field = null) {
   if (!item || typeof item !== 'object') return item
-  const route = fillRoutePattern(template, item)
+  const route = fillRoutePattern(template, item, { field })
   return route === null || item.$route === route ? item : { ...item, $route: route }
 }

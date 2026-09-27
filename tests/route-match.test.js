@@ -12,7 +12,7 @@
  * a caller can rely on. A host matching identically depends on all of it.
  */
 
-import { recordHandle, nameRecords, recordTitle, routeParamValue, routeParamValues, matchesRouteParam, recordRouteBase,
+import { recordHandle, routeFieldOf, recordKeyValues, recordTitle, routeParamValue, routeParamValues, matchesRouteParam, recordRouteBase,
   matchDynamicRoute,
   findPageForRoute,
   routePatternToRegex,
@@ -354,14 +354,34 @@ describe('the placement handle — `$name`, and nothing else', () => {
     expect(recordHandle(null)).toBeUndefined()
   })
 
-  it('nameRecords names an external query\'s records by the field its `name_field:` says', () => {
-    expect(nameRecords([{ slug: 'a' }, { slug: 'b', $name: 'old' }], 'slug')).toEqual([{ slug: 'a', $name: 'a' }, { slug: 'b', $name: 'b' }])
-    expect(nameRecords({ id: 7 }, 'id')).toEqual({ id: 7, $name: '7' })
-    // a record with nothing there is left unnamed; so is one whose value is structure
-    expect(nameRecords([{ title: 'x' }, { id: { a: 1 } }], 'id')).toEqual([{ title: 'x' }, { id: { a: 1 } }])
-    // CONTROL — no `name_field:`, nothing named
-    const records = [{ slug: 'a' }]
-    expect(nameRecords(records, undefined)).toBe(records)
+  // ⭐ A parametric page's record is its route query's to find (2026-09-27): a query that binds the
+  // URL's last segment to a field — `where: { slug: ':slug' }` — is matched, keyed and linked by it.
+  it('routeFieldOf — the field a route query binds `:slug` to, and nothing else', () => {
+    expect(routeFieldOf({ where: { slug: ':slug' } })).toBe('slug')
+    expect(routeFieldOf({ where: { status: 'live', code: ':slug' } })).toBe('code')
+    // CONTROL — another variable, a nested clause, a scope, or no where binds nothing
+    expect(routeFieldOf({ where: { tag: ':dir' } })).toBeNull()
+    expect(routeFieldOf({ where: { or: [{ code: ':slug' }] } })).toBeNull()
+    expect(routeFieldOf({ scope: ':slug' })).toBeNull()
+    expect(routeFieldOf(null)).toBeNull()
+  })
+
+  it('a bound field is what `[slug]` reads — to match, to key the record question, to fill a link', () => {
+    const record = { slug: 'hello', title: 'Hi' }
+    expect(routeParamValue(record, 'slug', 'slug')).toBe('hello')
+    expect(matchesRouteParam(record, 'slug', 'hello', 'slug')).toBe(true)
+    expect(routeRecordKey('slug', 'slug')).toBe('slug')
+    expect(fillRoutePattern('/blog/:slug', record, { field: 'slug' })).toBe('/blog/hello')
+    expect(fillRoutePattern('/logbook/:path*', { ...record, path: 'field' }, { field: 'slug' })).toBe('/logbook/field/hello')
+    // CONTROL — unbound, the same record has no name and so no link
+    expect(fillRoutePattern('/blog/:slug', record)).toBeNull()
+  })
+
+  it('recordKeyValues reads a match key as a record key — a field called `slug` is that field', () => {
+    expect(recordKeyValues({ $name: 'a', slug: 'b' }, '$name')).toEqual(['a'])
+    expect(recordKeyValues({ $name: 'a', slug: 'b' }, 'slug')).toEqual(['b'])
+    expect(recordKeyValues({ $uuid: 'u1' }, '$uuid')).toEqual(['u1'])
+    expect(recordKeyValues({ tags: ['x', 'y'] }, 'tags')).toEqual(['x', 'y'])
   })
 
   it('recordTitle — `title`, then `name`, then the handle (ruled 2026-09-14)', () => {

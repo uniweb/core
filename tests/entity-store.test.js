@@ -5,7 +5,6 @@ import FetcherDispatcher from '../src/fetcher-dispatcher.js'
 import Website from '../src/website.js'
 import { resolveFetchConfigs, routeSelection } from '../src/fetch-config.js'
 import { evaluateQuery } from '../src/query-evaluation.js'
-import { nameRecords } from '../src/route-match.js'
 // Derived, never re-spelled: the convention is pinned once, in
 // `tests/data-paths.test.js`. See the note there before pinning it again.
 import { queryDataUrl } from '../src/data-paths.js'
@@ -270,30 +269,26 @@ describe('EntityStore.fetch', () => {
     expect(fetcherSpy).toHaveBeenCalledTimes(2)
   })
 
-  // ⭐ An external query names the field its records are named by (`name_field:`, 2026-09-27): the
-  // records arrive with `$name`, which a `[slug]` page matches and `{slug}` fills. Core reads `$name`
-  // and nothing else — a `slug` field alone names nothing.
-  it('an external query\'s `name_field:` names its records — a [slug] page finds its record by it', async () => {
+  // ⭐ A parametric page's record is its route query's to find (2026-09-27): an external API's records
+  // are entries in no folder and have no `$name`, so the query binds the URL's segment to one of their
+  // fields — `where: { slug: ':slug' }` — and the page finds its record by that field.
+  it('an external query that binds `:slug` in its `where` finds its [slug] page\'s record by that field', async () => {
     const list = [{ slug: 'my-post', title: 'My Post' }, { slug: 'other', title: 'Other' }]
     const { entityStore, fetcherSpy, website } = makeHarness({
-      fetcherImpl: (req) => {
-        const data = req.url === 'https://api.example.com/articles' ? list : { slug: 'my-post', title: 'My Post', body: 'Full' }
-        // the fetcher names what arrives, as the default fetcher does after `transform`
-        return Promise.resolve({ data: nameRecords(data, req.nameField) })
-      },
+      fetcherImpl: (req) => Promise.resolve({ data: req.url === 'https://api.example.com/articles' ? list : { slug: 'my-post', title: 'My Post', body: 'Full' } }),
     })
-    website.config = { queries: { articles: { url: 'https://api.example.com/articles', name_field: 'slug', record: { url: 'https://api.example.com/articles/{slug}' } } } }
+    website.config = { queries: { articles: { url: 'https://api.example.com/articles', where: { slug: ':slug' }, record: { url: 'https://api.example.com/articles/{slug}' } } } }
     const dynamicContext = { paramName: 'slug', paramValue: 'my-post' }
     const page = makePage({ parent: makePage({ fetch: { query: 'articles', as: 'articles' } }), dynamicContext })
     const result = await entityStore.fetch(makeBlock({ page }, website), ANY)
-    expect(result.data.articles).toEqual([{ slug: 'my-post', title: 'My Post', body: 'Full', $name: 'my-post' }])
+    expect(result.data.articles).toEqual([{ slug: 'my-post', title: 'My Post', body: 'Full' }])
     expect(fetcherSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ url: 'https://api.example.com/articles/my-post', nameField: 'slug' }),
+      expect.objectContaining({ url: 'https://api.example.com/articles/my-post' }),
       expect.anything(),
     )
   })
 
-  it('CONTROL — without `name_field:` an external record\'s `slug` names nothing: the [slug] page finds no record', async () => {
+  it('CONTROL — without the binding, an external record\'s `slug` names nothing: the [slug] page finds no record', async () => {
     const { entityStore, website } = makeHarness({
       fetcherImpl: () => Promise.resolve({ data: [{ slug: 'my-post', title: 'My Post' }] }),
     })
@@ -302,6 +297,16 @@ describe('EntityStore.fetch', () => {
     const page = makePage({ parent: makePage({ fetch: { query: 'articles', as: 'articles' } }), dynamicContext })
     const result = await entityStore.fetch(makeBlock({ page }, website), ANY)
     expect(result.data.articles).toEqual([])
+  })
+
+  it('the query\'s own page links its records by the bound field — `$route`', async () => {
+    const list = [{ slug: 'my-post', title: 'My Post' }]
+    const { entityStore, website } = makeHarness({ fetcherImpl: () => Promise.resolve({ data: list }) })
+    website.config = { queries: { articles: { url: 'https://api.example.com/articles', where: { slug: ':slug' } } } }
+    website.recordPageFor = (query) => (query === 'articles' ? { route: '/blog/:slug', paramName: 'slug' } : null)
+    const page = makePage({ fetch: { query: 'articles', as: 'articles' } })
+    const result = await entityStore.fetch(makeBlock({ page }, website), ANY)
+    expect(result.data.articles[0].$route).toBe('/blog/my-post')
   })
 
   it('CONTROL — a compiled query\'s record, for a component expecting briefs, is the one the list holds: no record request', async () => {

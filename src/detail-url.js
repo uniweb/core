@@ -48,8 +48,10 @@ function paramContext(paramName, paramValue, record) {
   // kit's `useWholeRecord` — its slug fills the name the FILE was written under. A
   // caller with no record in hand leaves `{slug}` literal rather than guessing
   // the capture is one: a visibly unresolved address beats a plausible wrong one.
+  // ⭐ Whatever the route calls its param — and whatever field its query binds `:slug` to — a
+  // record's own file is named by its `$name`, so a record in hand with one fills `{slug}`.
   const handle = recordHandle(record)
-  if (paramName !== 'slug' && handle != null && handle !== '') {
+  if (handle != null && handle !== '') {
     context.slug = handle
   }
   return context
@@ -126,7 +128,7 @@ export function buildDetailConfig(queryConfig, dynamicContext, { whole = true } 
     const { narrow: _narrow, detail: _detail, match: _match, whole: _whole, ...set } = queryConfig
     return {
       ...set,
-      narrow: { match: { [routeRecordKey(paramName)]: String(paramValue) } },
+      narrow: { match: { [routeRecordKey(paramName, queryConfig.routeField)]: String(paramValue) } },
       ...(whole ? { whole: true } : {}),
       dynamicContext: { paramName, paramValue },
     }
@@ -156,8 +158,6 @@ export function buildDetailConfig(queryConfig, dynamicContext, { whole = true } 
     if (method) out.method = method
     if (spec.body !== undefined && spec.body !== null) out.body = substitutePlaceholders(spec.body, context, { encode: false })
     if (typeof spec.transform === 'string' && spec.transform) out.transform = spec.transform
-    // Named as the list's records are, so the record answers to the handle it was found by.
-    if (typeof queryConfig.nameField === 'string' && queryConfig.nameField) out.nameField = queryConfig.nameField
     return out
   }
 

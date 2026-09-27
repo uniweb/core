@@ -54,7 +54,7 @@ import { queryDataUrl, isDataUrl, recordDataUrl } from './data-paths.js'
 import { resolveRecordsService } from './records-service.js'
 // A leaf that imports nothing — `recordRouteBase` is the one rule for which page
 // addresses a record, and a route query is chosen at exactly that page.
-import { recordRouteBase } from './route-match.js'
+import { recordRouteBase, routeFieldOf } from './route-match.js'
 
 /**
  * ⭐ HOW A SECTION ON A PARAMETRIC PAGE USES THE PAGE'S RECORD — `current:` on its
@@ -266,7 +266,7 @@ export function isExternalQuery(decl) {
 }
 
 /** Keys a binding may not carry, whatever a stale payload holds — the query supplies them. */
-const QUERY_SUPPLIED = ['scope', 'url', 'method', 'body', 'transform', 'record', 'detail', 'envelope', 'nameField']
+const QUERY_SUPPLIED = ['scope', 'url', 'method', 'body', 'transform', 'record', 'detail', 'envelope', 'routeField']
 
 /**
  * Resolve a query reference to something the fetcher can call.
@@ -323,9 +323,6 @@ function resolveQuerySource(cfg, services, { queries = null, locale = null, defa
     if (decl.body !== undefined && decl.body !== null) out.body = decl.body
     if (typeof decl.transform === 'string' && decl.transform) out.transform = decl.transform
     if (decl.record && typeof decl.record === 'object') out.record = decl.record
-    // The field its records are named by — `$name` (`nameRecords`, `./route-match.js`).
-    // ⛔ Not `name`: a declaration's `name` is the query's own (`config.queries.posts.name`).
-    if (typeof decl.name_field === 'string' && decl.name_field) out.nameField = decl.name_field
     // a live endpoint is the browser's to fetch, unless the binding says otherwise
     if (out.prerender === undefined) out.prerender = false
     return setAndNarrow(out, decl, decl.where)
@@ -415,6 +412,11 @@ function setAndNarrow(out, decl, queryWhere) {
     if (someWhere(queryWhere)) next.where = queryWhere
     if (decl.sort !== undefined && decl.sort !== null) next.sort = decl.sort
     if (isCount(decl.limit)) next.limit = decl.limit
+    // The field its `where` binds the URL's last segment to — what a parametric page of it
+    // matches in place of `$name` (`routeFieldOf`, `./route-match.js`). On every page, so the
+    // query's own page links its records by the same field.
+    const routeField = routeFieldOf(decl)
+    if (routeField) next.routeField = routeField
   }
   const narrow = {}
   if (someWhere(where)) narrow.where = where

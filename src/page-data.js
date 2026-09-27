@@ -137,8 +137,8 @@ export function pageRecordConfig({ pageFetch = null, parent = null, route, site 
 }
 
 /** The record a parametric page is about — the one `current: only` delivers. */
-function isPageRecord({ paramName, paramValue }) {
-  return (item) => matchesRouteParam(item, paramName, paramValue)
+function isPageRecord({ paramName, paramValue }, field = null) {
+  return (item) => matchesRouteParam(item, paramName, paramValue, field)
 }
 
 /**
@@ -214,7 +214,7 @@ export function* keyProgram(cfg, { dynamicContext = null, route = null, held = u
     const answer = yield asked
     if (answer.error) return { error: answer.error, errorConfig: asked }
     if (answer.data === undefined || answer.data === null) return {}
-    const others = othersOf(answer.data, cfg, isPageRecord(dynamicContext))
+    const others = othersOf(answer.data, cfg, isPageRecord(dynamicContext, cfg.routeField))
     if (!whole || cfg.ask) return { value: others }
     return yield* wholeRecordsOf(cfg, others)
   }
@@ -250,7 +250,7 @@ export function* keyProgram(cfg, { dynamicContext = null, route = null, held = u
     if (answer.error) return { error: answer.error, errorConfig: selection }
     const items = Array.isArray(answer.data) ? answer.data : null
     const { paramName, paramValue } = dynamicContext
-    const match = items?.find((item) => matchesRouteParam(item, paramName, paramValue)) ?? null
+    const match = items?.find((item) => matchesRouteParam(item, paramName, paramValue, cfg.routeField)) ?? null
     if (!match) return { value: [] } // not found
     if (external) return yield* ownRecord(cfg, dynamicContext, match, peekRecord, maybe)
     // A brief is what the set holds: the record is found, and that is the answer.

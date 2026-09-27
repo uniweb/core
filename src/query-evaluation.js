@@ -26,7 +26,7 @@
 import { match as matchWhere } from './where.js'
 import { applyScope } from './scope.js'
 import { sortRecords, parseSort } from './sort.js'
-import { routeParamValues } from './route-match.js'
+import { recordKeyValues } from './route-match.js'
 
 /**
  * Evaluate a resolved config's set and its narrowing over records.
@@ -105,20 +105,14 @@ function isLimit(limit) {
 /**
  * A `match` — the record a parametric page's URL names — as a filter: the key is the
  * record field `routeRecordKey` maps a route param to (`$name`, `$uuid`, or the field
- * itself), and its value is compared as a STRING, member-wise on a list, by the one
- * rule every lane matches a route param with (`routeParamValues`).
+ * itself), and its value is compared as a STRING, member-wise on a list
+ * (`recordKeyValues`). ⛔ Until 2026-09-27 a key was mapped back to a param name, so a field
+ * called `slug` read the record's `$name`.
  */
 function matching(match) {
   const entries = Object.entries(match)
   return (record) => entries.every(([key, value]) => {
     const target = String(value)
-    return routeParamValues(record, paramNameOf(key)).some((held) => held === target)
+    return recordKeyValues(record, key).some((held) => held === target)
   })
-}
-
-/** The inverse of `routeRecordKey`: `$name` is a `[slug]` page's handle, `$uuid` a `[uuid]` page's identity. */
-function paramNameOf(key) {
-  if (key === '$name') return 'slug'
-  if (key === '$uuid') return 'uuid'
-  return key
 }

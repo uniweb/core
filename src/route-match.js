@@ -245,10 +245,12 @@ export function joinPathCapture({ dir, slug } = {}) {
  * what a `[slug]` route (or the last segment of a `[...path]` one) matches: `$name`,
  * and nothing else.
  *
- * ⭐ Every lane serves it as `$name`: a host's records service, the static build
- * (the record file's name), and an external query that names the field its records
- * are named by (`name_field:`, `nameRecords` below). `$`-namespaced because a record's own
- * fields are the author's data, and no field — `slug`, `name` — is the placement.
+ * ⭐ `$name` is the name of the record as an entry in its folder [Diego, 2026-09-27]: a
+ * host's records service serves it, and the static build gives it as the record file's
+ * name. `$`-namespaced because a record's own fields are the author's data, and no field —
+ * `slug`, `name` — is the placement. A record that is an entry in no folder — an external
+ * API's — has none; its page is found by the field its route query binds the URL to
+ * (`routeFieldOf`, below).
  * ⛔ Until 2026-09-27 a record with no `$name` fell back to its `slug` field, which
  * gave one field name a meaning the framework must not assign [Diego, 2026-09-27:
  * "remove any notion that we, runtime/core, read `slug` from a record's field as if it
@@ -261,27 +263,6 @@ export function recordHandle(record) {
   if (!record || typeof record !== 'object') return undefined
   const name = record.$name
   return typeof name === 'string' && name.length ? name : undefined
-}
-
-/**
- * An external query's records NAMED by one of their own fields — the query's `name_field:`, which
- * the site chooses (`name_field: slug`, `name_field: id`) — as `$name`, the handle a `[slug]` page matches and a
- * `record:` request's `{slug}` fills. Applied where the records arrive, after `transform`, by every
- * lane that fetches them. A record whose field holds nothing is left unnamed.
- *
- * @param {*} data - a list of records, or one record
- * @param {string|undefined} field - the query's `name_field:`
- * @returns {*} the same shape, each record with `$name`
- */
-export function nameRecords(data, field) {
-  if (typeof field !== 'string' || !field) return data
-  const named = (record) => {
-    if (!record || typeof record !== 'object' || Array.isArray(record)) return record
-    const value = record[field]
-    if (value === undefined || value === null || value === '' || typeof value === 'object') return record
-    return { ...record, $name: String(value) }
-  }
-  return Array.isArray(data) ? data.map(named) : named(data)
 }
 
 /**
@@ -327,8 +308,8 @@ export function recordTitle(record) {
  * @param {string} paramName
  * @returns {string}
  */
-export function routeRecordKey(paramName) {
-  if (paramName === 'slug') return '$name'
+export function routeRecordKey(paramName, field = null) {
+  if (paramName === 'slug') return typeof field === 'string' && field ? field : '$name'
   if (paramName === 'uuid') return '$uuid'
   return paramName
 }
@@ -350,9 +331,9 @@ export function routeRecordKey(paramName) {
  * @param {string} paramName
  * @returns {*}
  */
-export function routeParamValue(record, paramName) {
+export function routeParamValue(record, paramName, field = null) {
   if (!record || typeof record !== 'object') return undefined
-  if (paramName === 'slug') return recordHandle(record)
+  if (paramName === 'slug') return typeof field === 'string' && field ? record[field] : recordHandle(record)
   if (paramName === 'uuid') {
     const id = record.$uuid
     return typeof id === 'string' && id.length ? id : record.uuid
@@ -384,8 +365,28 @@ export function routeParamValue(record, paramName) {
  * @param {string} paramName
  * @returns {string[]} the values, in the record's own order
  */
-export function routeParamValues(record, paramName) {
-  const raw = routeParamValue(record, paramName)
+export function routeParamValues(record, paramName, field = null) {
+  return stringValues(routeParamValue(record, paramName, field))
+}
+
+/**
+ * Every value a record holds under a record KEY — `$name`, `$uuid`, or a field of its own —
+ * as strings, member-wise: what a `narrow.match` key (`routeRecordKey`'s output) is compared
+ * with. ⛔ Not `routeParamValues` over a param name: a field called `slug` is the author's data,
+ * while the param `slug` names the record's `$name`.
+ *
+ * @param {Object} record
+ * @param {string} key
+ * @returns {string[]}
+ */
+export function recordKeyValues(record, key) {
+  if (!record || typeof record !== 'object') return []
+  if (key === '$name') return stringValues(recordHandle(record))
+  if (key === '$uuid') return stringValues(routeParamValue(record, 'uuid'))
+  return stringValues(record[key])
+}
+
+function stringValues(raw) {
   const out = []
   for (const value of Array.isArray(raw) ? raw : [raw]) {
     if (value === undefined || value === null || value === '') continue
@@ -405,11 +406,36 @@ export function routeParamValues(record, paramName) {
  * @param {Object} record
  * @param {string} paramName
  * @param {string|number} value - the URL segment
+ * @param {string|null} [field] - the field the route query binds `:slug` to (`routeFieldOf`)
  * @returns {boolean}
  */
-export function matchesRouteParam(record, paramName, value) {
+export function matchesRouteParam(record, paramName, value, field = null) {
   const target = String(value)
-  return routeParamValues(record, paramName).some((held) => held === target)
+  return routeParamValues(record, paramName, field).some((held) => held === target)
+}
+
+/**
+ * The record field a route query binds the URL's last segment to — `where: { code: ':slug' }`
+ * → `code` — or null when it binds none.
+ *
+ * ⭐ A PARAMETRIC PAGE'S RECORD IS ITS ROUTE QUERY'S TO FIND [Diego, 2026-09-27: "it's put to a
+ * parametric query to choose"]. By default a `[slug]` page (and a `[...path]` page's last segment)
+ * names a record by its `$name`, the name it has as an entry in its folder. A query whose records
+ * are named otherwise — an external API's, which are entries in no folder — says which of their
+ * fields the URL names by binding the segment in its own `where`; the page then matches that
+ * field, its records link by it, and a static build expands over it. On the query's own page the
+ * clause drops, since no URL binds it. Only a top-level clause whose whole value is `:slug` counts.
+ *
+ * @param {Object|null} decl - a query declaration (`config.queries[<name>]`)
+ * @returns {string|null}
+ */
+export function routeFieldOf(decl) {
+  const where = decl && typeof decl === 'object' ? decl.where : null
+  if (!where || typeof where !== 'object' || Array.isArray(where)) return null
+  for (const [key, value] of Object.entries(where)) {
+    if (value === ':slug' && key !== 'and' && key !== 'or' && key !== 'not' && !key.startsWith('$')) return key
+  }
+  return null
 }
 
 /**
@@ -550,9 +576,11 @@ export function recordRouteBase(route) {
  *
  * @param {string} pattern - a route pattern with `:param` placeholders
  * @param {Object} values - a record, read by param name
+ * @param {{ field?: string|null }} [options] - `field`: the record field `:slug` is filled from
+ *   when the route query binds it (`routeFieldOf`); by default the record's `$name`
  * @returns {string|null}
  */
-export function fillRoutePattern(pattern, values) {
+export function fillRoutePattern(pattern, values, { field = null } = {}) {
   if (typeof pattern !== 'string' || !values || typeof values !== 'object') return null
   let missing = false
   let head = pattern
@@ -564,7 +592,7 @@ export function fillRoutePattern(pattern, values) {
     // slashes between them kept as structure. `dir` is the placement; a record
     // carries it as `path` (the folder `records/folder.yml` put it in), which is why
     // `path` here is read as the DIRECTORY and never as a composed capture.
-    const handle = recordHandle(values)
+    const [handle] = routeParamValues(values, 'slug', field)
     if (joinPathCapture({ dir: values.dir ?? values.path, slug: handle }) === null) return null
     const dir = String(values.dir ?? values.path ?? '')
     const segments = dir.split('/').filter(Boolean).map((seg) => encodeURIComponent(seg))
@@ -577,7 +605,7 @@ export function fillRoutePattern(pattern, values) {
     // ⭐ THE FIRST MEMBER of a `multi` field — a record has ONE canonical href, and
     // every member routes to it (`routeParamValues`). Baked whole, a `['a','b']`
     // field produced `/tags/a%2Cb`, a URL no lane matches.
-    const [value] = routeParamValues(values, name)
+    const [value] = routeParamValues(values, name, name === 'slug' ? field : null)
     if (value === undefined) {
       missing = true
       return ''
