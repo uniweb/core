@@ -38,8 +38,8 @@ import { substitutePlaceholders } from './substitute-placeholders.js'
  */
 function paramContext(paramName, paramValue, record) {
   const context = { [paramName]: paramValue, param: paramValue }
-  // ⭐ `{slug}` is the RECORD'S slug, whatever the route calls its param. The
-  // file lane keys a query's per-record files by `item.slug` (`writeQueryFiles`)
+  // ⭐ `{slug}` is the RECORD'S handle, `$name`, whatever the route calls its param.
+  // The file lane keys a query's per-record files by `$name` (`writeQueryFiles`)
   // and injects `/data/<name>/{slug}.json` — so on a site routing `[id]`, the
   // route's context carried `id` and `param` and `{slug}` stayed literal: the
   // detail URL was `/data/articles/{slug}.json`, a guaranteed 404, on every
@@ -156,6 +156,8 @@ export function buildDetailConfig(queryConfig, dynamicContext, { whole = true } 
     if (method) out.method = method
     if (spec.body !== undefined && spec.body !== null) out.body = substitutePlaceholders(spec.body, context, { encode: false })
     if (typeof spec.transform === 'string' && spec.transform) out.transform = spec.transform
+    // Named as the list's records are, so the record answers to the handle it was found by.
+    if (typeof queryConfig.nameField === 'string' && queryConfig.nameField) out.nameField = queryConfig.nameField
     return out
   }
 

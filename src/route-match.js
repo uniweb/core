@@ -242,14 +242,17 @@ export function joinPathCapture({ dir, slug } = {}) {
 
 /**
  * A record's PLACEMENT HANDLE — the segment its folder entry is named by, which is
- * what a `[slug]` route (or the last segment of a `[...path]` one) matches.
+ * what a `[slug]` route (or the last segment of a `[...path]` one) matches: `$name`,
+ * and nothing else.
  *
- * ⭐ Two lanes spell it differently and mean one thing. A host's records service
- * serves the entry's handle as `$name` — `$`-namespaced because a Model may
- * declare its own `name` or `slug` field (five of eight seeded briefs do), and
- * the placement must not be shadowed by one. The file lane derives it from the
- * source filename and calls it `slug`. `$name` wins when present: on a live
- * record a Model field named `slug` is the author's data, not the placement.
+ * ⭐ Every lane serves it as `$name`: a host's records service, the static build
+ * (the record file's name), and an external query that names the field its records
+ * are named by (`name_field:`, `nameRecords` below). `$`-namespaced because a record's own
+ * fields are the author's data, and no field — `slug`, `name` — is the placement.
+ * ⛔ Until 2026-09-27 a record with no `$name` fell back to its `slug` field, which
+ * gave one field name a meaning the framework must not assign [Diego, 2026-09-27:
+ * "remove any notion that we, runtime/core, read `slug` from a record's field as if it
+ * had any meaning to us"].
  *
  * @param {Object} record
  * @returns {string|undefined}
@@ -257,8 +260,28 @@ export function joinPathCapture({ dir, slug } = {}) {
 export function recordHandle(record) {
   if (!record || typeof record !== 'object') return undefined
   const name = record.$name
-  if (typeof name === 'string' && name.length) return name
-  return record.slug
+  return typeof name === 'string' && name.length ? name : undefined
+}
+
+/**
+ * An external query's records NAMED by one of their own fields — the query's `name_field:`, which
+ * the site chooses (`name_field: slug`, `name_field: id`) — as `$name`, the handle a `[slug]` page matches and a
+ * `record:` request's `{slug}` fills. Applied where the records arrive, after `transform`, by every
+ * lane that fetches them. A record whose field holds nothing is left unnamed.
+ *
+ * @param {*} data - a list of records, or one record
+ * @param {string|undefined} field - the query's `name_field:`
+ * @returns {*} the same shape, each record with `$name`
+ */
+export function nameRecords(data, field) {
+  if (typeof field !== 'string' || !field) return data
+  const named = (record) => {
+    if (!record || typeof record !== 'object' || Array.isArray(record)) return record
+    const value = record[field]
+    if (value === undefined || value === null || value === '' || typeof value === 'object') return record
+    return { ...record, $name: String(value) }
+  }
+  return Array.isArray(data) ? data.map(named) : named(data)
 }
 
 /**
@@ -268,7 +291,7 @@ export function recordHandle(record) {
  * parametric page (`Website._createDynamicPage`, so the SPA and a host's render), the
  * static build's page expansion, and the record search index (`@uniweb/projections`).
  *
- *     title  →  name  →  the record's handle (`recordHandle`: `$name`, else `slug`)
+ *     title  →  name  →  the record's handle (`recordHandle`: `$name`)
  *
  * ⛔ Until then a page read `title` alone while the search index read `title || name`,
  * so a record with a `name` and no `title` — a person — titled its search result and
@@ -311,10 +334,10 @@ export function routeRecordKey(paramName) {
 }
 
 /**
- * The value a record carries for a route param, by `routeRecordKey`'s map. The two
- * built-in keys fall back to the plain field a source without them carries: the
- * handle to `slug` (`recordHandle`), the identity to `uuid` — so a remote API that
- * routes `[uuid]` on its own `uuid` field keeps matching (ruled 2026-09-11).
+ * The value a record carries for a route param, by `routeRecordKey`'s map. The handle
+ * is `$name` alone (`recordHandle`); the identity falls back to the plain `uuid` field a
+ * source without `$uuid` carries — so a remote API that routes `[uuid]` on its own
+ * `uuid` field keeps matching (ruled 2026-09-11).
  *
  * ⛔ Every reader that matches a delivered record to a route param goes through
  * this — the entity store, the website's parametric page, the static build's

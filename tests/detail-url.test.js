@@ -105,7 +105,7 @@ describe('a `deferred:` query\'s per-record file', () => {
   // literal — `/data/articles/{slug}.json`, a guaranteed 404 on every template
   // page with `deferred:` fields.
   it('fills {slug} from the record the caller holds when the route param is something else', () => {
-    const out = buildDetailConfig(deferred, { paramName: 'id', paramValue: '42', record: { id: 42, slug: 'design-tips' } })
+    const out = buildDetailConfig(deferred, { paramName: 'id', paramValue: '42', record: { id: 42, $name: 'design-tips' } })
     expect(out.path).toBe('/data/articles/design-tips.json')
   })
 
@@ -114,7 +114,7 @@ describe('a `deferred:` query\'s per-record file', () => {
   })
 
   it('CONTROL — on a [slug] route the capture is the slug, record or not', () => {
-    const withRecord = buildDetailConfig(deferred, { paramName: 'slug', paramValue: 'design-tips', record: { slug: 'design-tips' } })
+    const withRecord = buildDetailConfig(deferred, { paramName: 'slug', paramValue: 'design-tips', record: { $name: 'design-tips' } })
     const without = buildDetailConfig(deferred, { paramName: 'slug', paramValue: 'design-tips' })
     expect(withRecord.path).toBe('/data/articles/design-tips.json')
     expect(without.path).toBe(withRecord.path)

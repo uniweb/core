@@ -5,6 +5,7 @@ import FetcherDispatcher from '../src/fetcher-dispatcher.js'
 import Website from '../src/website.js'
 import { resolveFetchConfigs, routeSelection } from '../src/fetch-config.js'
 import { evaluateQuery } from '../src/query-evaluation.js'
+import { nameRecords } from '../src/route-match.js'
 // Derived, never re-spelled: the convention is pinned once, in
 // `tests/data-paths.test.js`. See the note there before pinning it again.
 import { queryDataUrl } from '../src/data-paths.js'
@@ -85,7 +86,7 @@ describe('EntityStore.resolve', () => {
   it('delivers data by default when a cascade match is cached', () => {
     const { entityStore, dataStore, website } = makeHarness()
     const fetchConfig = { path: '/data/articles.json', as: 'articles' }
-    const articles = [{ slug: 'a', title: 'A' }]
+    const articles = [{ $name: 'a', title: 'A' }]
     dataStore.set(deriveCacheKey(fetchConfig), { data: articles })
 
     const page = makePage({ fetch: fetchConfig })
@@ -99,7 +100,7 @@ describe('EntityStore.resolve', () => {
   it('⭐ returns none for a component that declares nothing — `data: false`, or no `data:` at all (2026-09-14)', () => {
     const { entityStore, dataStore, website } = makeHarness()
     const fetchConfig = { path: '/data/articles.json', as: 'articles' }
-    dataStore.set(deriveCacheKey(fetchConfig), { data: [{ slug: 'a' }] })
+    dataStore.set(deriveCacheKey(fetchConfig), { data: [{ $name: 'a' }] })
 
     const page = makePage({ fetch: fetchConfig })
     const block = makeBlock({ page }, website)
@@ -108,7 +109,7 @@ describe('EntityStore.resolve', () => {
     expect(entityStore.resolve(block, {})).toEqual({ status: 'none', data: null })
     expect(entityStore.resolve(block, null)).toEqual({ status: 'none', data: null })
     // ⛔ until then no `data:` meant every key that reached the section
-    expect(entityStore.resolve(block, ANY).data.articles).toEqual([{ slug: 'a' }])
+    expect(entityStore.resolve(block, ANY).data.articles).toEqual([{ $name: 'a' }])
   })
 
   it('returns pending on cache miss', () => {
@@ -123,7 +124,7 @@ describe('EntityStore.resolve', () => {
 
 describe('EntityStore.fetch', () => {
   it('walks hierarchy: block → page → parent → site', async () => {
-    const articles = [{ slug: 'a' }]
+    const articles = [{ $name: 'a' }]
     const { entityStore, fetcherSpy, website } = makeHarness({
       fetcherImpl: () => Promise.resolve({ data: articles }),
     })
@@ -204,8 +205,8 @@ describe('EntityStore.fetch', () => {
 
   it('delivers the focused record as a single-element array on dynamic routes', async () => {
     const articles = [
-      { slug: 'hello', title: 'Hello' },
-      { slug: 'world', title: 'World' },
+      { $name: 'hello', title: 'Hello' },
+      { $name: 'world', title: 'World' },
     ]
     const { entityStore, website } = makeHarness({
       fetcherImpl: () => Promise.resolve({ data: articles }),
@@ -218,7 +219,7 @@ describe('EntityStore.fetch', () => {
     const result = await entityStore.fetch(block, ANY)
     // Detail route: the focused record lands under the collection key as a
     // single-element array; there is no singular `article` key.
-    expect(result.data.articles).toEqual([{ slug: 'world', title: 'World' }])
+    expect(result.data.articles).toEqual([{ $name: 'world', title: 'World' }])
     expect(result.data.article).toBeUndefined()
   })
 
@@ -229,7 +230,7 @@ describe('EntityStore.fetch', () => {
   }
 
   it('an external query\'s record: fetches the record on its own, with its own transform', async () => {
-    const collectionItem = { slug: 'my-post', title: 'My Post' }
+    const collectionItem = { $name: 'my-post', title: 'My Post' }
     const detailArticle = { ...collectionItem, body: 'Full' }
     const { entityStore, fetcherSpy, website } = makeHarness({
       fetcherImpl: (req) => {
@@ -256,7 +257,7 @@ describe('EntityStore.fetch', () => {
   // own request's answer whatever the component expects — as the records service answers a Model
   // with no brief whole, even as a brief (2026-09-27).
   it('an external query\'s record: fetched on its own for a component expecting briefs too', async () => {
-    const collectionItem = { slug: 'my-post', title: 'My Post' }
+    const collectionItem = { $name: 'my-post', title: 'My Post' }
     const detailArticle = { ...collectionItem, body: 'Full' }
     const { entityStore, fetcherSpy, website } = makeHarness({
       fetcherImpl: (req) => Promise.resolve({ data: req.url === 'https://api.example.com/articles' ? [collectionItem] : detailArticle }),
@@ -267,6 +268,40 @@ describe('EntityStore.fetch', () => {
     const result = await entityStore.fetch(makeBlock({ page }, website), ANY)
     expect(result.data.articles).toEqual([detailArticle])
     expect(fetcherSpy).toHaveBeenCalledTimes(2)
+  })
+
+  // ⭐ An external query names the field its records are named by (`name_field:`, 2026-09-27): the
+  // records arrive with `$name`, which a `[slug]` page matches and `{slug}` fills. Core reads `$name`
+  // and nothing else — a `slug` field alone names nothing.
+  it('an external query\'s `name_field:` names its records — a [slug] page finds its record by it', async () => {
+    const list = [{ slug: 'my-post', title: 'My Post' }, { slug: 'other', title: 'Other' }]
+    const { entityStore, fetcherSpy, website } = makeHarness({
+      fetcherImpl: (req) => {
+        const data = req.url === 'https://api.example.com/articles' ? list : { slug: 'my-post', title: 'My Post', body: 'Full' }
+        // the fetcher names what arrives, as the default fetcher does after `transform`
+        return Promise.resolve({ data: nameRecords(data, req.nameField) })
+      },
+    })
+    website.config = { queries: { articles: { url: 'https://api.example.com/articles', name_field: 'slug', record: { url: 'https://api.example.com/articles/{slug}' } } } }
+    const dynamicContext = { paramName: 'slug', paramValue: 'my-post' }
+    const page = makePage({ parent: makePage({ fetch: { query: 'articles', as: 'articles' } }), dynamicContext })
+    const result = await entityStore.fetch(makeBlock({ page }, website), ANY)
+    expect(result.data.articles).toEqual([{ slug: 'my-post', title: 'My Post', body: 'Full', $name: 'my-post' }])
+    expect(fetcherSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ url: 'https://api.example.com/articles/my-post', nameField: 'slug' }),
+      expect.anything(),
+    )
+  })
+
+  it('CONTROL — without `name_field:` an external record\'s `slug` names nothing: the [slug] page finds no record', async () => {
+    const { entityStore, website } = makeHarness({
+      fetcherImpl: () => Promise.resolve({ data: [{ slug: 'my-post', title: 'My Post' }] }),
+    })
+    website.config = { queries: { articles: { url: 'https://api.example.com/articles', record: { url: 'https://api.example.com/articles/{slug}' } } } }
+    const dynamicContext = { paramName: 'slug', paramValue: 'my-post' }
+    const page = makePage({ parent: makePage({ fetch: { query: 'articles', as: 'articles' } }), dynamicContext })
+    const result = await entityStore.fetch(makeBlock({ page }, website), ANY)
+    expect(result.data.articles).toEqual([])
   })
 
   it('CONTROL — a compiled query\'s record, for a component expecting briefs, is the one the list holds: no record request', async () => {
@@ -283,8 +318,8 @@ describe('EntityStore.fetch', () => {
   })
 
   it('uses the cached list as the gate, then fetches the record', async () => {
-    const articles = [{ slug: 'my-post' }, { slug: 'other' }]
-    const detailArticle = { slug: 'my-post', body: 'Full' }
+    const articles = [{ $name: 'my-post' }, { $name: 'other' }]
+    const detailArticle = { $name: 'my-post', body: 'Full' }
 
     const { entityStore, fetcherSpy, dataStore, website } = makeHarness({
       fetcherImpl: () => Promise.resolve({ data: detailArticle }),
@@ -308,7 +343,7 @@ describe('EntityStore.fetch', () => {
   })
 
   it('skips the record request when no dynamicContext', async () => {
-    const articles = [{ slug: 'a' }]
+    const articles = [{ $name: 'a' }]
     const { entityStore, fetcherSpy, website } = makeHarness({
       fetcherImpl: () => Promise.resolve({ data: articles }),
     })
@@ -323,7 +358,7 @@ describe('EntityStore.fetch', () => {
   })
 
   it('falls back to collection fetch when detail is not defined', async () => {
-    const articles = [{ slug: 'my-post' }, { slug: 'other' }]
+    const articles = [{ $name: 'my-post' }, { $name: 'other' }]
     const { entityStore, fetcherSpy, website } = makeHarness({
       fetcherImpl: () => Promise.resolve({ data: articles }),
     })
@@ -334,13 +369,13 @@ describe('EntityStore.fetch', () => {
     const block = makeBlock({ page }, website)
 
     const result = await entityStore.fetch(block, ANY)
-    expect(result.data.articles).toEqual([{ slug: 'my-post' }])
+    expect(result.data.articles).toEqual([{ $name: 'my-post' }])
     expect(result.data.article).toBeUndefined()
     expect(fetcherSpy).toHaveBeenCalledWith(expect.objectContaining(fetchConfig), expect.anything())
   })
 
   it('localizes compiled-collection paths for non-default locale', async () => {
-    const articles = [{ slug: 'a', title: 'Bonjour' }]
+    const articles = [{ $name: 'a', title: 'Bonjour' }]
     const { entityStore, fetcherSpy, website } = makeHarness({
       fetcherImpl: () => Promise.resolve({ data: articles }),
     })
@@ -392,7 +427,7 @@ describe('EntityStore.fetch', () => {
     const { entityStore, dataStore, website } = makeHarness()
     website.getActiveLocale = () => 'fr'
 
-    const articles = [{ slug: 'a', title: 'Bonjour' }]
+    const articles = [{ $name: 'a', title: 'Bonjour' }]
     dataStore.set(
       deriveCacheKey({ path: `/fr${queryDataUrl('articles')}`, as: 'articles' }),
       { data: articles },
@@ -408,7 +443,7 @@ describe('EntityStore.fetch', () => {
   })
 
   it('fetches multiple schemas in parallel', async () => {
-    const articles = [{ slug: 'a' }]
+    const articles = [{ $name: 'a' }]
     const categories = [{ name: 'Tech' }]
     const { entityStore, fetcherSpy, website } = makeHarness({
       fetcherImpl: (req) => {
@@ -449,7 +484,7 @@ describe('EntityStore.fetch', () => {
 describe('current: — how a section on a parametric page uses the page\'s record (ruled 2026-09-13)', () => {
   // ⛔ It replaces `refine: true, detail: false`, which delivered the "exclude" case
   // alone; its `sort` and `where` changed nothing, and `order` was the one sort read.
-  const posts = ['a', 'b', 'c', 'd', 'e'].map((slug, i) => ({ slug, n: i + 1 }))
+  const posts = ['a', 'b', 'c', 'd', 'e'].map((slug, i) => ({ $name: slug, n: i + 1 }))
   const listFetch = { query: 'posts', as: 'posts' }
   const on = (slug) => ({ paramName: 'slug', paramValue: slug, params: { slug, path: slug, dir: '' } })
   // the default fetcher's own order of work: the set, then the fetch's narrowing
@@ -459,7 +494,7 @@ describe('current: — how a section on a parametric page uses the page\'s recor
     return h
   }
   const detail = (slug) => makePage({ parent: makePage({ route: '/posts', fetch: listFetch }), dynamicContext: on(slug) })
-  const slugs = (result) => result.data.posts.map((p) => p.slug)
+  const slugs = (result) => result.data.posts.map((p) => p.$name)
 
   it('only — the default: the record, as a list of one', async () => {
     const { entityStore, website } = harness()
@@ -525,21 +560,21 @@ describe('current: — how a section on a parametric page uses the page\'s recor
       const { entityStore, website, fetcherSpy } = harness()
       const block = makeBlock({ page: detail('b'), fetch: { query: 'posts', as: 'related', current: 'exclude', limit: 3 } }, website)
       const result = await entityStore.fetch(block, ANY)
-      expect(result.data.related.map((p) => p.slug)).toEqual(['a', 'c', 'd'])
-      expect(result.data.posts.map((p) => p.slug)).toEqual(['b'])
+      expect(result.data.related.map((p) => p.$name)).toEqual(['a', 'c', 'd'])
+      expect(result.data.posts.map((p) => p.$name)).toEqual(['b'])
       expect(fetcherSpy.mock.calls.some(([req]) => req.as === 'related' && req.narrow?.limit === 4)).toBe(true)
     })
 
     it('no `current:` — the page\'s record, whatever the key', async () => {
       const { entityStore, website } = harness()
       const block = makeBlock({ page: detail('c'), fetch: { query: 'posts', as: 'post' } }, website)
-      expect((await entityStore.fetch(block, ANY)).data.post.map((p) => p.slug)).toEqual(['c'])
+      expect((await entityStore.fetch(block, ANY)).data.post.map((p) => p.$name)).toEqual(['c'])
     })
 
     it('include — the records as the fetch describes them', async () => {
       const { entityStore, website } = harness()
       const block = makeBlock({ page: detail('c'), fetch: { query: 'posts', as: 'pager', current: 'include', limit: 2 } }, website)
-      expect((await entityStore.fetch(block, ANY)).data.pager.map((p) => p.slug)).toEqual(['a', 'b'])
+      expect((await entityStore.fetch(block, ANY)).data.pager.map((p) => p.$name)).toEqual(['a', 'b'])
     })
 
     it('the sync path gives the same answer from the cache', async () => {
@@ -548,7 +583,7 @@ describe('current: — how a section on a parametric page uses the page\'s recor
       await entityStore.fetch(block, ANY)
       const answer = entityStore.resolve(block, ANY)
       expect(answer.status).toBe('ready')
-      expect(answer.data.related.map((p) => p.slug)).toEqual(['a', 'c', 'd'])
+      expect(answer.data.related.map((p) => p.$name)).toEqual(['a', 'c', 'd'])
     })
 
     it('on the records service: exclude asks the list one longer, and the default asks the record', async () => {
@@ -556,15 +591,15 @@ describe('current: — how a section on a parametric page uses the page\'s recor
       const { entityStore, website } = makeHarness({
         fetcherImpl: (req) => {
           asked.push({ as: req.as, limit: req.narrow?.limit, match: req.narrow?.match })
-          return Promise.resolve({ data: evaluateQuery(posts.map((p) => ({ ...p, $name: p.slug })), req) })
+          return Promise.resolve({ data: evaluateQuery(posts.map((p) => ({ ...p, $name: p.$name })), req) })
         },
       })
       website.config = { services: { records: '/_records/ask/{locale}' }, queries: { posts: { schema: '@/post' } } }
       const page = makePage({ parent: makePage({ route: '/posts', fetch: { query: 'posts', as: 'posts' } }), dynamicContext: on('a') })
       const related = await entityStore.fetch(makeBlock({ page, fetch: { query: 'posts', as: 'related', current: 'exclude', limit: 2 } }, website), ANY)
-      expect(related.data.related.map((p) => p.slug)).toEqual(['b', 'c'])
+      expect(related.data.related.map((p) => p.$name)).toEqual(['b', 'c'])
       const post = await entityStore.fetch(makeBlock({ page, fetch: { query: 'posts', as: 'post' } }, website), ANY)
-      expect(post.data.post.map((p) => p.slug)).toEqual(['a'])
+      expect(post.data.post.map((p) => p.$name)).toEqual(['a'])
       expect(asked.filter((q) => q.as === 'related')).toEqual([{ as: 'related', limit: 3, match: undefined }])
       expect(asked.filter((q) => q.as === 'post').map((q) => q.match)).toEqual([{ $name: 'a' }])
     })
@@ -573,7 +608,7 @@ describe('current: — how a section on a parametric page uses the page\'s recor
   // A section can show another query's records beside the page's record — under the route
   // key, and under any other key alike, since `current:` follows the query.
   describe('a fetch that names ANOTHER query', () => {
-    const featured = [{ slug: 'b', n: 2 }, { slug: 'x', n: 9 }, { slug: 'd', n: 4 }]
+    const featured = [{ $name: 'b', n: 2 }, { $name: 'x', n: 9 }, { $name: 'd', n: 4 }]
     const twoQueries = () => {
       const h = makeHarness({
         fetcherImpl: (req) => {
@@ -619,7 +654,7 @@ describe('current: — how a section on a parametric page uses the page\'s recor
       const { entityStore, website } = twoQueries()
       const block = makeBlock({ page: detail('b'), fetch: { query: 'featured', as: 'highlights', current: 'exclude' } }, website)
       const result = await entityStore.fetch(block, ANY)
-      expect(result.data.highlights.map((p) => p.slug)).toEqual(['x', 'd'])
+      expect(result.data.highlights.map((p) => p.$name)).toEqual(['x', 'd'])
       expect(slugs(result)).toEqual(['b'])
     })
   })
@@ -629,7 +664,7 @@ describe('current: — how a section on a parametric page uses the page\'s recor
     const page = detail('b')
     const block = makeBlock({ page, fetch: [{ path: '/data/tags.json', as: 'tags', current: 'exclude', limit: 2 }] }, website)
     const result = await entityStore.fetch(block, ANY)
-    expect(result.data.tags.map((p) => p.slug)).toEqual(['a', 'b'])
+    expect(result.data.tags.map((p) => p.$name)).toEqual(['a', 'b'])
   })
 
   it('on the records service, exclude asks the list one longer and never the record', async () => {
@@ -637,14 +672,14 @@ describe('current: — how a section on a parametric page uses the page\'s recor
     const { entityStore, website } = makeHarness({
       fetcherImpl: (req) => {
         asked.push({ limit: req.narrow?.limit, match: req.narrow?.match })
-        return Promise.resolve({ data: evaluateQuery(posts.map((p) => ({ ...p, $name: p.slug })), req) })
+        return Promise.resolve({ data: evaluateQuery(posts.map((p) => ({ ...p, $name: p.$name })), req) })
       },
     })
     website.config = { services: { records: '/_records/ask/{locale}' }, queries: { posts: { schema: '@/post' } } }
     const page = makePage({ parent: makePage({ route: '/posts', fetch: { query: 'posts', as: 'posts' } }), dynamicContext: on('a') })
     const block = makeBlock({ page, fetch: { query: 'posts', as: 'posts', current: 'exclude', limit: 2 } }, website)
     const result = await entityStore.fetch(block, ANY)
-    expect(result.data.posts.map((p) => p.slug)).toEqual(['b', 'c'])
+    expect(result.data.posts.map((p) => p.$name)).toEqual(['b', 'c'])
     expect(asked).toEqual([{ limit: 3, match: undefined }])
   })
 })
@@ -652,8 +687,8 @@ describe('current: — how a section on a parametric page uses the page\'s recor
 describe('a page nested inside a parametric page shares its route query (ruled 2026-09-13)', () => {
   // ⛔ Until then every lane looked one parent up from `/members/:slug/cv`, found no
   // query on the `[slug]` page, and the nested page had no record.
-  const members = [{ slug: 'alice', name: 'Alice' }, { slug: 'bob', name: 'Bob' }]
-  const pubs = [{ slug: 'p1' }]
+  const members = [{ $name: 'alice', name: 'Alice' }, { $name: 'bob', name: 'Bob' }]
+  const pubs = [{ $name: 'p1' }]
   const membersFetch = { path: '/data/members.json', as: 'members' }
   const pubsFetch = { path: '/data/pubs.json', as: 'pubs' }
   const dynamicContext = { paramName: 'slug', paramValue: 'bob', params: { slug: 'bob', path: 'bob', dir: '' }, templateRoute: '/members/:slug/cv' }
@@ -698,7 +733,7 @@ describe('a page nested inside a parametric page shares its route query (ruled 2
 describe('⭐ declared keys — a section receives what its component declares, and automatic `as` fills it (ruled 2026-09-14)', () => {
   // ⛔ Until then every fetch reaching a section was delivered under its `as`, and a
   // component naming its key differently received nothing.
-  const posts = ['a', 'b', 'c', 'd', 'e'].map((slug) => ({ slug, $name: slug }))
+  const posts = ['a', 'b', 'c', 'd', 'e'].map((slug) => ({ $name: slug }))
   const on = (slug) => ({ paramName: 'slug', paramValue: slug, params: { slug, path: slug, dir: '' } })
   const harness = () => {
     const h = makeHarness({ fetcherImpl: (req) => Promise.resolve({ data: evaluateQuery(posts, req) }) })
@@ -707,7 +742,7 @@ describe('⭐ declared keys — a section receives what its component declares, 
   }
   // /posts/:slug, whose parent page declares the route query
   const detail = (slug) => makePage({ parent: makePage({ route: '/posts', fetch: { query: 'posts', as: 'posts' } }), dynamicContext: on(slug) })
-  const slugs = (list) => list?.map((p) => p.slug)
+  const slugs = (list) => list?.map((p) => p.$name)
 
   it('only the keys declared: a fetch filling none is not asked', async () => {
     const { entityStore, website, fetcherSpy } = harness()
@@ -755,7 +790,7 @@ describe('⭐ declared keys — a section receives what its component declares, 
   it('a key the section holds — a tagged data block — is not the store\'s to fill, and no fetch is asked for it', async () => {
     const { entityStore, website, fetcherSpy } = harness()
     const page = makePage({ route: '/news', fetch: { query: 'posts', as: 'posts' } })
-    const block = makeBlock({ page, heldData: { posts: [{ slug: 'authored' }] } }, website)
+    const block = makeBlock({ page, heldData: { posts: [{ $name: 'authored' }] } }, website)
     expect(entityStore.resolve(block, declaring('posts'))).toEqual({ status: 'none', data: null })
     expect(await entityStore.fetch(block, declaring('posts'))).toEqual({ data: null, errors: null })
     expect(fetcherSpy).not.toHaveBeenCalled()
@@ -764,7 +799,7 @@ describe('⭐ declared keys — a section receives what its component declares, 
   it('⭐ a fetch\'s prerendered answer, held under its own key, fills the key it maps to — without asking again', () => {
     // A static build bakes a section's own fetch into its content by `as`; the component names the key `latest`.
     const { entityStore, website, fetcherSpy } = harness()
-    const baked = [{ slug: 'a' }, { slug: 'b' }]
+    const baked = [{ $name: 'a' }, { $name: 'b' }]
     const block = makeBlock({ page: makePage({ route: '/' }), fetch: { query: 'posts', as: 'posts', limit: 2 }, heldData: { posts: baked } }, website)
     expect(entityStore.resolve(block, { data: { latest: '@/post' } })).toEqual({ status: 'ready', data: { latest: baked } })
     expect(fetcherSpy).not.toHaveBeenCalled()
@@ -776,7 +811,7 @@ describe('⭐ declared keys — a section receives what its component declares, 
     const block = makeBlock({
       page: makePage({ route: '/news', fetch: { query: 'posts', as: 'posts', limit: 1 } }),
       fetch: { query: 'posts', as: 'posts', limit: 2 },
-      heldData: { posts: [{ slug: 'held' }] },
+      heldData: { posts: [{ $name: 'held' }] },
     }, website)
     const result = await entityStore.fetch(block, { data: { first: '@/post', second: '@/post' } })
     expect(slugs(result.data.first)).toEqual(['held'])
@@ -822,7 +857,7 @@ describe('a record links to its query\'s page — `$route` (ruled 2026-09-14)', 
   }
 
   it('fills each record\'s `$route` from its query\'s page when the fetch picks none (sync path), url-encoding the param', () => {
-    const articles = [{ slug: 'a-post', title: 'A' }, { slug: 'b post', title: 'B' }]
+    const articles = [{ $name: 'a-post', title: 'A' }, { $name: 'b post', title: 'B' }]
     const { entityStore, block } = seed(articles, { fetch: plain, recordPage: (q) => (q === 'articles' ? { route: '/blog/:slug', paramName: 'slug' } : null) })
     const result = entityStore.resolve(block, ANY)
     expect(result.status).toBe('ready')
@@ -832,7 +867,7 @@ describe('a record links to its query\'s page — `$route` (ruled 2026-09-14)', 
   })
 
   it('a fetch\'s `detailPage` picks the page, and wins over the query\'s own', () => {
-    const { entityStore, block } = seed([{ slug: 'x' }], {
+    const { entityStore, block } = seed([{ $name: 'x' }], {
       detailPage: (ref) => (ref === 'page:detail' ? '/featured/:slug' : null),
       recordPage: () => ({ route: '/blog/:slug', paramName: 'slug' }),
     })
@@ -840,7 +875,7 @@ describe('a record links to its query\'s page — `$route` (ruled 2026-09-14)', 
   })
 
   it('fills on the async fetch path too', async () => {
-    const h = makeHarness({ fetcherImpl: () => Promise.resolve({ data: [{ slug: 'x', title: 'X' }] }) })
+    const h = makeHarness({ fetcherImpl: () => Promise.resolve({ data: [{ $name: 'x', title: 'X' }] }) })
     h.website.recordPageFor = () => ({ route: '/blog/:slug', paramName: 'slug' })
     const block = makeBlock({ page: makePage({ route: '/', fetch: plain }) }, h.website)
     const result = await h.entityStore.fetch(block, ANY)
@@ -848,17 +883,17 @@ describe('a record links to its query\'s page — `$route` (ruled 2026-09-14)', 
   })
 
   it('a dangling `detailPage` falls back to the query\'s page', () => {
-    const { entityStore, block } = seed([{ slug: 'a' }], { recordPage: () => ({ route: '/blog/:slug', paramName: 'slug' }) })
+    const { entityStore, block } = seed([{ $name: 'a' }], { recordPage: () => ({ route: '/blog/:slug', paramName: 'slug' }) })
     expect(entityStore.resolve(block, ANY).data.articles[0].$route).toBe('/blog/a')
   })
 
   it('no page for the query, and no `detailPage` — no link', () => {
-    const { entityStore, block } = seed([{ slug: 'a' }], { fetch: plain })
+    const { entityStore, block } = seed([{ $name: 'a' }], { fetch: plain })
     expect(entityStore.resolve(block, ANY).data.articles[0]).not.toHaveProperty('$route')
   })
 
   it('⭐ a record\'s own `route` is the author\'s field — never read, never overwritten', () => {
-    const { entityStore, block } = seed([{ slug: 'a', route: 'north-trail' }], { fetch: plain, recordPage: () => ({ route: '/blog/:slug', paramName: 'slug' }) })
+    const { entityStore, block } = seed([{ $name: 'a', route: 'north-trail' }], { fetch: plain, recordPage: () => ({ route: '/blog/:slug', paramName: 'slug' }) })
     const record = entityStore.resolve(block, ANY).data.articles[0]
     expect(record.route).toBe('north-trail')
     expect(record.$route).toBe('/blog/a')
@@ -885,7 +920,7 @@ describe('`$route` through a real Website — a list on any page links to its qu
     },
   })
   const homeBlock = (w, fetch) => ({ fetch: null, dynamicContext: null, page: { route: '/', fetch, parent: null, dynamicContext: null }, website: w })
-  const records = [{ slug: 'first', title: 'First' }, { slug: 'second', title: 'Second' }]
+  const records = [{ $name: 'first', title: 'First' }, { $name: 'second', title: 'Second' }]
 
   it('a preview on the home page links to the page whose route query is its query — no `detailPage` needed', () => {
     const w = site()
@@ -912,7 +947,7 @@ describe('`$route` from a SECTION\'s own fetch', () => {
     const pageCfg = { query: 'articles', path: '/data/articles.json', as: 'articles', detailPage: 'page:page' }
     const h = makeHarness()
     h.website.resolveDetailPageTemplate = (ref) => (ref === 'page:section' ? '/section/:slug' : '/page/:slug')
-    h.dataStore.set(deriveCacheKey(sectionCfg), { data: [{ slug: 'x' }] })
+    h.dataStore.set(deriveCacheKey(sectionCfg), { data: [{ $name: 'x' }] })
     const block = makeBlock({ fetch: sectionCfg, page: makePage({ route: '/', fetch: pageCfg }) }, h.website)
     expect(h.entityStore.resolve(block, ANY).data.articles[0].$route).toBe('/section/x')
   })
@@ -931,7 +966,7 @@ describe('`$route` on the records a section already HOLDS — its own fetch, pre
   }
 
   it('links the records under its own fetch\'s key, and writes into nothing it was given', () => {
-    const data = { articles: [{ slug: 'a' }, { slug: 'b' }] }
+    const data = { articles: [{ $name: 'a' }, { $name: 'b' }] }
     const { entityStore, block } = held(data)
     entityStore.linkOwnRecords(block)
     expect(block.parsedContent.data.articles.map((a) => a.$route)).toEqual(['/blog/a', '/blog/b'])
@@ -940,7 +975,7 @@ describe('`$route` on the records a section already HOLDS — its own fetch, pre
   })
 
   it('a second render changes nothing — the linked data keeps its identity', () => {
-    const { entityStore, block } = held({ articles: [{ slug: 'a' }] })
+    const { entityStore, block } = held({ articles: [{ $name: 'a' }] })
     entityStore.linkOwnRecords(block)
     const once = block.parsedContent.data
     entityStore.linkOwnRecords(block)
@@ -949,7 +984,7 @@ describe('`$route` on the records a section already HOLDS — its own fetch, pre
   })
 
   it('CONTROL — a key no fetch of its own binds is not linked, and nothing is replaced', () => {
-    const data = { articles: [{ slug: 'a' }] }
+    const data = { articles: [{ $name: 'a' }] }
     const { entityStore, block } = held(data, { query: 'news', as: 'news', path: '/data/news.json' })
     entityStore.linkOwnRecords(block)
     expect(block.parsedContent.data).toBe(data)
@@ -957,7 +992,7 @@ describe('`$route` on the records a section already HOLDS — its own fetch, pre
   })
 
   it('a block with no fetch of its own is left alone', () => {
-    const data = { articles: [{ slug: 'a' }] }
+    const data = { articles: [{ $name: 'a' }] }
     const { entityStore, block } = held(data, null)
     entityStore.linkOwnRecords(block)
     expect(block.parsedContent.data).toBe(data)
@@ -1034,7 +1069,7 @@ describe('⛔ a failed fetch delivers NOTHING under its key, and says so', () =>
   // An external query's record has no brief to stand in for: what the list holds of it IS it, so a
   // failed request of its own keeps that, and says so.
   it('an external query\'s failed RECORD fetch keeps the record the list holds, and says so', async () => {
-    const list = [{ slug: 'my-post', title: 'Listed' }]
+    const list = [{ $name: 'my-post', title: 'Listed' }]
     const { entityStore, website } = makeHarness({
       fetcherImpl: (req) => req.url === 'https://api.example.com/articles'
         ? Promise.resolve({ data: list })
@@ -1090,8 +1125,8 @@ describe('the record in hand reaches the detail address', () => {
     // `/data/articles/{slug}.json` used to stay literal on an `[id]` route: the
     // context carried `id` and `param`, never `slug`. The list already matched
     // the record, so its slug names the file the build wrote.
-    const list = [{ id: 7, slug: 'design-tips', title: 'Brief' }]
-    const full = { id: 7, slug: 'design-tips', title: 'Brief', body: 'Full' }
+    const list = [{ id: 7, $name: 'design-tips', title: 'Brief' }]
+    const full = { id: 7, $name: 'design-tips', title: 'Brief', body: 'Full' }
     const { entityStore, fetcherSpy, website } = makeHarness({
       fetcherImpl: (req) => req.path === '/data/articles.json'
         ? Promise.resolve({ data: list })
@@ -1257,8 +1292,8 @@ describe('on a question door a detail page asks its RECORD alone — the questio
 })
 
 describe('the route query names the key a parametric page narrows — at every level (ruled 2026-09-11)', () => {
-  const members = [{ slug: 'alice', name: 'Alice' }, { slug: 'bob', name: 'Bob' }]
-  const pubs = [{ slug: 'p1' }, { slug: 'p2' }]
+  const members = [{ $name: 'alice', name: 'Alice' }, { $name: 'bob', name: 'Bob' }]
+  const pubs = [{ $name: 'p1' }, { $name: 'p2' }]
   const membersFetch = { path: '/data/members.json', as: 'members' }
   const pubsFetch = { path: '/data/pubs.json', as: 'pubs' }
   const dynamicContext = { paramName: 'slug', paramValue: 'alice', params: { slug: 'alice', path: 'alice', dir: '' } }
@@ -1306,8 +1341,8 @@ describe('the route query names the key a parametric page narrows — at every l
 
 describe('a parametric page over a `multi` field delivers the record a member matches', () => {
   const people = [
-    { slug: 'ada', dept: ['biology'] },
-    { slug: 'lin', dept: ['geology', 'biology'] },
+    { $name: 'ada', dept: ['biology'] },
+    { $name: 'lin', dept: ['geology', 'biology'] },
   ]
   const fetchConfig = { path: '/data/people.json', as: 'people' }
   const harness = () => makeHarness({ fetcherImpl: () => Promise.resolve({ data: people }) })
@@ -1334,7 +1369,7 @@ describe('a parametric page\'s record is one of its route query\'s SET — past 
   // `limit` had cut, so `/blog/e` under a list's `limit: 2` rendered "not found". ⛔ From
   // then until 2026-09-14 no `limit` counted, the query's included, so a record outside
   // a query's `limit` still had a page.
-  const posts = ['a', 'b', 'c', 'd', 'e'].map((slug) => ({ slug, title: slug.toUpperCase() }))
+  const posts = ['a', 'b', 'c', 'd', 'e'].map((slug) => ({ $name: slug, title: slug.toUpperCase() }))
   const listFetch = { query: 'posts', as: 'posts', limit: 2 }
   const on = (slug) => ({ paramName: 'slug', paramValue: slug, params: { slug, path: slug, dir: '' } })
   const dynamicContext = on('e')

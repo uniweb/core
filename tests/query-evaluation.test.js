@@ -67,9 +67,13 @@ describe('`narrow` — what a fetch takes of the set, applied after it', () => {
     expect(slugs(evaluateQuery(notes, { ...query, narrow: { match: { n: '7' } } }))).toEqual(['note-7'])
   })
 
-  it('`narrow.match` reads the same map a route param does — `$name` falls back to a record\'s slug, a list matches member-wise', () => {
+  it('`narrow.match` reads the same map a route param does — `$name` alone, a list matches member-wise', () => {
     const external = [{ slug: 'a', dept: ['bio', 'geo'] }, { slug: 'b', dept: ['geo'] }]
-    expect(slugs(evaluateQuery(external, { narrow: { match: { $name: 'b' } } }))).toEqual(['b'])
+    // ⛔ A `slug` field is not the handle (2026-09-27): unnamed records match no `$name`…
+    expect(evaluateQuery(external, { narrow: { match: { $name: 'b' } } })).toEqual([])
+    // …and named by their query's `name_field:` (`nameRecords`), they do.
+    const named = external.map((r) => ({ ...r, $name: r.slug }))
+    expect(slugs(evaluateQuery(named, { narrow: { match: { $name: 'b' } } }))).toEqual(['b'])
     expect(slugs(evaluateQuery(external, { narrow: { match: { dept: 'bio' } } }))).toEqual(['a'])
   })
 

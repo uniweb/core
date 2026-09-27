@@ -266,7 +266,7 @@ export function isExternalQuery(decl) {
 }
 
 /** Keys a binding may not carry, whatever a stale payload holds — the query supplies them. */
-const QUERY_SUPPLIED = ['scope', 'url', 'method', 'body', 'transform', 'record', 'detail', 'envelope']
+const QUERY_SUPPLIED = ['scope', 'url', 'method', 'body', 'transform', 'record', 'detail', 'envelope', 'nameField']
 
 /**
  * Resolve a query reference to something the fetcher can call.
@@ -323,6 +323,9 @@ function resolveQuerySource(cfg, services, { queries = null, locale = null, defa
     if (decl.body !== undefined && decl.body !== null) out.body = decl.body
     if (typeof decl.transform === 'string' && decl.transform) out.transform = decl.transform
     if (decl.record && typeof decl.record === 'object') out.record = decl.record
+    // The field its records are named by — `$name` (`nameRecords`, `./route-match.js`).
+    // ⛔ Not `name`: a declaration's `name` is the query's own (`config.queries.posts.name`).
+    if (typeof decl.name_field === 'string' && decl.name_field) out.nameField = decl.name_field
     // a live endpoint is the browser's to fetch, unless the binding says otherwise
     if (out.prerender === undefined) out.prerender = false
     return setAndNarrow(out, decl, decl.where)

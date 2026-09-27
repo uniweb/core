@@ -12,7 +12,7 @@
  * a caller can rely on. A host matching identically depends on all of it.
  */
 
-import { recordHandle, recordTitle, routeParamValue, routeParamValues, matchesRouteParam, recordRouteBase,
+import { recordHandle, nameRecords, recordTitle, routeParamValue, routeParamValues, matchesRouteParam, recordRouteBase,
   matchDynamicRoute,
   findPageForRoute,
   routePatternToRegex,
@@ -206,14 +206,14 @@ describe('stripLocalePrefix', () => {
 
 describe('fillRoutePattern — the one encoder for a record\'s href', () => {
   it('fills each param from the record, percent-encoding the value', () => {
-    expect(fillRoutePattern('/blog/:slug', { slug: 'a-post' })).toBe('/blog/a-post')
-    expect(fillRoutePattern('/blog/:slug', { slug: 'b post' })).toBe('/blog/b%20post')
-    expect(fillRoutePattern('/:year/:slug', { year: 2026, slug: 'x' })).toBe('/2026/x')
+    expect(fillRoutePattern('/blog/:slug', { $name: 'a-post' })).toBe('/blog/a-post')
+    expect(fillRoutePattern('/blog/:slug', { $name: 'b post' })).toBe('/blog/b%20post')
+    expect(fillRoutePattern('/:year/:slug', { year: 2026, $name: 'x' })).toBe('/2026/x')
   })
 
   // A `/` in a value is the destructive case: raw, it makes a different route.
   it('encodes a slash, so a value never becomes an extra segment', () => {
-    expect(fillRoutePattern('/team/:slug', { slug: 'members/ada' })).toBe('/team/members%2Fada')
+    expect(fillRoutePattern('/team/:slug', { $name: 'members/ada' })).toBe('/team/members%2Fada')
   })
 
   it('reads a hyphenated param name — the same name class the matcher accepts', () => {
@@ -226,17 +226,17 @@ describe('fillRoutePattern — the one encoder for a record\'s href', () => {
 
   it('returns null — never a partial href — when a param has no value', () => {
     expect(fillRoutePattern('/blog/:slug', { title: 'no slug' })).toBeNull()
-    expect(fillRoutePattern('/blog/:slug', { slug: '' })).toBeNull()
-    expect(fillRoutePattern('/blog/:slug', { slug: null })).toBeNull()
+    expect(fillRoutePattern('/blog/:slug', { $name: '' })).toBeNull()
+    expect(fillRoutePattern('/blog/:slug', { $name: null })).toBeNull()
   })
 
   it('returns null on bad input rather than throwing', () => {
-    expect(fillRoutePattern(undefined, { slug: 'x' })).toBeNull()
+    expect(fillRoutePattern(undefined, { $name: 'x' })).toBeNull()
     expect(fillRoutePattern('/blog/:slug', null)).toBeNull()
   })
 
   it('round-trips through the matcher — what it emits, matchDynamicRoute captures back', () => {
-    const href = fillRoutePattern('/team/:slug', { slug: 'Ada Lovelace' })
+    const href = fillRoutePattern('/team/:slug', { $name: 'Ada Lovelace' })
     expect(matchDynamicRoute('/team/:slug', href)).toEqual({ params: { slug: 'Ada Lovelace' } })
   })
 })
@@ -320,14 +320,14 @@ describe('joinPathCapture — the split rule in reverse', () => {
 })
 
 describe('fillRoutePattern — a catch-all is filled from placement + handle, each segment encoded', () => {
-  it('fills `:path*` from `path` (the placement dir) and `slug`', () => {
-    expect(fillRoutePattern('/blog/:path*', { path: 'rust/2025', slug: 'my post' })).toBe('/blog/rust/2025/my%20post')
-    expect(fillRoutePattern('/blog/:path*', { path: '', slug: 'my-post' })).toBe('/blog/my-post')
-    expect(fillRoutePattern('/blog/:path*', { dir: 'a', slug: 'b' })).toBe('/blog/a/b')
+  it('fills `:path*` from `path` (the placement dir) and `$name`', () => {
+    expect(fillRoutePattern('/blog/:path*', { path: 'rust/2025', $name: 'my post' })).toBe('/blog/rust/2025/my%20post')
+    expect(fillRoutePattern('/blog/:path*', { path: '', $name: 'my-post' })).toBe('/blog/my-post')
+    expect(fillRoutePattern('/blog/:path*', { dir: 'a', $name: 'b' })).toBe('/blog/a/b')
   })
 
   it('a slash inside a SEGMENT is encoded, the slashes between segments are structure', () => {
-    expect(fillRoutePattern('/team/:path*', { path: 'research', slug: 'members/ada' })).toBe('/team/research/members%2Fada')
+    expect(fillRoutePattern('/team/:path*', { path: 'research', $name: 'members/ada' })).toBe('/team/research/members%2Fada')
   })
 
   it('returns null without a handle', () => {
@@ -335,26 +335,40 @@ describe('fillRoutePattern — a catch-all is filled from placement + handle, ea
   })
 
   it('round-trips through the matcher', () => {
-    const href = fillRoutePattern('/blog/:path*', { path: 'rust/2025', slug: 'my post' })
+    const href = fillRoutePattern('/blog/:path*', { path: 'rust/2025', $name: 'my post' })
     expect(matchDynamicRoute('/blog/:path*', href)).toEqual({ params: { path: 'rust/2025/my post' } })
   })
 })
 
 
-describe('the placement handle — `$name` on a live record, `slug` on a file-lane one', () => {
-  it('recordHandle prefers $name and falls back to slug', () => {
+// ⭐ `$name` on every lane — a records service's, the static build's, an external query named by
+// `name_field:`. ⛔ Until 2026-09-27 a record without it fell back to its `slug` FIELD [Diego:
+// "remove any notion that we, runtime/core, read `slug` from a record's field as if it had any
+// meaning to us"].
+describe('the placement handle — `$name`, and nothing else', () => {
+  it('recordHandle reads $name — a `slug` field is the author\'s data, never the handle', () => {
     expect(recordHandle({ $name: 'ada', slug: 'not-this' })).toBe('ada')
-    expect(recordHandle({ slug: 'ada' })).toBe('ada')
-    expect(recordHandle({ $name: '', slug: 'ada' })).toBe('ada')
+    expect(recordHandle({ slug: 'ada' })).toBeUndefined()
+    expect(recordHandle({ $name: '', slug: 'ada' })).toBeUndefined()
     expect(recordHandle({ title: 'no handle' })).toBeUndefined()
     expect(recordHandle(null)).toBeUndefined()
+  })
+
+  it('nameRecords names an external query\'s records by the field its `name_field:` says', () => {
+    expect(nameRecords([{ slug: 'a' }, { slug: 'b', $name: 'old' }], 'slug')).toEqual([{ slug: 'a', $name: 'a' }, { slug: 'b', $name: 'b' }])
+    expect(nameRecords({ id: 7 }, 'id')).toEqual({ id: 7, $name: '7' })
+    // a record with nothing there is left unnamed; so is one whose value is structure
+    expect(nameRecords([{ title: 'x' }, { id: { a: 1 } }], 'id')).toEqual([{ title: 'x' }, { id: { a: 1 } }])
+    // CONTROL — no `name_field:`, nothing named
+    const records = [{ slug: 'a' }]
+    expect(nameRecords(records, undefined)).toBe(records)
   })
 
   it('recordTitle — `title`, then `name`, then the handle (ruled 2026-09-14)', () => {
     expect(recordTitle({ $name: 'ada', title: 'On Engines', name: 'Ada Lovelace' })).toBe('On Engines')
     expect(recordTitle({ $name: 'ada', name: 'Ada Lovelace' })).toBe('Ada Lovelace')
     expect(recordTitle({ $name: 'ada' })).toBe('ada')
-    expect(recordTitle({ slug: 'ada' })).toBe('ada')
+    expect(recordTitle({ slug: 'ada' })).toBeUndefined()
     // a number is text a title can carry — `title: 2024` in YAML
     expect(recordTitle({ slug: 'y', title: 2024 })).toBe('2024')
   })
@@ -372,7 +386,7 @@ describe('the placement handle — `$name` on a live record, `slug` on a file-la
     const live = { $name: 'ada', id: 7, slug: 'model-field' }
     expect(routeParamValue(live, 'slug')).toBe('ada')
     expect(routeParamValue(live, 'id')).toBe(7)
-    expect(routeParamValue({ slug: 'ada' }, 'slug')).toBe('ada')
+    expect(routeParamValue({ slug: 'ada' }, 'slug')).toBeUndefined()
   })
 
   it('fillRoutePattern links a live record by its $name', () => {
@@ -380,8 +394,8 @@ describe('the placement handle — `$name` on a live record, `slug` on a file-la
     // at all — a list on a live lane linked to nothing.
     expect(fillRoutePattern('/team/:slug', { $name: 'ada lovelace' })).toBe('/team/ada%20lovelace')
     expect(fillRoutePattern('/docs/:path*', { $name: 'intro', path: 'guides/start' })).toBe('/docs/guides/start/intro')
-    // CONTROL — the file lane is unchanged
-    expect(fillRoutePattern('/team/:slug', { slug: 'ada' })).toBe('/team/ada')
+    // a record with no `$name` has no href — a `slug` field is not its handle
+    expect(fillRoutePattern('/team/:slug', { slug: 'ada' })).toBeNull()
     // a Model's own `slug` field does not override the placement
     expect(fillRoutePattern('/team/:slug', { $name: 'ada', slug: 'model-field' })).toBe('/team/ada')
   })
@@ -401,9 +415,9 @@ describe('what a folder name matches — one map for both lanes (ruled 2026-09-1
     expect(routeParamValue({}, 'uuid')).toBeUndefined()
   })
 
-  it('[slug] matches $name, else slug — and any other name its own field', () => {
+  it('[slug] matches $name — and any other name its own field', () => {
     expect(routeParamValue({ $name: 'ada', slug: 'x' }, 'slug')).toBe('ada')
-    expect(routeParamValue({ slug: 'x' }, 'slug')).toBe('x')
+    expect(routeParamValue({ slug: 'x' }, 'slug')).toBeUndefined()
     expect(routeParamValue({ id: 7 }, 'id')).toBe(7)
   })
 })

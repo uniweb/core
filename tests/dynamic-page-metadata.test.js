@@ -53,7 +53,7 @@ describe('the probe reads the key the store writes', () => {
     const w = site(LIVE)
     // What the entity store writes for `{ query: 'articles' }` on this lane.
     w.dataStore.set(listKey(w), {
-      data: [{ slug: 'hello', title: 'Hello World' }],
+      data: [{ $name: 'hello', title: 'Hello World' }],
     })
     const page = w.getPage('/blog/hello')
     expect(page.title).toBe('Hello World')
@@ -62,7 +62,7 @@ describe('the probe reads the key the store writes', () => {
   it('on a live lane a missing record is a definitive not-found once the list is cached', () => {
     const w = site(LIVE)
     w.dataStore.set(listKey(w), {
-      data: [{ slug: 'hello', title: 'Hello World' }],
+      data: [{ $name: 'hello', title: 'Hello World' }],
     })
     const page = w.getPage('/blog/nope')
     expect(page.notFound).toBe(true)
@@ -87,7 +87,7 @@ describe('the probe reads the key the store writes', () => {
     w.setActiveLocale?.('fr')
     w.activeLocale = 'fr'
     w.dataStore.set(deriveCacheKey({ query: 'articles', as: 'articles', path: '/fr/data/articles.json' }), {
-      data: [{ slug: 'bonjour', title: 'Bonjour' }],
+      data: [{ $name: 'bonjour', title: 'Bonjour' }],
     })
     const page = w.getPage('/fr/blog/bonjour')
     expect(page.title).toBe('Bonjour')
@@ -96,7 +96,7 @@ describe('the probe reads the key the store writes', () => {
   it('CONTROL — the static lane, default locale, still resolves as before', () => {
     const w = site()
     w.dataStore.set(deriveCacheKey({ query: 'articles', as: 'articles', path: '/data/articles.json' }), {
-      data: [{ slug: 'hello', title: 'Hello World' }],
+      data: [{ $name: 'hello', title: 'Hello World' }],
     })
     expect(w.getPage('/blog/hello').title).toBe('Hello World')
   })
@@ -107,7 +107,7 @@ describe('the page is about one record, so the record is asked first (F3)', () =
     const w = site(LIVE)
     // Only the detail question landed (the door answers one record by its handle).
     w.dataStore.set(recordKey(w, 'hello'), {
-      data: [{ slug: 'hello', title: 'Hello World', description: 'The one' }],
+      data: [{ $name: 'hello', title: 'Hello World', description: 'The one' }],
     })
     const page = w.getPage('/blog/hello')
     expect(page.title).toBe('Hello World')
@@ -118,7 +118,7 @@ describe('the page is about one record, so the record is asked first (F3)', () =
   it('and caches the resolved page, since the record was available', () => {
     const w = site(LIVE)
     w.dataStore.set(recordKey(w, 'hello'), {
-      data: [{ slug: 'hello', title: 'Hello World' }],
+      data: [{ $name: 'hello', title: 'Hello World' }],
     })
     expect(w.getPage('/blog/hello')).toBe(w.getPage('/blog/hello'))
   })
@@ -169,7 +169,7 @@ describe('the record names the page by the one title rule — `recordTitle` (rul
   it('on the file lane the list\'s record is titled by the same rule', () => {
     const w = site()
     w.dataStore.set(deriveCacheKey({ query: 'articles', as: 'articles', path: '/data/articles.json' }), {
-      data: [{ slug: 'ada', name: 'Ada Lovelace' }],
+      data: [{ $name: 'ada', name: 'Ada Lovelace' }],
     })
     expect(w.getPage('/blog/ada').title).toBe('Ada Lovelace')
   })
@@ -288,7 +288,7 @@ describe('a [...path] template binds its capture to the standard variables', () 
   it('delivers by slug, the last segment, and exposes path and dir', () => {
     const w = pathSite()
     w.dataStore.set(deriveCacheKey({ query: 'posts', as: 'posts', path: '/data/posts.json' }), {
-      data: [{ slug: 'my-post', path: 'rust/2025', title: 'Rust post' }],
+      data: [{ $name: 'my-post', path: 'rust/2025', title: 'Rust post' }],
     })
     const page = w.getPage('/blog/rust/2025/my-post')
     expect(page.dynamicContext).toEqual({
@@ -334,7 +334,7 @@ describe('a [...path] template binds its capture to the standard variables', () 
 })
 
 describe('the route query is chosen at the page level — the page, its parent, the site (ruled 2026-09-11)', () => {
-  const people = [{ slug: 'ada', title: 'Ada' }]
+  const people = [{ $name: 'ada', title: 'Ada' }]
   const withPages = (pages, config = {}) => new Website({
     content: { config: { name: 'T', defaultLanguage: 'en', ...config }, theme: {}, pages },
   })
@@ -377,7 +377,7 @@ describe('the route query is chosen at the page level — the page, its parent, 
       { route: '/', isIndex: true, title: 'Home', sections: [], fetch: { query: 'news', path: '/data/news.json', as: 'news' } },
       { route: '/:slug', isDynamic: true, paramName: 'slug', title: 'Person', sections: [] },
     ], { fetch: { query: 'people', path: '/data/people.json', as: 'people' } })
-    w.dataStore.set(key('news'), { data: [{ slug: 'ada', title: 'A news item' }] })
+    w.dataStore.set(key('news'), { data: [{ $name: 'ada', title: 'A news item' }] })
     w.dataStore.set(key('people'), { data: people })
     const page = w.getPage('/ada')
     expect(page.parent).toBeNull()
@@ -411,7 +411,7 @@ describe('a page nested inside a parametric page is parametric too (ruled 2026-0
 
   it('routes, binds its ancestor\'s param, and inherits from the parametric page above it', () => {
     const w = nestedSite()
-    w.dataStore.set(deriveCacheKey({ path: '/data/members.json', as: 'members' }), { data: [{ slug: 'alice', title: 'Alice' }] })
+    w.dataStore.set(deriveCacheKey({ path: '/data/members.json', as: 'members' }), { data: [{ $name: 'alice', title: 'Alice' }] })
     const page = w.getPage('/members/alice/cv')
     expect(page.route).toBe('/members/alice/cv')
     expect(page.dynamicContext).toMatchObject({ paramName: 'slug', paramValue: 'alice', params: { slug: 'alice', path: 'alice', dir: '' } })
@@ -436,7 +436,7 @@ describe('a parametric page\'s record is one of its route query\'s set — a fet
       ],
     },
   })
-  const records = [{ slug: 'hello', title: 'Hello' }, { slug: 'world', title: 'World' }]
+  const records = [{ $name: 'hello', title: 'Hello' }, { $name: 'world', title: 'World' }]
   const file = { query: 'articles', as: 'articles', path: '/data/articles.json' }
 
   it('the list a fetch narrowed claims nothing about a record past its count', () => {
@@ -481,7 +481,7 @@ describe('a page nested inside a parametric page is titled by its record (ruled 
   it('its route query is the capturing page\'s — declared two levels up', () => {
     const w = nested()
     w.dataStore.set(deriveCacheKey({ query: 'members', as: 'members', path: '/data/members.json' }), {
-      data: [{ slug: 'ada', title: 'Ada Lovelace' }],
+      data: [{ $name: 'ada', title: 'Ada Lovelace' }],
     })
     expect(w.getPage('/team/ada/cv').title).toBe('Ada Lovelace')
     expect(w.getPage('/team/nobody/cv').notFound).toBe(true)
