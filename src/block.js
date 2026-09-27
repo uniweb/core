@@ -171,6 +171,13 @@ export default class Block {
     // Supports local files (path) or remote URLs (url)
     this.fetch = blockData.fetch || null
 
+    // The layout the author chose for this section's child sections — the reserved
+    // `grid:` section key [Diego, 2026-09-27]: `3` (equal columns) or `'40/60'`
+    // (relative widths). Carried as written; kit's `ChildGrid` lays the children out
+    // from it (`@uniweb/schemas/grid`). A section key, never a param: a component
+    // declares the layouts it offers in `meta.js` `children.grid`.
+    this.grid = blockData.grid ?? null
+
     // Data loading state — set by BlockRenderer when a runtime fetch is in progress
     // Components check this to show loading UI (spinners, skeletons)
     this.dataLoading = false
