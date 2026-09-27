@@ -30,7 +30,9 @@ const listCfg = (w) => resolveFetchConfigs([{ query: 'articles', path: '/data/ar
   locale: w.getActiveLocale?.() ?? null, defaultLocale: w.getDefaultLocale?.() ?? null,
 }).get('articles')
 const listKey = (w) => deriveCacheKey(listCfg(w))
-const recordKey = (w, slug) => deriveCacheKey(buildDetailConfig(listCfg(w), { paramName: 'slug', paramValue: slug }))
+// ⭐ A page names itself from its record's BRIEF — the record question asked without `whole`
+// (2026-09-27): a whole record is a section's to ask for, when its component declares `/*`.
+const recordKey = (w, slug) => deriveCacheKey(buildDetailConfig(listCfg(w), { paramName: 'slug', paramValue: slug }, { whole: false }))
 
 function site(config = {}) {
   return new Website({

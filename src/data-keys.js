@@ -24,31 +24,42 @@
 
 import { fetchEntries } from './fetch-config.js'
 
+/** The suffix that asks for whole records: `'@std/article/*'`. */
+export const WHOLE_SUFFIX = '/*'
+
 /**
- * A declared key's schema ref, as `data:` spells it: a ref string (`'@std/article'`), an
- * entry naming one (`{ schema: '@/member' }`), or null for an inline shape — a field map
- * or a form — which names no schema.
+ * A declared key's schema ref, and whether its component expects WHOLE records — as `data:`
+ * spells it: a ref string (`'@std/article'`), an entry naming one (`{ schema: '@/member' }`),
+ * or neither for an inline shape — a field map or a form — which names no schema.
+ *
+ * ⭐ `/*` after the ref asks for whole records (`'@std/article/*'`) — the record as stored, one
+ * key per section — where a bare ref asks for briefs, the brief's fields at the top (ruled
+ * 2026-09-27 [Diego]). The runtime asks each key's question accordingly; a key declared whole
+ * that its fetch cannot fill whole is `null`.
  *
  * @param {*} value - one `data:` entry's value, authored or leaned
- * @returns {string|null}
+ * @returns {{ ref: string|null, whole: boolean }}
  */
-function refOf(value) {
-  if (typeof value === 'string') return value || null
-  if (value && typeof value === 'object' && typeof value.schema === 'string') return value.schema || null
-  return null
+export function dataRefOf(value) {
+  const raw = typeof value === 'string'
+    ? value
+    : (value && typeof value === 'object' && typeof value.schema === 'string' ? value.schema : '')
+  if (!raw) return { ref: null, whole: false }
+  if (raw.endsWith(WHOLE_SUFFIX)) return { ref: raw.slice(0, -WHOLE_SUFFIX.length) || null, whole: true }
+  return { ref: raw, whole: false }
 }
 
 /**
- * The keys a section's component receives, in order, each with its schema ref — its
- * component's `data:` first, then its foundation's. A key both declare is the
- * component's.
+ * The keys a section's component receives, in order, each with its schema ref and whether
+ * it expects whole records (`dataRefOf`) — its component's `data:` first, then its
+ * foundation's. A key both declare is the component's.
  *
  * `data: false`, a missing `data:` or anything that is not a map declares nothing. Each
  * value may be as authored or as the build leans it (`{ key: ref|null }`).
  *
  * @param {Object|false|null|undefined} componentData - the component's `data:`
  * @param {Object|false|null|undefined} [foundationData] - its foundation's `main.js` `data:`
- * @returns {Array<[string, string|null]>}
+ * @returns {Array<[string, string|null, boolean]>} `[key, ref, whole]`
  */
 export function declaredKeys(componentData, foundationData = null) {
   const out = []
@@ -58,7 +69,8 @@ export function declaredKeys(componentData, foundationData = null) {
     for (const [key, value] of Object.entries(data)) {
       if (!key || seen.has(key)) continue
       seen.add(key)
-      out.push([key, refOf(value)])
+      const { ref, whole } = dataRefOf(value)
+      out.push([key, ref, whole])
     }
   }
   return out
@@ -116,7 +128,7 @@ function parseRef(ref) {
  * The mapping says where an answer lands; it renames no fetch. A fetch keeps its `as`
  * for its question, its cache key and its prefetch.
  *
- * @param {Array<[string, string|null]>} declared - `declaredKeys`
+ * @param {Array<[string, string|null, boolean]>} declared - `declaredKeys`
  * @param {Array<*>} levels - each level's `fetch`, most specific first; falsy levels skipped
  * @param {Object} [options]
  * @param {Object|null} [options.queries] - the site's `config.queries`, for each fetch's

@@ -1,27 +1,52 @@
 import { describe, it, expect } from 'vitest'
-import { declaredKeys, sameSchema, fillDeclaredKeys } from '../src/data-keys.js'
+import { declaredKeys, sameSchema, fillDeclaredKeys, dataRefOf } from '../src/data-keys.js'
 
 describe('declaredKeys — what a section\'s component receives (ruled 2026-09-14)', () => {
   it('the component\'s keys in order, then its foundation\'s, each with its schema ref', () => {
     expect(declaredKeys(
       { post: '@std/article', form: { fields: [{ id: 'name' }] }, team: { schema: '@/member' } },
       { profile: '@/profile' },
-    )).toEqual([['post', '@std/article'], ['form', null], ['team', '@/member'], ['profile', '@/profile']])
+    )).toEqual([['post', '@std/article', false], ['form', null, false], ['team', '@/member', false], ['profile', '@/profile', false]])
   })
 
   it('a key both declare is the component\'s', () => {
-    expect(declaredKeys({ profile: '@/cv' }, { profile: '@/profile', site: {} })).toEqual([['profile', '@/cv'], ['site', null]])
+    expect(declaredKeys({ profile: '@/cv' }, { profile: '@/profile', site: {} })).toEqual([['profile', '@/cv', false], ['site', null, false]])
   })
 
   it('reads the build\'s lean map as it reads the authored one', () => {
-    expect(declaredKeys({ post: '@std/article', notes: null })).toEqual([['post', '@std/article'], ['notes', null]])
+    expect(declaredKeys({ post: '@std/article', notes: null })).toEqual([['post', '@std/article', false], ['notes', null, false]])
   })
 
   it('`data: false`, no `data:`, or a list declare nothing — the foundation\'s keys still reach the section', () => {
     expect(declaredKeys(false)).toEqual([])
     expect(declaredKeys(undefined)).toEqual([])
     expect(declaredKeys(['articles'])).toEqual([])
-    expect(declaredKeys(false, { profile: '@/profile' })).toEqual([['profile', '@/profile']])
+    expect(declaredKeys(false, { profile: '@/profile' })).toEqual([['profile', '@/profile', false]])
+  })
+})
+
+// ⭐ `/*` after a ref asks for WHOLE records — the record as stored — where a bare ref asks for
+// briefs (ruled 2026-09-27 [Diego]).
+describe('a `data:` ref that asks for whole records', () => {
+  it('`/*` after the ref, in either spelling, is whole; the ref is what precedes it', () => {
+    expect(dataRefOf('@std/article/*')).toEqual({ ref: '@std/article', whole: true })
+    expect(dataRefOf({ schema: '@/member/*' })).toEqual({ ref: '@/member', whole: true })
+    expect(declaredKeys({ post: '@std/article/*', list: '@std/article' })).toEqual([
+      ['post', '@std/article', true],
+      ['list', '@std/article', false],
+    ])
+  })
+
+  it('CONTROL — a bare ref, an inline shape and nothing at all ask for briefs', () => {
+    expect(dataRefOf('@std/article')).toEqual({ ref: '@std/article', whole: false })
+    expect(dataRefOf({ fields: [{ id: 'x' }] })).toEqual({ ref: null, whole: false })
+    expect(dataRefOf(null)).toEqual({ ref: null, whole: false })
+  })
+
+  it('a key declared whole is filled by the same fetch — the ref, not the suffix, is matched', () => {
+    const queries = { articles: { schema: '@std/article' } }
+    const map = fillDeclaredKeys(declaredKeys({ post: '@std/article/*' }), [{ query: 'articles', as: 'articles' }], { queries })
+    expect([...map.keys()]).toEqual(['post'])
   })
 })
 

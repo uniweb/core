@@ -24,7 +24,7 @@ export { substitutePlaceholders } from './substitute-placeholders.js'
 // reads them and a consumer that needs them imports `@uniweb/core/records-service`.
 export { resolveFetchConfigs, routeQuery, pageRouteQuery, routeSelection, sectionFetches, siteReaches, withoutRouteVariables, CURRENT_MODES, currentFor } from './fetch-config.js'
 export { buildDetailConfig, ROUTE_HANDLE_KEY } from './detail-url.js'
-export { declaredKeys, sameSchema, fillDeclaredKeys } from './data-keys.js'
+export { declaredKeys, sameSchema, fillDeclaredKeys, dataRefOf, WHOLE_SUFFIX } from './data-keys.js'
 // ⭐ What a page needs — the one rule. `fetchLevels` is the part every lane has an answer for
 // (which fetches reach a block); the drivers and the per-key program are `@uniweb/core/page-data`.
 export { fetchLevels } from './page-data.js'
@@ -64,7 +64,7 @@ export { applyScope, withinScope } from './scope.js'
 export { parseSort, sortRecords, sortToWire } from './sort.js'
 // A config's set, then its `narrow` — the one order of work the runtime's default
 // fetcher and `@uniweb/build` both evaluate a fetch with.
-export { evaluateQuery } from './query-evaluation.js'
+export { evaluateQuery, mapQueryPaths } from './query-evaluation.js'
 export {
   fillRoutePattern,
   splitPathCapture,

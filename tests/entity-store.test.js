@@ -54,6 +54,14 @@ function makeBlock(overrides = {}, website = null) {
 const declaring = (...keys) => ({ data: Object.fromEntries(keys.map((key) => [key, null])) })
 const ANY = declaring('articles', 'members', 'posts', 'related', 'pubs', 'teams', 'post', 'people', 'categories', 'tags', 'pager', 'news', 'highlights', 'devfail', 'article', 'key', 'config')
 
+/**
+ * The meta of a component that expects its keys' records WHOLE (`'@x/y/*'`, ruled 2026-09-27
+ * [Diego]): each is asked whole — a parametric page's record by its own request, a list off the
+ * records service record by record. A key declared without `/*` gets briefs.
+ */
+const declaringWhole = (...keys) => ({ data: Object.fromEntries(keys.map((key) => [key, `@test/${key}/*`])) })
+const WHOLE = declaringWhole('articles', 'members')
+
 function makePage(overrides = {}) {
   return {
     // A page's route pattern — a parametric one, so a page given a `dynamicContext`
@@ -236,12 +244,42 @@ describe('EntityStore.fetch', () => {
     const page = makePage({ parent, dynamicContext })
     const block = makeBlock({ page }, website)
 
-    const result = await entityStore.fetch(block, ANY)
+    const result = await entityStore.fetch(block, WHOLE)
     expect(result.data.articles).toEqual([detailArticle])
     expect(fetcherSpy).toHaveBeenCalledWith(
       expect.objectContaining({ url: 'https://api.example.com/articles/my-post', as: 'articles', transform: 'data' }),
       expect.anything(),
     )
+  })
+
+  // ⭐ An external query's records have no data schema, so they have no brief: the record is its
+  // own request's answer whatever the component expects — as the records service answers a Model
+  // with no brief whole, even as a brief (2026-09-27).
+  it('an external query\'s record: fetched on its own for a component expecting briefs too', async () => {
+    const collectionItem = { slug: 'my-post', title: 'My Post' }
+    const detailArticle = { ...collectionItem, body: 'Full' }
+    const { entityStore, fetcherSpy, website } = makeHarness({
+      fetcherImpl: (req) => Promise.resolve({ data: req.url === 'https://api.example.com/articles' ? [collectionItem] : detailArticle }),
+    })
+    externalSite(website, { url: 'https://api.example.com/articles/{slug}', transform: 'data' })
+    const dynamicContext = { paramName: 'slug', paramValue: 'my-post' }
+    const page = makePage({ parent: makePage({ fetch: { query: 'articles', as: 'articles' } }), dynamicContext })
+    const result = await entityStore.fetch(makeBlock({ page }, website), ANY)
+    expect(result.data.articles).toEqual([detailArticle])
+    expect(fetcherSpy).toHaveBeenCalledTimes(2)
+  })
+
+  it('CONTROL — a compiled query\'s record, for a component expecting briefs, is the one the list holds: no record request', async () => {
+    const collectionItem = { $name: 'my-post', title: 'My Post' }
+    const { entityStore, fetcherSpy, website } = makeHarness({
+      fetcherImpl: () => Promise.resolve({ data: [collectionItem] }),
+    })
+    website.config = { queries: { articles: {} } }
+    const dynamicContext = { paramName: 'slug', paramValue: 'my-post' }
+    const page = makePage({ parent: makePage({ fetch: { query: 'articles', as: 'articles' } }), dynamicContext })
+    const result = await entityStore.fetch(makeBlock({ page }, website), ANY)
+    expect(result.data.articles).toEqual([collectionItem])
+    expect(fetcherSpy).toHaveBeenCalledTimes(1)
   })
 
   it('uses the cached list as the gate, then fetches the record', async () => {
@@ -260,7 +298,7 @@ describe('EntityStore.fetch', () => {
     const page = makePage({ parent, dynamicContext })
     const block = makeBlock({ page }, website)
 
-    const result = await entityStore.fetch(block, ANY)
+    const result = await entityStore.fetch(block, WHOLE)
     expect(result.data.articles).toEqual([detailArticle])
     expect(fetcherSpy).toHaveBeenCalledTimes(1)
     expect(fetcherSpy).toHaveBeenCalledWith(
@@ -764,7 +802,7 @@ describe('⭐ declared keys — a section receives what its component declares, 
     const block = { fetch: null, dynamicContext: null, page: { route: '/', fetch: null, parent: null, dynamicContext: null }, website: w }
     const result = await w.entityStore.fetch(block, null)
     expect(result.data.profile).toEqual(profile)
-    expect(w.declaredKeys({ data: { posts: '@/post' } })).toEqual([['posts', '@/post'], ['profile', '@/profile']])
+    expect(w.declaredKeys({ data: { posts: '@/post' } })).toEqual([['posts', '@/post', false], ['profile', '@/profile', false]])
   })
 })
 
@@ -973,10 +1011,30 @@ describe('⛔ a failed fetch delivers NOTHING under its key, and says so', () =>
     expect(result.errors).toEqual({ articles: 'down' })
   })
 
-  it('a failed DETAIL fetch keeps the record the list matched — never [[]]', async () => {
-    // `result.data ?? match` delivered `[[]]` here, because a failure's data is
-    // `[]`, not null. The brief the list matched is a held value; keep it.
-    const list = [{ slug: 'my-post', title: 'Brief' }]
+  // ⛔ Until 2026-09-27 a failed record request kept the brief the list matched. A component that
+  // expects the whole record cannot read a brief in its place, so nothing is delivered, and it says why.
+  it('a failed RECORD fetch delivers nothing under the key and says so — never the brief in its place', async () => {
+    const list = [{ $name: 'my-post', title: 'Brief' }]
+    const { entityStore, website } = makeHarness({
+      fetcherImpl: (req) => req.path === '/data/articles.json'
+        ? Promise.resolve({ data: list })
+        : Promise.resolve({ data: [], error: 'HTTP 500' }),
+    })
+    website.config = { queries: { articles: {} } }
+    const dynamicContext = { paramName: 'slug', paramValue: 'my-post' }
+    const parent = makePage({ fetch: { query: 'articles', as: 'articles' } })
+    const page = makePage({ parent, dynamicContext })
+    const block = makeBlock({ page }, website)
+
+    const result = await entityStore.fetch(block, WHOLE)
+    expect(result.data.articles).toBeUndefined()
+    expect(result.errors).toEqual({ articles: 'HTTP 500' })
+  })
+
+  // An external query's record has no brief to stand in for: what the list holds of it IS it, so a
+  // failed request of its own keeps that, and says so.
+  it('an external query\'s failed RECORD fetch keeps the record the list holds, and says so', async () => {
+    const list = [{ slug: 'my-post', title: 'Listed' }]
     const { entityStore, website } = makeHarness({
       fetcherImpl: (req) => req.url === 'https://api.example.com/articles'
         ? Promise.resolve({ data: list })
@@ -984,12 +1042,10 @@ describe('⛔ a failed fetch delivers NOTHING under its key, and says so', () =>
     })
     website.config = { queries: { articles: { url: 'https://api.example.com/articles', record: { url: 'https://api.example.com/articles/{slug}' } } } }
     const dynamicContext = { paramName: 'slug', paramValue: 'my-post' }
-    const parent = makePage({ fetch: { query: 'articles', as: 'articles' } })
-    const page = makePage({ parent, dynamicContext })
-    const block = makeBlock({ page }, website)
+    const page = makePage({ parent: makePage({ fetch: { query: 'articles', as: 'articles' } }), dynamicContext })
 
-    const result = await entityStore.fetch(block, ANY)
-    expect(result.data.articles).toEqual([{ slug: 'my-post', title: 'Brief' }])
+    const result = await entityStore.fetch(makeBlock({ page }, website), ANY)
+    expect(result.data.articles).toEqual(list)
     expect(result.errors).toEqual({ articles: 'HTTP 500' })
   })
 
@@ -1048,7 +1104,7 @@ describe('the record in hand reaches the detail address', () => {
     const page = makePage({ parent, dynamicContext })
     const block = makeBlock({ page }, website)
 
-    const result = await entityStore.fetch(block, ANY)
+    const result = await entityStore.fetch(block, WHOLE)
     expect(result.data.articles).toEqual([full])
     expect(fetcherSpy).toHaveBeenCalledWith(
       expect.objectContaining({ path: '/data/articles/design-tips.json' }),
@@ -1086,30 +1142,31 @@ describe('R1 on a detail page — a record held in full is delivered, not fetche
         ? Promise.resolve({ data: [fullAda], meta: { whole: true } })
         : Promise.resolve({ data: briefs, meta: { whole: false } })
     })
-    const first = await entityStore.fetch(makeBlock({ page: detailPage() }, website), ANY)
+    const first = await entityStore.fetch(makeBlock({ page: detailPage() }, website), WHOLE)
     expect(first.data.members).toEqual([fullAda])
     // ⭐ the record question checks the set, so no list is asked beside it (2026-09-14)
     expect(calls).toEqual(['record'])
 
     // second visit: the question is cached under its own key — no request
-    const second = await entityStore.fetch(makeBlock({ page: detailPage() }, website), ANY)
+    const second = await entityStore.fetch(makeBlock({ page: detailPage() }, website), WHOLE)
     expect(second.data.members).toEqual([fullAda])
     expect(calls).toHaveLength(1)
-    const resolved = entityStore.resolve(makeBlock({ page: detailPage() }, website), ANY)
+    const resolved = entityStore.resolve(makeBlock({ page: detailPage() }, website), WHOLE)
     expect(resolved.status).toBe('ready')
     expect(resolved.data.members).toEqual([fullAda])
   })
 
-  it('the list page then sees the upgraded record too — R3, through the index', async () => {
+  // ⛔ Until 2026-09-27 the list page then showed the whole record merged over its brief (R3). A
+  // brief and a whole record are two shapes, held apart, so the list keeps its briefs.
+  it('the list page keeps its briefs after a record was fetched whole', async () => {
     const { entityStore, website } = liveHarness((req) =>
       isRecord(req)
         ? Promise.resolve({ data: [fullAda], meta: { whole: true } })
         : Promise.resolve({ data: briefs, meta: { whole: false } }),
     )
-    await entityStore.fetch(makeBlock({ page: detailPage() }, website), ANY)
+    await entityStore.fetch(makeBlock({ page: detailPage() }, website), WHOLE)
     const list = await entityStore.fetch(makeBlock({ page: makePage({ fetch: { query: 'members', as: 'members' } }) }, website), ANY)
-    expect(list.data.members.find((r) => r.$uuid === 'u1').bio).toBe('Full bio')
-    expect(list.data.members.find((r) => r.$uuid === 'u2')).toEqual(briefs[1])
+    expect(list.data.members).toEqual(briefs)
   })
 
   it('CONTROL — a record with no identity is still delivered, cached by its question', async () => {
@@ -1121,9 +1178,9 @@ describe('R1 on a detail page — a record held in full is delivered, not fetche
         ? Promise.resolve({ data: [{ $name: 'ada', bio: 'x' }], meta: { whole: true } })
         : Promise.resolve({ data: noIds, meta: { whole: false } })
     })
-    const first = await entityStore.fetch(makeBlock({ page: detailPage() }, website), ANY)
+    const first = await entityStore.fetch(makeBlock({ page: detailPage() }, website), WHOLE)
     expect(first.data.members).toEqual([{ $name: 'ada', bio: 'x' }])
-    await entityStore.fetch(makeBlock({ page: detailPage() }, website), ANY)
+    await entityStore.fetch(makeBlock({ page: detailPage() }, website), WHOLE)
     expect(calls.filter((c) => c === 'record')).toHaveLength(1) // cached by key, not by index
   })
 })
@@ -1149,14 +1206,29 @@ describe('on a question door a detail page asks its RECORD alone — the questio
     const parent = makePage({ fetch: { query: 'members', as: 'members', limit: 5 } })
     const page = makePage({ parent, dynamicContext })
 
-    const result = await entityStore.fetch(makeBlock({ page }, website), ANY)
+    const result = await entityStore.fetch(makeBlock({ page }, website), WHOLE)
     expect(result.data.members).toEqual([{ $uuid: 'u1', $name: 'ada', name: 'Ada', bio: 'Full' }])
     // ⭐ one question: the set — its sort and limit — narrowed to the record; the author's `where` untouched
     expect(asked).toEqual([{ whole: true, where: undefined, sort: 'name', limit: 100, narrow: { match: { $name: 'ada' } } }])
     // second visit: the record's answer is cached under its own key; the sync path delivers it
-    const resolved = entityStore.resolve(makeBlock({ page }, website), ANY)
+    const resolved = entityStore.resolve(makeBlock({ page }, website), WHOLE)
     expect(resolved.status).toBe('ready')
     expect(resolved.data.members[0].bio).toBe('Full')
+  })
+
+  it('a component expecting briefs asks the same question without `whole`, and gets the brief', async () => {
+    const asked = []
+    const { entityStore, website } = makeHarness({
+      fetcherImpl: (req) => {
+        asked.push({ whole: req.whole, narrow: req.narrow })
+        return Promise.resolve({ data: [{ $uuid: 'u1', $name: 'ada', name: 'Ada' }], meta: { whole: false } })
+      },
+    })
+    website.config = { services: SERVICES, queries: QUERIES }
+    const page = makePage({ parent: makePage({ fetch: { query: 'members', as: 'members' } }), dynamicContext: { paramName: 'slug', paramValue: 'ada' } })
+    const result = await entityStore.fetch(makeBlock({ page }, website), ANY)
+    expect(result.data.members).toEqual([{ $uuid: 'u1', $name: 'ada', name: 'Ada' }])
+    expect(asked).toEqual([{ whole: undefined, narrow: { match: { $name: 'ada' } } }])
   })
 
   it('an empty answer is not-found — the record is not in the set', async () => {

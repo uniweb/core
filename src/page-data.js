@@ -80,13 +80,13 @@ export function fetchLevels({ own = null, page = null, parent = null, route = nu
  * Each filling fetch is resolved on its own, so two fetches of one `as` can fill two keys.
  *
  * @param {Object} input
- * @param {Array<[string, string|null]>} input.declared - `declaredKeys(meta)`
+ * @param {Array<[string, string|null, boolean]>} input.declared - `declaredKeys(meta)`
  * @param {Array<*>} input.levels - `fetchLevels`
  * @param {Object} [input.holds] - what the block already holds, by key
  * @param {Object|null} [input.queries] - the site's `config.queries`
  * @param {Object} [input.options] - what each fetch is resolved with (`resolveFetchConfigs`)
- * @returns {Map<string, { cfg: Object, held: * }>} declared key → its filling config, in the order
- *   `declared` lists the keys
+ * @returns {Map<string, { cfg: Object, held: *, whole: boolean }>} declared key → its filling config,
+ *   and whether its component expects whole records, in the order `declared` lists the keys
  */
 export function blockFills({ declared, levels, holds = {}, queries = null, options = {} }) {
   const out = new Map()
@@ -102,11 +102,12 @@ export function blockFills({ declared, levels, holds = {}, queries = null, optio
     if (!firstOfKey.has(fetch.as)) firstOfKey.set(fetch.as, `${at}:${index}`)
   }))
 
+  const wholeKeys = new Set(declared.filter(([, , whole]) => whole).map(([key]) => key))
   for (const [key, { fetch, level, index }] of fills) {
     const cfg = resolveFetchConfigs([fetch], options).get(fetch.as)
     if (!cfg) continue
     const held = firstOfKey.get(fetch.as) === `${level}:${index}` ? holds[fetch.as] : undefined
-    out.set(key, { cfg, held })
+    out.set(key, { cfg, held, whole: wholeKeys.has(key) })
   }
   return out
 }
@@ -153,14 +154,23 @@ function heldWhole(peekRecord, match) {
 
 /**
  * (c) + (d) One declared key's program: the requests it needs, in order, and what its answers
- * become. Each `yield` is a request; what comes back is `{ data, error }` — a driver dispatching
- * may report an error, a driver reading the cache never does, because the cache holds answers
- * only.
+ * become. Each `yield` is a request — or a list of requests asked together — and what comes back is
+ * `{ data, error }` (a list of them for a list) — a driver dispatching may report an error, a driver
+ * reading the cache never does, because the cache holds answers only.
+ *
+ * ⭐ **What is asked follows what the component expects** (`whole`, from its `data:` —
+ * `'@std/article/*'`; ruled 2026-09-27 [Diego]). Briefs by default: the records service's question
+ * as it is, a compiled file's list, and on a parametric page the record FOUND in its query's set.
+ * Whole records when declared: the question carries `whole: true`, and a list off the service is
+ * followed by each record's own request. A key declared whole that cannot be filled whole — its
+ * source has no request for one record — is `null`: the contract cannot be met. An external query's
+ * records have no data schema and so no brief: what its source answers is each record whole.
  *
  * ⛔ **A failed request delivers NOTHING under its key, and says so.** The key is absent from the
  * returned value and the message rides on `error`, because `[]` is a value: a request that failed
- * must not be indistinguishable from a query with no records. The one exception is the record's
- * own request on a page that already matched it in the set — there the brief is kept.
+ * must not be indistinguishable from a query with no records. ⛔ Until 2026-09-27 a parametric
+ * page's record was always asked whole, and a failed record request kept the brief the set held —
+ * one shape standing in for the other.
  *
  * @param {Object} cfg - the filling fetch, resolved
  * @param {Object} where
@@ -177,13 +187,22 @@ function heldWhole(peekRecord, match) {
  *   page may already hold the set, and the record is in it — so a miss falls through to the set,
  *   and a record found there answers with the brief it holds. No value at all means *unknown*,
  *   which is not the same as `[]`, *not in the set*.
- * @returns {Generator<Object, { value?: *, error?: string, errorConfig?: Object }>}
+ * @param {boolean} [where.whole] - the component expects whole records
+ * @returns {Generator<Object|Object[], { value?: *, error?: string, errorConfig?: Object }>}
  */
-export function* keyProgram(cfg, { dynamicContext = null, route = null, held = undefined, peekRecord = null, current: forced = null, opportunistic = false } = {}) {
+export function* keyProgram(cfg, { dynamicContext = null, route = null, held = undefined, peekRecord = null, current: forced = null, opportunistic = false, whole = false } = {}) {
   /** A step this caller can do without: a miss answers `{ missing: true }` instead of stopping. */
   const maybe = (request) => (opportunistic ? { request, optional: true } : request)
   // The block holds this fetch's answer already — a static build prerendered it.
   if (held !== undefined) return { value: held }
+
+  // ⭐ WHOLE OR BRIEF IS A QUESTION ABOUT RECORDS OF A DATA SCHEMA — the records service's, or a
+  // compiled query's. An external query's records have none, so they have no brief: a list is what
+  // its source answers, and a parametric page's record is its own request's answer (`record:`),
+  // whatever the component expects — as the records service answers a Model with no brief whole,
+  // even as a brief.
+  const external = !cfg.ask && typeof cfg.path !== 'string'
+  if (external) whole = false
 
   // How this fetch uses the page's record: by the query it names (`currentFor`).
   const current = forced ?? (dynamicContext ? currentFor(cfg, route) : null)
@@ -191,17 +210,20 @@ export function* keyProgram(cfg, { dynamicContext = null, route = null, held = u
   if (current === 'exclude') {
     // The query's records without this page's, its `limit` counting the others.
     const view = othersView(cfg)
-    const answer = yield view
-    if (answer.error) return { error: answer.error, errorConfig: view }
+    const asked = whole && cfg.ask ? { ...view, whole: true } : view
+    const answer = yield asked
+    if (answer.error) return { error: answer.error, errorConfig: asked }
     if (answer.data === undefined || answer.data === null) return {}
-    return { value: othersOf(answer.data, cfg, isPageRecord(dynamicContext)) }
+    const others = othersOf(answer.data, cfg, isPageRecord(dynamicContext))
+    if (!whole || cfg.ask) return { value: others }
+    return yield* wholeRecordsOf(cfg, others)
   }
 
   if (current === 'only' && cfg.ask) {
     // ⭐ THE RECORDS SERVICE needs no list to find the record: the record is the query's set
     // narrowed by the route's handle, so its one question answers the record if the set holds it
-    // and `[]` if not.
-    const detailCfg = buildDetailConfig(cfg, dynamicContext)
+    // and `[]` if not — whole or its brief, as the component expects.
+    const detailCfg = buildDetailConfig(cfg, dynamicContext, { whole })
     // No per-record source, or a route carrying no value: an unanswerable question, and asking it
     // is worse than leaving the key absent. ⚠️ `resolve` reported this as `pending` and `fetch`
     // dispatched a null config; neither was intended (unified 2026-09-19).
@@ -230,50 +252,102 @@ export function* keyProgram(cfg, { dynamicContext = null, route = null, held = u
     const { paramName, paramValue } = dynamicContext
     const match = items?.find((item) => matchesRouteParam(item, paramName, paramValue)) ?? null
     if (!match) return { value: [] } // not found
-    if (!cfg.detail) return { value: [match] }
+    if (external) return yield* ownRecord(cfg, dynamicContext, match, peekRecord, maybe)
+    // A brief is what the set holds: the record is found, and that is the answer.
+    if (!whole) return { value: [match] }
 
-    // ⭐ Held in full already? Then it IS the record — no second request. The list is materialized
-    // from the record index, so `match` is the record at its latest depth.
-    const whole = heldWhole(peekRecord, match)
-    if (whole) return { value: [whole] }
+    // ⭐ Held whole already? Then it IS the record — no second request.
+    const wholeHeld = heldWhole(peekRecord, match)
+    if (wholeHeld) return { value: [wholeHeld] }
 
     // ⭐ THE STEP THAT NEEDS THE ANSWER: the record's own address can name its own fields, so it
     // is built with the record in hand and never from the route's value alone.
     const detailCfg = buildDetailConfig(cfg, { ...dynamicContext, record: match })
-    if (!detailCfg) return { value: [match] }
+    // No request for one record: it cannot be had whole.
+    if (!detailCfg) return { value: null }
     const detail = yield maybe(detailCfg)
-    // The list already matched the record, so the brief is a HELD value: a failed detail — or,
-    // for an opportunistic caller, one not yet held — keeps it rather than delivering `[[]]`.
-    if (detail.missing) return { value: [match] }
-    if (detail.error) return { value: [match], error: detail.error, errorConfig: detailCfg }
-    const record = detail.data !== undefined && detail.data !== null ? detail.data : match
-    return { value: [record] }
+    if (detail.missing) return {}
+    if (detail.error) return { error: detail.error, errorConfig: detailCfg }
+    return { value: detail.data !== undefined && detail.data !== null ? [detail.data] : [] }
   }
 
   // A fetch the page's record plays no part in, and `current: include`: the records as the fetch
   // describes them, the page's among the rest.
-  const answer = yield cfg
-  if (answer.error) return { error: answer.error, errorConfig: cfg }
+  const asked = whole && cfg.ask ? { ...cfg, whole: true } : cfg
+  const answer = yield asked
+  if (answer.error) return { error: answer.error, errorConfig: asked }
   if (answer.data === undefined || answer.data === null) return {}
-  return { value: answer.data }
+  if (!whole || cfg.ask) return { value: answer.data }
+  return yield* wholeRecordsOf(cfg, answer.data)
 }
 
-/** A yielded step: a request, or a request a caller can do without (`opportunistic`). */
-function asStep(step) {
-  return step && step.request ? { request: step.request, optional: !!step.optional } : { request: step, optional: false }
+/**
+ * An external query's record: its own request's answer (`record:`), found first in the list. The list
+ * already matched the record, so what it holds is a HELD value: a record with no request of its own,
+ * a failed request — or, for an opportunistic caller, one not yet held — keeps it rather than
+ * delivering `[[]]`.
+ */
+function* ownRecord(cfg, dynamicContext, match, peekRecord, maybe) {
+  // ⭐ Held in full already? Then it IS the record — no second request.
+  const held = heldWhole(peekRecord, match)
+  if (held) return { value: [held] }
+  // ⭐ THE STEP THAT NEEDS THE ANSWER: the record's own address can name its own fields, so it is
+  // built with the record in hand and never from the route's value alone.
+  const detailCfg = buildDetailConfig(cfg, { ...dynamicContext, record: match })
+  if (!detailCfg) return { value: [match] }
+  const detail = yield maybe(detailCfg)
+  if (detail.missing) return { value: [match] }
+  if (detail.error) return { value: [match], error: detail.error, errorConfig: detailCfg }
+  return { value: [detail.data !== undefined && detail.data !== null ? detail.data : match] }
+}
+
+/**
+ * A list's records WHOLE, each by its own request — a compiled file's per-record file, an external
+ * query's `record:` — asked together, in one step. `null` when a record has no such request: the list
+ * cannot be had whole, and a component expecting whole records is given none.
+ *
+ * @param {Object} cfg - the list's resolved config
+ * @param {*} records - the list's answer
+ * @returns {Generator<Object[], { value?: *, error?: string, errorConfig?: Object }>}
+ */
+function* wholeRecordsOf(cfg, records) {
+  if (!Array.isArray(records)) return { value: null }
+  if (records.length === 0) return { value: [] }
+  const requests = records.map((record) => recordRequest(cfg, record))
+  if (requests.some((request) => !request)) return { value: null }
+  const answers = yield requests
+  for (let i = 0; i < answers.length; i++) {
+    if (answers[i]?.error) return { error: answers[i].error, errorConfig: requests[i] }
+  }
+  if (answers.some((a) => a?.missing)) return {}
+  return { value: answers.map((a) => a?.data).filter((record) => record !== undefined && record !== null) }
+}
+
+/** The request for one record of a list, by its handle — `buildDetailConfig` with the record in hand. */
+function recordRequest(cfg, record) {
+  const handle = record && typeof record === 'object' ? record.$name : undefined
+  if (handle === undefined || handle === null || handle === '') return null
+  return buildDetailConfig(cfg, { paramName: 'slug', paramValue: String(handle), record })
+}
+
+/** A yielded step as `{ request, optional }` entries: one request, or several asked together. */
+function asSteps(value) {
+  return (Array.isArray(value) ? value : [value]).map((step) =>
+    step && step.request ? { request: step.request, optional: !!step.optional } : { request: step, optional: false }
+  )
 }
 
 /**
  * Every filling key's program, ready to run.
  *
- * @param {Map<string, { cfg: Object, held: * }>} fills - `blockFills`
+ * @param {Map<string, { cfg: Object, held: *, whole?: boolean }>} fills - `blockFills`
  * @param {Object} where - passed to each `keyProgram`
  * @returns {Map<string, Generator>}
  */
 export function planFor(fills, where = {}) {
   const plan = new Map()
-  for (const [key, { cfg, held }] of fills) {
-    plan.set(key, keyProgram(cfg, { ...where, held }))
+  for (const [key, { cfg, held, whole = false }] of fills) {
+    plan.set(key, keyProgram(cfg, { ...where, held, whole }))
   }
   return plan
 }
@@ -302,20 +376,25 @@ export function runPlanSync(plan, { peek }) {
         if (out.value !== undefined) data[key] = out.value
         break
       }
-      const { request, optional } = asStep(step.value)
-      const cached = peek(request)
-      if (!cached) {
-        if (optional) {
-          // The program can do without this one and says what it makes of that.
-          sent = { missing: true }
-          continue
+      const answers = []
+      let missed = false
+      for (const { request, optional } of asSteps(step.value)) {
+        const cached = peek(request)
+        if (cached) answers.push({ data: cached.data })
+        // The program can do without this one and says what it makes of that.
+        else if (optional) answers.push({ missing: true })
+        else {
+          missed = true
+          break
         }
+      }
+      if (missed) {
         // Not cached: this key is not answerable without a request, so the block is not ready.
         program.return()
         complete = false
         break
       }
-      sent = { data: cached.data }
+      sent = Array.isArray(step.value) ? answers : answers[0]
     }
   }
 
@@ -327,7 +406,7 @@ export function runPlanSync(plan, { peek }) {
  *
  * ⭐ Every key's first request is issued in the same tick, which is what lets a question door batch
  * a page's questions into one POST. A key whose second request depends on its first answer takes a
- * later tick, and only that key waits.
+ * later tick, and only that key waits; the requests of one step are issued together.
  *
  * @param {Map<string, Generator>} plan
  * @param {Object} io
@@ -352,8 +431,9 @@ export async function runPlan(plan, { dispatch, onFailure = null }) {
         }
         return
       }
-      const result = await dispatch(asStep(step.value).request)
-      sent = { data: result?.data, error: result?.error }
+      const results = await Promise.all(asSteps(step.value).map(({ request }) => dispatch(request)))
+      const answers = results.map((result) => ({ data: result?.data, error: result?.error }))
+      sent = Array.isArray(step.value) ? answers : answers[0]
     }
   }))
 

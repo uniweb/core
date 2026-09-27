@@ -25,7 +25,7 @@
 
 import { match as matchWhere } from './where.js'
 import { applyScope } from './scope.js'
-import { sortRecords } from './sort.js'
+import { sortRecords, parseSort } from './sort.js'
 import { routeParamValues } from './route-match.js'
 
 /**
@@ -57,6 +57,43 @@ export function evaluateQuery(records, config, { locale = null, sort = sortRecor
   if (narrow.match && typeof narrow.match === 'object') out = out.filter(matching(narrow.match))
   if (narrow.sort) out = order(out, narrow.sort)
   if (isLimit(narrow.limit)) out = out.slice(0, narrow.limit)
+  return out
+}
+
+/**
+ * A resolved config with every FIELD PATH it names mapped — the `where` keys and the `sort` field of
+ * its set and of its narrowing — so it can be evaluated over records held in another shape. A static
+ * build maps each path to where the record AS STORED holds it (`@uniweb/schemas/conform`'s
+ * `storedPath`), which is how the records service reads a path (ruled 2026-09-27
+ * [Diego]). A `$` key, and `narrow.match` — which names the record, not a
+ * field of it — are kept as they are.
+ *
+ * @param {Object} config - a resolved config, or a question
+ * @param {(path: string) => string} mapPath
+ * @returns {Object} a new config; the input is not mutated
+ */
+export function mapQueryPaths(config, mapPath) {
+  if (!config || typeof config !== 'object' || typeof mapPath !== 'function') return config
+  const level = (at) => {
+    const out = { ...at }
+    if (at.where && typeof at.where === 'object') out.where = mapWherePaths(at.where, mapPath)
+    const spec = at.sort ? parseSort(at.sort) : null
+    if (spec) out.sort = { field: mapPath(spec.field), desc: spec.desc }
+    return out
+  }
+  const out = level(config)
+  if (config.narrow && typeof config.narrow === 'object') out.narrow = level(config.narrow)
+  return out
+}
+
+function mapWherePaths(where, mapPath) {
+  if (!where || typeof where !== 'object' || Array.isArray(where)) return where
+  const out = {}
+  for (const [key, value] of Object.entries(where)) {
+    if (key === 'and' || key === 'or') out[key] = Array.isArray(value) ? value.map((sub) => mapWherePaths(sub, mapPath)) : value
+    else if (key === 'not') out[key] = mapWherePaths(value, mapPath)
+    else out[key.startsWith('$') ? key : mapPath(key)] = value
+  }
   return out
 }
 

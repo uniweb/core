@@ -59,65 +59,58 @@ describe('R1 — an entry with a depth and identities is filed by id', () => {
   })
 })
 
-describe('R2 — depth is monotonic', () => {
-  it('a brief never overwrites a record held in full', () => {
+// ⭐ R2 — a record's brief and its whole record are held APART (ruled 2026-09-27 [Diego]): two
+// shapes — a brief's fields at the top, a whole record's sections at the top — so neither is
+// merged over the other, and each is replaced only by a fresher copy of its own kind.
+// ⛔ Until then a whole record merged over the brief (R3) and every list showed the merge.
+const stored = (uuid, extra = {}) => ({ $uuid: uuid, $name: uuid, brief: { title: `Title ${uuid}` }, body: { content: `Body ${uuid}` }, ...extra })
+
+describe('R2 — a brief and a whole record are held apart', () => {
+  it('a list of briefs stays briefs when its record is fetched whole', () => {
     const store = new DataStore()
-    store.set('k-rec', { data: full('a', { title: 'Full title' }), meta: { whole: true } })
-    store.set('k-list', { data: [brief('a', { title: 'Brief title' })], meta: { whole: false } })
-    expect(store.getRecord('a').whole).toBe(true)
-    expect(store.getRecord('a').record.title).toBe('Full title')
-    expect(store.getRecord('a').record.body).toBe('Body a')
-    // and the LIST reads the full record, not the brief it was written with
-    expect(store.get('k-list').data[0]).toEqual(store.getRecord('a').record)
+    store.set('k-list', { data: [brief('a'), brief('b')], meta: { whole: false } })
+    store.set('k-rec', { data: stored('a'), meta: { whole: true } })
+    expect(store.get('k-list').data).toEqual([brief('a'), brief('b')])
+    expect(store.get('k-rec').data).toEqual(stored('a'))
   })
 
-  it('a fresher copy at the SAME depth replaces', () => {
+  it('the index answers "do I hold this whole?" with the whole record, and a brief only when that is all it holds', () => {
+    const store = new DataStore()
+    store.set('k-list', { data: [brief('a'), brief('b')], meta: { whole: false } })
+    store.set('k-rec', { data: stored('a'), meta: { whole: true } })
+    expect(store.getRecord('a')).toEqual({ whole: true, record: stored('a') })
+    expect(store.getRecord('b')).toEqual({ whole: false, record: brief('b') })
+  })
+
+  it('a brief arriving after the whole record replaces neither the whole nor itself with a merge', () => {
+    const store = new DataStore()
+    store.set('k-rec', { data: stored('a'), meta: { whole: true } })
+    store.set('k-list', { data: [brief('a', { title: 'Brief title' })], meta: { whole: false } })
+    expect(store.get('k-list').data[0]).toEqual(brief('a', { title: 'Brief title' }))
+    expect(store.getRecord('a').record).toEqual(stored('a'))
+  })
+
+  it('a fresher copy of the SAME kind replaces, and every entry holding it reads it', () => {
     const store = new DataStore()
     store.set('k1', { data: [brief('a', { title: 'old' })], meta: { whole: false } })
     store.set('k2', { data: [brief('a', { title: 'new' })], meta: { whole: false } })
     expect(store.getRecord('a').record.title).toBe('new')
     expect(store.get('k1').data[0].title).toBe('new')
-  })
-})
-
-describe('R3 — an upgrade merges, it does not replace', () => {
-  it('the full record merges over the brief, so nothing depends on full ⊇ brief', () => {
-    const store = new DataStore()
-    store.set('k-list', { data: [brief('a', { cardOnly: 'kept' })], meta: { whole: false } })
-    store.set('k-rec', { data: { $uuid: 'a', body: 'Body a', title: 'Full title' }, meta: { whole: true } })
-    const held = store.getRecord('a')
-    expect(held.whole).toBe(true)
-    expect(held.record).toEqual({ $uuid: 'a', $name: 'a', cardOnly: 'kept', title: 'Full title', body: 'Body a' })
-  })
-
-  it('every list holding the record sees the upgrade on its next read', () => {
-    const store = new DataStore()
-    store.set('k-list', { data: [brief('a'), brief('b')], meta: { whole: false } })
-    const before = store.get('k-list').data
-    expect(before[0].body).toBeUndefined()
-    store.set('k-rec', { data: full('a'), meta: { whole: true } })
-    const after = store.get('k-list').data
-    expect(after[0].body).toBe('Body a')
-    expect(after[1]).toEqual(brief('b'))
     // materialization is cached between index writes
-    expect(store.get('k-list')).toBe(store.get('k-list'))
+    expect(store.get('k1')).toBe(store.get('k1'))
   })
 
-  it('a list FETCHED after its record was held whole delivers it whole on that same pass (2026-09-14)', async () => {
-    // ⛔ The dispatcher returned what ARRIVED on a miss, so the upgrade reached the list
-    // only on a later read from the cache. A parametric page on the records service
-    // asked its list beside its record until 2026-09-14, which hid it.
+  it('a list FETCHED after its record was held whole delivers its briefs', async () => {
     const dataStore = new DataStore()
     const answers = {
-      rec: { data: full('a'), meta: { whole: true } },
+      rec: { data: stored('a'), meta: { whole: true } },
       list: { data: [brief('a'), brief('b')], meta: { whole: false } },
     }
     const defaultFetcher = { resolve: (req) => Promise.resolve(answers[req.as]) }
     const dispatcher = new FetcherDispatcher({ foundation: null, dataStore, defaultFetcher })
     await dispatcher.dispatch({ url: 'https://h.example/rec', as: 'rec' })
     const list = await dispatcher.dispatch({ url: 'https://h.example/list', as: 'list' })
-    expect(list.data[0].body).toBe('Body a')
-    expect(list.data[1]).toEqual(brief('b'))
+    expect(list.data).toEqual([brief('a'), brief('b')])
     expect(list.meta).toEqual({ whole: false })
   })
 })

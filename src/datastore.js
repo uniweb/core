@@ -129,13 +129,17 @@ function indexableWhole(entry) {
  * record was already held in full still fetched it again, or — with the record's
  * list already cached — delivered the brief as if it were the record.
  *
- * Three rules:
+ * Two rules:
  *   R1  an entry whose `meta.whole` is a boolean and whose records all carry
  *       `$uuid` is filed by id; `get()` materializes it from the index, so every
- *       list holding a record sees the most of it the index holds;
- *   R2  it only grows — a brief never overwrites a record held whole;
- *   R3  a whole record MERGES over the brief rather than replacing it, so
- *       nothing depends on the whole record being a superset of the brief.
+ *       entry holding a record sees the latest copy of it;
+ *   R2  a record's BRIEF and its WHOLE record are held apart, each replaced only
+ *       by a fresher copy of its own kind — they are two shapes (a brief's fields at
+ *       the top, a whole record's sections at the top; ruled 2026-09-27 [Diego]), so
+ *       a list of briefs stays briefs when its record is fetched whole.
+ * ⛔ Until 2026-09-27 a whole record MERGED over the brief it found (`{ ...brief,
+ * ...whole }`) and every list holding the record showed the merge — one object
+ * holding a brief's fields beside section names.
  * An entry whose `meta.whole` is not a boolean, or with a record lacking
  * identity, is held inline exactly as before — the file lane with no synced
  * records changes nothing.
@@ -150,7 +154,7 @@ export default class DataStore {
     this._listeners = new Set()
     // Key-scoped listeners: key → Set<Function>
     this._keyedListeners = new Map()
-    // $uuid → { whole, record } — the record index
+    // $uuid → { brief?, whole? } — the record index
     this._records = new Map()
     // bumps on every index write, so a materialized list knows it is stale
     this._recordsVersion = 0
@@ -217,7 +221,8 @@ export default class DataStore {
     if (!entry || !entry.ids) return entry
     // Indexed: materialize from the record index, once per index version.
     if (entry._at === this._recordsVersion && entry._data) return entry._data
-    const records = entry.ids.map((id) => this._records.get(id)?.record).filter(Boolean)
+    const slot = entry.meta?.whole === true ? 'whole' : 'brief'
+    const records = entry.ids.map((id) => this._records.get(id)?.[slot]).filter(Boolean)
     const data = entry.single ? (records[0] ?? null) : records
     const out = entry.meta !== undefined ? { data, meta: entry.meta } : { data }
     entry._at = this._recordsVersion
@@ -253,12 +258,15 @@ export default class DataStore {
    * @returns {{ whole: boolean, record: Object } | null}
    */
   getRecord(id) {
-    return (id && this._records.get(id)) || null
+    const held = id ? this._records.get(id) : null
+    if (held?.whole) return { whole: true, record: held.whole }
+    if (held?.brief) return { whole: false, record: held.brief }
+    return null
   }
 
   /**
-   * File one record, whole or a brief, honouring R2 and R3. Returns the record
-   * now held.
+   * File one record, whole or a brief, honouring R2 — the fresher copy of its own
+   * kind replaces the one held. Returns the record now held.
    *
    * @param {Object} record
    * @param {boolean} whole - true for a record fetched whole, false for a brief
@@ -267,19 +275,10 @@ export default class DataStore {
   upsertRecord(record, whole) {
     const id = recordIdentity(record)
     if (!id || typeof whole !== 'boolean') return record
-    const held = this._records.get(id)
-    if (!held) {
-      this._records.set(id, { whole, record })
-      this._recordsVersion += 1
-      return record
-    }
-    // R2 — a brief never displaces a whole record.
-    if (!whole && held.whole) return held.record
-    // R3 — a whole record merges over a brief; same kind takes the fresher copy.
-    const next = whole && !held.whole ? { ...held.record, ...record } : record
-    this._records.set(id, { whole, record: next })
+    const held = this._records.get(id) || {}
+    this._records.set(id, { ...held, [whole ? 'whole' : 'brief']: record })
     this._recordsVersion += 1
-    return next
+    return record
   }
 
   _index(entry) {

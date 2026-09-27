@@ -85,13 +85,19 @@ export const ROUTE_HANDLE_KEY = routeRecordKey('slug')
  * Returns `null` — never throws — when the config has no per-record source or the
  * route carries no value. A caller treats `null` as "find the record in the list".
  *
+ * ⭐ `whole` — whether the record is asked whole (the default) or as its brief (ruled
+ * 2026-09-27 [Diego]: a component declares which it expects). Only the records service answers
+ * one record as its brief; everywhere else a record's brief is what its list holds, so asking
+ * for a brief there is `null`.
+ *
  * @param {Object} queryConfig - a resolved config
  * @param {{ paramName: string, paramValue: string, record?: Object|null }} dynamicContext -
  *   the route's param and its value; `record`, when the caller already holds the
  *   matched record, lets `{slug}` resolve to the record's own slug (`paramContext`).
+ * @param {{ whole?: boolean }} [options]
  * @returns {Object|null} a request, or null
  */
-export function buildDetailConfig(queryConfig, dynamicContext) {
+export function buildDetailConfig(queryConfig, dynamicContext, { whole = true } = {}) {
   const { detail } = queryConfig
   if (!detail) return null
   const { paramName, paramValue, record = null } = dynamicContext
@@ -117,14 +123,15 @@ export function buildDetailConfig(queryConfig, dynamicContext) {
   // string — it is a URL segment — and the service compares it as one, as the local
   // match does.
   if (queryConfig.ask) {
-    const { narrow: _narrow, detail: _detail, match: _match, ...set } = queryConfig
+    const { narrow: _narrow, detail: _detail, match: _match, whole: _whole, ...set } = queryConfig
     return {
       ...set,
       narrow: { match: { [routeRecordKey(paramName)]: String(paramValue) } },
-      whole: true,
+      ...(whole ? { whole: true } : {}),
       dynamicContext: { paramName, paramValue },
     }
   }
+  if (!whole) return null
 
   // What every other record request carries beside its address:
   //   `as`             — the binding key, so the record lands where the list did;

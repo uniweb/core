@@ -194,13 +194,15 @@ function localizeConfig(cfg, locale, defaultLocale) {
  *   - the records service → `true`: the record is the route query's set narrowed
  *     by the URL's value (`buildDetailConfig`);
  *   - an external query declaring `record:` → `true`: its own request;
- *   - a query declaring `deferred:` → `/data/<query>/{slug}.json`, the per-record
- *     file the build emits beside the lean list, keyed by the record's slug. ⭐ On a
- *     locale other than the default it is `/<locale>/data/<query>/{slug}.json`, the
- *     way the list's own path is (`localizeConfig`): a localized build writes a
- *     translated copy of every per-record file beside the translated list. ⛔ Until
- *     2026-09-14 the pattern was never localized, so a translated record page asked
- *     for the default locale's file and showed an untranslated body.
+ *   - a compiled query → `/data/<query>/{slug}.json`, the per-record file the build
+ *     emits beside the list for every record — the record whole, as stored, where the
+ *     list holds its brief. ⭐ On a locale other than the default it is
+ *     `/<locale>/data/<query>/{slug}.json`, the way the list's own path is
+ *     (`localizeConfig`): a localized build writes a translated copy of every
+ *     per-record file beside the translated list. ⛔ Until 2026-09-14 the pattern was
+ *     never localized, so a translated record page asked for the default locale's file
+ *     and showed an untranslated body. ⛔ And until 2026-09-27 only a query with
+ *     `deferred:` had one: the list held every other query's records whole.
  *
  * ⛔ `detail:` is no longer AUTHORED (retired 2026-09-13 [Diego]; the build refuses
  * it): its `rest`, `query`, pattern and `{ body, envelope }` forms are an external
@@ -240,11 +242,9 @@ function applyDeferredDetail(cfg, queries, locale = null, defaultLocale = null) 
   // is the only key there is. Two shapes, two answers; the deleted one had one
   // shape and pretended otherwise.
   const queryName = cfg.query || bindingKey(cfg)
-  if (!queryName || !queries) return cfg
+  if (!queryName || !queries || typeof cfg.path !== 'string') return cfg
   const collConfig = queries[queryName]
   if (!collConfig || typeof collConfig !== 'object') return cfg
-  const deferred = Array.isArray(collConfig.deferred) ? collConfig.deferred : null
-  if (!deferred || deferred.length === 0) return cfg
   const pattern = recordDataUrl(queryName, '{slug}')
   const localized = locale && locale !== defaultLocale && isDataUrl(pattern) ? `/${locale}${pattern}` : pattern
   return { ...cfg, detail: localized }

@@ -172,11 +172,14 @@ describe('resolveFetchConfigs — deferred detail', () => {
     expect(configs.get('articles').detail).toBe('rest')
   })
 
-  it('injects nothing when the collection declares no deferred fields', () => {
+  // ⭐ Every compiled query has a per-record file since 2026-09-27: its list holds briefs, and each
+  // record's own file holds it whole, as stored. ⛔ Until then only a `deferred:` query had one.
+  it('injects the per-record file pattern for every compiled query, deferred or not', () => {
     const configs = resolveFetchConfigs([cfg], {
-      queries: { articles: { path: 'collections/articles' } },
+      queries: { articles: { schema: '@std/article' } },
     })
-    expect(configs.get('articles').detail).toBeUndefined()
+    expect(configs.get('articles').detail).toBe(recordDataUrl('articles', '{slug}'))
+    expect(configs.get('articles').whole).toBe(false)
   })
 
   it('degrades to a usable config when no collections map is available', () => {
@@ -257,15 +260,15 @@ describe('a door answers the record as the list\'s own question — so every doo
     expect(cfg.detail).toBe(true)
   })
 
-  it('CONTROL — with no lane a non-deferred query has no detail source and is FULL', () => {
+  it('CONTROL — with no lane a compiled query has its per-record file, and its list is BRIEFS', () => {
     const cfg = get({ queries: QUERIES })
-    expect(cfg.detail).toBeUndefined()
-    expect(cfg.whole).toBe(true)
+    expect(cfg.detail).toBe(recordDataUrl('articles', '{slug}'))
+    expect(cfg.whole).toBe(false)
   })
 
-  it('⛔ the retired record pattern injects nothing', () => {
+  it('⛔ the retired record pattern is not read — the compiled per-record file answers', () => {
     const cfg = get({ records: { list: '/_data/{path}', record: '/_data/{path}/{param}' }, queries: QUERIES })
-    expect(cfg.detail).toBeUndefined()
+    expect(cfg.detail).toBe(recordDataUrl('articles', '{slug}'))
     expect(cfg).not.toHaveProperty('endpoint')
   })
 })
