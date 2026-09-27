@@ -43,7 +43,7 @@ function paramContext(paramName, paramValue, record) {
   // and injects `/data/<name>/{slug}.json` — so on a site routing `[id]`, the
   // route's context carried `id` and `param` and `{slug}` stayed literal: the
   // detail URL was `/data/articles/{slug}.json`, a guaranteed 404, on every
-  // template page with `deferred:` fields (measured 2026-09-04). When the caller
+  // `[id]` page that read a record's own file (measured 2026-09-04). When the caller
   // holds the record — the entity store does (it matched it), and so does
   // kit's `useWholeRecord` — its slug fills the name the FILE was written under. A
   // caller with no record in hand leaves `{slug}` literal rather than guessing
@@ -73,7 +73,7 @@ export const ROUTE_HANDLE_KEY = routeRecordKey('slug')
  *   - **an external query's `record:`** — its `url` (the query's when it names none),
  *     `method` (likewise), `body` and `transform` — ⛔ never the list's `body` or
  *     `transform`, since a record response is rarely wrapped the way the list is;
- *   - **a `deferred:` query's per-record file** — the `/data/<query>/{slug}.json`
+ *   - **a compiled query's per-record file** — the `/data/<query>/{slug}.json`
  *     pattern the resolver injected.
  *
  * ⛔ The `detail:` forms an author wrote until 2026-09-13 — `rest`, `query`, a URL
@@ -161,7 +161,7 @@ export function buildDetailConfig(queryConfig, dynamicContext, { whole = true } 
     return out
   }
 
-  // ⭐ A `deferred:` QUERY'S PER-RECORD FILE — the pattern `applyDeferredDetail` injected.
+  // ⭐ A COMPILED QUERY'S PER-RECORD FILE — the pattern `applyRecordFiles` injected.
   if (typeof detail === 'string' && typeof queryConfig.path === 'string') {
     return { path: substitutePlaceholders(detail, context), ...common }
   }

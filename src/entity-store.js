@@ -51,7 +51,7 @@ export default class EntityStore {
 
   /**
    * The options each fetch of a block is resolved with. The rule applied to a fetch
-   * (locale normalization, route variables, deferred-detail injection) lives in
+   * (locale normalization, route variables, the record files' pattern) lives in
    * `./fetch-config.js`, shared with every other host that has to answer the same
    * question. Do not re-inline it here — divergence between copies is what the
    * extraction exists to prevent.

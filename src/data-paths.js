@@ -11,7 +11,7 @@
  * literal in six places across three packages: the build wrote it
  * (the query processor), the build resolved the query shorthand to it
  * (`data-fetcher.js`), core injected the per-record default
- * (`fetch-config.js applyDeferredDetail`), core gated locale-prefixing on it
+ * (`fetch-config.js applyRecordFiles`), core gated locale-prefixing on it
  * (`fetch-config.js localizeConfig`), the dev server matched it with a regex
  * (`build/src/site/plugin.js`), and kit's `useEntityDetail` — `useWholeRecord`
  * since 2026-09-14 — requested it.
@@ -60,8 +60,7 @@ export const DATA_DIR = 'data'
 export const DATA_URL_PREFIX = `/${DATA_DIR}/`
 
 /**
- * URL of a query's cascade payload — every record it returns, with
- * `deferred:` fields stripped when the query declares them.
+ * URL of a query's list — every record it returns, each as its brief.
  *
  * @param {string} name - The query name.
  * @returns {string} e.g. `/data/articles.json`
@@ -71,11 +70,11 @@ export function queryDataUrl(name) {
 }
 
 /**
- * URL of one record's full payload — every field, including deferred ones.
- * Emitted per record only when the query declares `deferred:`.
+ * URL of one record's own file — the record whole, as stored. Emitted for every
+ * record of a compiled query (only for a `deferred:` query until 2026-09-27).
  *
  * Takes either a concrete slug — a caller holding the record — or the literal
- * placeholder `{slug}` (core's `applyDeferredDetail`, which builds a pattern
+ * placeholder `{slug}` (core's `applyRecordFiles`, which builds a pattern
  * that `substitutePlaceholders` resolves later against the dynamic-route
  * param). Both are plain interpolation; this function does not encode,
  * matching the behavior of the call sites it replaced.

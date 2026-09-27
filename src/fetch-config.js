@@ -4,7 +4,7 @@
  * "Which fetch configs apply here?" is a framework concept. Authors declare
  * `fetch:` at the section, page, folder and site levels; the framework decides
  * which declaration wins per schema, how a local data path is localized, and
- * when a query with deferred fields gets a detail pattern injected.
+ * where a compiled query's records have their own files.
  *
  * Every host that renders a page needs that answer — the browser runtime, the
  * build-time prerenderer, and any server-side renderer. The rule had grown
@@ -218,7 +218,7 @@ function localizeConfig(cfg, locale, defaultLocale) {
  * @param {string|null} [defaultLocale] - the site's default locale
  * @returns {Object} the original config, or a copy carrying `detail`
  */
-function applyDeferredDetail(cfg, queries, locale = null, defaultLocale = null) {
+function applyRecordFiles(cfg, queries, locale = null, defaultLocale = null) {
   if (cfg.detail !== undefined) return cfg
 
   // The records service answers a RECORD by the query's set narrowed to it, so
@@ -555,12 +555,12 @@ export function resolveFetchConfigs(sources, options = {}) {
       if (!key) continue
       if (configs.has(key)) continue
       if (!collectAll && !schemas.includes(key)) continue
-      // Address first: localization and deferred-detail both key on `path`,
+      // Address first: localization and the record files both key on `path`,
       // which a query ref does not have until this runs.
       const sourced = resolveQuerySource(cfg, services, { queries, locale, defaultLocale })
       const localized = localizeConfig(sourced, locale, defaultLocale)
       const bound = dropRootScope(bindRouteVariables(localized, variables))
-      configs.set(key, stampDepthAndLocale(applyDeferredDetail(bound, queries, locale, defaultLocale), locale, defaultLocale))
+      configs.set(key, stampDepthAndLocale(applyRecordFiles(bound, queries, locale, defaultLocale), locale, defaultLocale))
     }
   }
 
@@ -979,8 +979,8 @@ export function recordPages(pages, { routeOf, parentOf, fetchOf, sectionsOf, sit
  *
  * `depth` — `brief` when the config has a per-record source (`detail`), because
  * a list with a separate record address is a list of partial records: a live
- * lane answers a list at brief depth and a record in full, and a `deferred:`
- * query's compiled file is the stripped list. `full` otherwise. An explicit
+ * lane answers a list at brief depth and a record in full, and a compiled
+ * query's list holds briefs beside each record's own file. `full` otherwise. An explicit
  * `depth` on the config wins (the records service's client sets it).
  *
  * `locale` — stamped on an ASKED config only. A compiled path already carries
