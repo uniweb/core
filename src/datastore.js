@@ -119,8 +119,8 @@ function indexableWhole(entry) {
 }
 
 /**
- * ⭐ THE RECORD INDEX — records are held ONCE, by identity, with the depth they
- * were fetched at; a query's result holds their ids.
+ * ⭐ THE RECORD INDEX — records are held ONCE, by identity, with whether they
+ * were fetched whole or as briefs; a query's result holds their ids.
  *
  * [Diego, 2026-09-04]: "they need to be able to hydrate records on their own…
  * track if they already have the briefs, and don't confuse that with knowing the
@@ -130,14 +130,15 @@ function indexableWhole(entry) {
  * list already cached — delivered the brief as if it were the record.
  *
  * Three rules:
- *   R1  an entry whose `meta.depth` is `brief` or `full` and whose records all
- *       carry `$uuid` is filed by id; `get()` materializes it from the index, so
- *       every list holding a record sees the record's latest depth;
- *   R2  depth is MONOTONIC — a brief never overwrites a record held in full;
- *   R3  an upgrade MERGES the full record over the brief rather than replacing
- *       it, so nothing depends on the full being a superset of the brief.
- * An entry with no depth, or with a record lacking identity, is held inline
- * exactly as before — the file lane with no synced records changes nothing.
+ *   R1  an entry whose `meta.whole` is a boolean and whose records all carry
+ *       `$uuid` is filed by id; `get()` materializes it from the index, so every
+ *       list holding a record sees the most of it the index holds;
+ *   R2  it only grows — a brief never overwrites a record held whole;
+ *   R3  a whole record MERGES over the brief rather than replacing it, so
+ *       nothing depends on the whole record being a superset of the brief.
+ * An entry whose `meta.whole` is not a boolean, or with a record lacking
+ * identity, is held inline exactly as before — the file lane with no synced
+ * records changes nothing.
  */
 export default class DataStore {
   constructor() {
@@ -228,9 +229,9 @@ export default class DataStore {
    * Cache store. Fires listeners: first the global ones (all-writes), then
    * any subscribers registered for this specific key.
    *
-   * An entry carrying `meta.depth` whose records all carry `$uuid` is filed in
-   * the record index and stored as ids — see the class note. Anything else is
-   * stored as given.
+   * An entry whose `meta.whole` is a boolean and whose records all carry `$uuid`
+   * is filed in the record index and stored as ids — see the class note.
+   * Anything else is stored as given.
    *
    * @param {string} key
    * @param {{ data: any, meta?: Object }} entry
@@ -245,21 +246,22 @@ export default class DataStore {
   }
 
   /**
-   * The record held under an identity, with the depth it was fetched at — the
-   * question a detail page asks before fetching: "do I hold this in full?"
+   * The record held under an identity, with whether it was fetched whole — the
+   * question a detail page asks before fetching: "do I hold this whole?"
    *
    * @param {string} id - a `$uuid`
-   * @returns {{ depth: 'brief'|'full', record: Object } | null}
+   * @returns {{ whole: boolean, record: Object } | null}
    */
   getRecord(id) {
     return (id && this._records.get(id)) || null
   }
 
   /**
-   * File one record at a depth, honouring R2 and R3. Returns the record now held.
+   * File one record, whole or a brief, honouring R2 and R3. Returns the record
+   * now held.
    *
    * @param {Object} record
-   * @param {'brief'|'full'} depth
+   * @param {boolean} whole - true for a record fetched whole, false for a brief
    * @returns {Object}
    */
   upsertRecord(record, whole) {
