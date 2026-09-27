@@ -24,7 +24,7 @@
  */
 
 import { match as matchWhere } from './where.js'
-import { applyScope } from './scope.js'
+import { applyScope, withoutBranch } from './scope.js'
 import { sortRecords, parseSort } from './sort.js'
 import { recordKeyValues } from './route-match.js'
 
@@ -42,7 +42,10 @@ import { recordKeyValues } from './route-match.js'
  * @returns {Array<Object>|*} the records the config selects, in its order
  */
 export function evaluateQuery(records, config, { locale = null, sort = sortRecords } = {}) {
-  if (!Array.isArray(records) || !config || typeof config !== 'object') return records
+  if (!Array.isArray(records)) return records
+  // ⛔ What this returns is an ANSWER, and no answer carries a record's branch: `scope` reads
+  // the one a compiled file holds, and it goes no further (`withoutBranch`, ruled 2026-09-27).
+  if (!config || typeof config !== 'object') return withoutBranch(records)
   const order = (items, expr) => sort(items, expr, { locale })
 
   let out = records
@@ -52,12 +55,12 @@ export function evaluateQuery(records, config, { locale = null, sort = sortRecor
   if (isLimit(config.limit)) out = out.slice(0, config.limit)
 
   const narrow = config.narrow
-  if (!narrow || typeof narrow !== 'object') return out
+  if (!narrow || typeof narrow !== 'object') return withoutBranch(out)
   if (narrow.where) out = matchWhere(narrow.where, out)
   if (narrow.match && typeof narrow.match === 'object') out = out.filter(matching(narrow.match))
   if (narrow.sort) out = order(out, narrow.sort)
   if (isLimit(narrow.limit)) out = out.slice(0, narrow.limit)
-  return out
+  return withoutBranch(out)
 }
 
 /**

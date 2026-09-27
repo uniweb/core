@@ -55,9 +55,9 @@ export {
   isDataUrl
 } from './data-paths.js'
 export { evaluate as evaluateWhere, match as matchWhere, whereOutsideLanguage } from './where.js'
-// A query's `scope:` over records that carry their placement — read by the runtime's
-// default fetcher and by `@uniweb/build` when it compiles a query's file.
-export { applyScope, withinScope } from './scope.js'
+// A query's `scope:` over compiled records, which hold their branch under `BRANCH_KEY` —
+// read by the runtime's default fetcher and by `@uniweb/build`, which writes it.
+export { applyScope, withinScope, withoutBranch, BRANCH_KEY } from './scope.js'
 // The one sort evaluator and the one href encoder — both read by `@uniweb/build`
 // (materialization, the `route:` bake) and by `@uniweb/runtime` (the fallback),
 // which is what keeps the static and live lanes answering a query identically.

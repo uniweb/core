@@ -12,7 +12,7 @@ const notes = Array.from({ length: 10 }, (_, i) => ({
   $name: `note-${i + 1}`,
   n: i + 1,
   tags: i % 2 === 0 ? ['field-notes', 'pandas'] : ['field-notes'],
-  path: i < 5 ? 'field' : 'lab',
+  $branch: i < 5 ? 'field' : 'lab',
 }))
 const slugs = (records) => records.map((r) => r.slug)
 
@@ -23,8 +23,19 @@ describe('the set — the query as saved: scope, where, sort, limit', () => {
   })
 
   it('returns the records untouched when the config says nothing', () => {
-    expect(evaluateQuery(notes, {})).toBe(notes)
-    expect(evaluateQuery(notes, { as: 'notes', path: '/data/notes.json' })).toBe(notes)
+    const plain = notes.map(({ $branch, ...rest }) => rest)
+    expect(evaluateQuery(plain, {})).toBe(plain)
+    expect(evaluateQuery(plain, { as: 'notes', path: '/data/notes.json' })).toBe(plain)
+  })
+
+  // ⛔ Ruled 2026-09-27 [Diego]: a record does not carry its branch. `scope` reads the one a
+  // compiled file holds, and what comes back is an answer — as a records service's is, with none.
+  it('answers no record with its branch, whatever the config asks', () => {
+    for (const config of [{}, { scope: 'field' }, { narrow: { limit: 1 } }, null]) {
+      const out = evaluateQuery(notes, config)
+      expect(out.length, JSON.stringify(config)).toBeGreaterThan(0)
+      expect(out.some((r) => '$branch' in r), JSON.stringify(config)).toBe(false)
+    }
   })
 
   it('leaves anything but a list as it is — a single record is not filtered, sorted or cut', () => {

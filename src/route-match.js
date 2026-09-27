@@ -228,8 +228,10 @@ export function splitPathCapture(capture) {
 }
 
 /**
- * The inverse of `splitPathCapture` — a record's own URL path under a
- * `[...path]` template, from its placement and its handle. `dir` may be empty.
+ * The inverse of `splitPathCapture` — a capture from its directory and its last
+ * segment. `dir` may be empty. ⛔ Not a record's URL: a record carries no branch, so its
+ * own URL under `[...path]` is its handle alone (`fillRoutePattern`). Until 2026-09-27 this
+ * composed a record's placement and handle into one.
  *
  * @param {{ dir?: string|null, slug?: string|null }} parts
  * @returns {string|null} null when there is no slug to name the record by
@@ -587,18 +589,17 @@ export function fillRoutePattern(pattern, values, { field = null } = {}) {
   let tailHref = ''
   const tail = pattern.match(CATCH_ALL)
   if (tail) {
-    // A catch-all is filled from the record's placement and handle — the split
-    // rule in reverse (`joinPathCapture`) — with each SEGMENT encoded and the
-    // slashes between them kept as structure. `dir` is the placement; a record
-    // carries it as `path` (the folder `records/folder.yml` put it in), which is why
-    // `path` here is read as the DIRECTORY and never as a composed capture.
+    // ⭐ A catch-all is filled with the record's handle ALONE — one segment, whatever it
+    // contains (a `/` inside it is a value). A record carries no branch [Diego,
+    // 2026-09-27], so its own URL under `[...path]` is the one it has under `[slug]`:
+    // `/logbook/<name>`. A URL that names a directory still reaches the page, and
+    // `scope: :dir` is what makes the directory count. ⛔ Until 2026-09-27 this prefixed the
+    // record's `path`, so one record was linked at `/logbook/field/river-survey` on a static
+    // site and at `/logbook/river-survey` where a records service, which answers no branch,
+    // served it.
     const [handle] = routeParamValues(values, 'slug', field)
-    if (joinPathCapture({ dir: values.dir ?? values.path, slug: handle }) === null) return null
-    const dir = String(values.dir ?? values.path ?? '')
-    const segments = dir.split('/').filter(Boolean).map((seg) => encodeURIComponent(seg))
-    // The handle is ONE segment whatever it contains: a `/` inside it is a value.
-    segments.push(encodeURIComponent(String(handle)))
-    tailHref = '/' + segments.join('/')
+    if (handle === undefined) return null
+    tailHref = '/' + encodeURIComponent(String(handle))
     head = pattern.slice(0, tail.index)
   }
   const href = head.replace(new RegExp(`:(${PARAM_NAME})`, 'g'), (_, name) => {

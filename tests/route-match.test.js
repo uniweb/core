@@ -319,15 +319,18 @@ describe('joinPathCapture — the split rule in reverse', () => {
   })
 })
 
-describe('fillRoutePattern — a catch-all is filled from placement + handle, each segment encoded', () => {
-  it('fills `:path*` from `path` (the placement dir) and `$name`', () => {
-    expect(fillRoutePattern('/blog/:path*', { path: 'rust/2025', $name: 'my post' })).toBe('/blog/rust/2025/my%20post')
-    expect(fillRoutePattern('/blog/:path*', { path: '', $name: 'my-post' })).toBe('/blog/my-post')
-    expect(fillRoutePattern('/blog/:path*', { dir: 'a', $name: 'b' })).toBe('/blog/a/b')
+// ⛔ Ruled 2026-09-27 [Diego]: a record does not carry its branch, so its own URL under `[...path]`
+// is the one it has under `[slug]`. Until then the catch-all prefixed the record's `path`.
+describe('fillRoutePattern — a catch-all is filled from the handle alone', () => {
+  it('fills `:path*` with `$name` — an authored `path` or `dir` is the record\'s data, never a directory', () => {
+    expect(fillRoutePattern('/blog/:path*', { $name: 'my post' })).toBe('/blog/my%20post')
+    expect(fillRoutePattern('/blog/:path*', { path: 'rust/2025', $name: 'my post' })).toBe('/blog/my%20post')
+    expect(fillRoutePattern('/blog/:path*', { dir: 'a', $name: 'b' })).toBe('/blog/b')
+    expect(fillRoutePattern('/blog/:path*', { $branch: 'rust', $name: 'b' })).toBe('/blog/b')
   })
 
-  it('a slash inside a SEGMENT is encoded, the slashes between segments are structure', () => {
-    expect(fillRoutePattern('/team/:path*', { path: 'research', $name: 'members/ada' })).toBe('/team/research/members%2Fada')
+  it('the handle is ONE segment: a slash inside it is encoded', () => {
+    expect(fillRoutePattern('/team/:path*', { $name: 'members/ada' })).toBe('/team/members%2Fada')
   })
 
   it('returns null without a handle', () => {
@@ -335,8 +338,8 @@ describe('fillRoutePattern — a catch-all is filled from placement + handle, ea
   })
 
   it('round-trips through the matcher', () => {
-    const href = fillRoutePattern('/blog/:path*', { path: 'rust/2025', $name: 'my post' })
-    expect(matchDynamicRoute('/blog/:path*', href)).toEqual({ params: { path: 'rust/2025/my post' } })
+    const href = fillRoutePattern('/blog/:path*', { $name: 'my post' })
+    expect(matchDynamicRoute('/blog/:path*', href)).toEqual({ params: { path: 'my post' } })
   })
 })
 
@@ -372,7 +375,7 @@ describe('the placement handle — `$name`, and nothing else', () => {
     expect(matchesRouteParam(record, 'slug', 'hello', 'slug')).toBe(true)
     expect(routeRecordKey('slug', 'slug')).toBe('slug')
     expect(fillRoutePattern('/blog/:slug', record, { field: 'slug' })).toBe('/blog/hello')
-    expect(fillRoutePattern('/logbook/:path*', { ...record, path: 'field' }, { field: 'slug' })).toBe('/logbook/field/hello')
+    expect(fillRoutePattern('/logbook/:path*', { ...record, path: 'field' }, { field: 'slug' })).toBe('/logbook/hello')
     // CONTROL — unbound, the same record has no name and so no link
     expect(fillRoutePattern('/blog/:slug', record)).toBeNull()
   })
@@ -413,7 +416,7 @@ describe('the placement handle — `$name`, and nothing else', () => {
     // Until 2026-09-04 a record served with `$name` and no `slug` produced no href
     // at all — a list on a live lane linked to nothing.
     expect(fillRoutePattern('/team/:slug', { $name: 'ada lovelace' })).toBe('/team/ada%20lovelace')
-    expect(fillRoutePattern('/docs/:path*', { $name: 'intro', path: 'guides/start' })).toBe('/docs/guides/start/intro')
+    expect(fillRoutePattern('/docs/:path*', { $name: 'intro', path: 'guides/start' })).toBe('/docs/intro')
     // a record with no `$name` has no href — a `slug` field is not its handle
     expect(fillRoutePattern('/team/:slug', { slug: 'ada' })).toBeNull()
     // a Model's own `slug` field does not override the placement

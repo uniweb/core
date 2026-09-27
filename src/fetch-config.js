@@ -688,9 +688,9 @@ function bindWhere(where, variables) {
 
 /**
  * ⭐ `scope:` IS ITS OWN FIELD, on both lanes. The service takes it natively; on
- * the compiled file the evaluators apply it to each record's placement (`path`,
- * the folder `records/folder.yml` put it in) — `@uniweb/core`'s `applyScope`, the one the
- * build uses too. ⛔ Until 2026-09-11 it was folded here into
+ * the compiled file the evaluators apply it to the branch each record is held with
+ * (`$branch`, the folder `records/folder.yml` put it in) — `@uniweb/core`'s `applyScope`,
+ * the one the build uses too. ⛔ Until 2026-09-11 it was folded here into
  * `where: { path: { under } }`, an authored form that is now retired in its
  * favour [Diego]: a branch is a scope, and `where` stays the author's predicate.
  *

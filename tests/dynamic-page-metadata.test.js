@@ -252,7 +252,7 @@ describe('recordPageFor — the page a query\'s records link to (ruled 2026-09-1
     })
     const w = pagesOf([
       { route: '/logbook', title: 'Logbook', sections: [], fetch: { query: 'logbook', as: 'logbook' } },
-      concrete('/logbook/field/river-survey', 'field/river-survey'),
+      concrete('/logbook/river-survey', 'river-survey'),
       concrete('/logbook/welcome', 'welcome'),
     ])
     expect(w.recordPageFor('logbook')).toEqual({ route: '/logbook/:path*', paramName: 'slug' })
