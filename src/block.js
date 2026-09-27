@@ -105,6 +105,16 @@ export default class Block {
       this.properties = { ...this.properties, theme: this.themeName }
     }
 
+    // `grid` rides in the section's params, as every key the author writes does — so it
+    // travels and round-trips with no field of its own — but the NAME is framework's:
+    // it is lifted to `block.grid` below and a component never receives it as a param.
+    let gridParam = null
+    if (Object.hasOwn(this.properties, 'grid')) {
+      const { grid, ...rest } = this.properties
+      gridParam = grid
+      this.properties = rest
+    }
+
     // Extract background from params into standardOptions
     // Content authors set background in section frontmatter; the runtime
     // reads it from standardOptions to render the Background component.
@@ -175,8 +185,12 @@ export default class Block {
     // `grid:` section key [Diego, 2026-09-27]: `3` (equal columns) or `'40/60'`
     // (relative widths). Carried as written; kit's `ChildGrid` lays the children out
     // from it (`@uniweb/schemas/grid`). A section key, never a param: a component
-    // declares the layouts it offers in `meta.js` `children.grid`.
-    this.grid = blockData.grid ?? null
+    // declares the layouts it offers in `meta.js` `children.grid`, and does not see
+    // `grid` among its params (above).
+    // ⭐ It is read from the params, where it is stored and synced — no field of its
+    // own, so no store has to declare one. `blockData.grid` is `@uniweb/build@0.67.0`'s
+    // spelling, which carried it beside the params for a few hours on 2026-09-27.
+    this.grid = gridParam ?? blockData.grid ?? null
 
     // Data loading state — set by BlockRenderer when a runtime fetch is in progress
     // Components check this to show loading UI (spinners, skeletons)
