@@ -69,8 +69,9 @@ export default class Block {
     this.items = this.parsedContent.items || []
 
     // Block configuration
+    // ⛔ No `block.preset`: a section's `preset:` was stored and never read, and neither the build
+    // nor a store keeps one any more (2026-09-28).
     const blockConfig = blockData.params || blockData.config || {}
-    this.preset = blockData.preset
 
     // ⭐ THE SECTION'S OWN SETTINGS — the names framework reserves in its params
     // (`@uniweb/schemas/section`): `theme`, `background`, `grid`, `vars`, `fetch`. Framework applies
