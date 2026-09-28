@@ -93,8 +93,10 @@ describe('lifting containers', () => {
     const block = new Block(
       {
         type: 'S',
-        insets: [{ refId: 'inset_0', type: 'Chart', params: {}, title: 'A chart' }],
-        content: docWith(container('Alert', {}, [para('x')])),
+        content: docWith(
+          { type: 'inset_ref', attrs: { component: 'Chart', alt: 'A chart' } },
+          container('Alert', {}, [para('x')])
+        ),
       },
       's0',
       mockPage()

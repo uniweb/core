@@ -26,9 +26,8 @@
  * never went through a build — a record body, a free-form translation — resolves its
  * insets the same way. ⛔ *Until 2026-09-27 only containers were lifted here; leaf
  * insets were extracted by the site build into the section's `insets[]`, so any
- * document the build did not extract rendered none of them.* A stored `insets[]` is
- * still read (the constructor below), and `leafStart` numbers the lifted leaves after
- * it so their refIds cannot collide.
+ * document the build did not extract rendered none of them.* `leafStart` offsets the
+ * leaves' refIds for a caller that numbers other insets first.
  *
  * PURE with respect to the input: nodes on the path to an inset are cloned; everything
  * else is passed through by reference, so a document with no insets costs one walk and

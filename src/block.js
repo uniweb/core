@@ -34,10 +34,11 @@ export default class Block {
     // at build time is deliberate: what the author wrote is the canonical STORED
     // shape, so the content that syncs and round-trips keeps carrying it.
     // `blockData.content` is left untouched — the lift produces a new tree and only
-    // this Block's view of it changes. Leaves are numbered after a stored `insets[]`
-    // (content from before the lift moved here), so the two cannot share a refId.
-    const storedInsets = Array.isArray(blockData.insets) ? blockData.insets : []
-    const lifted = liftInsets(blockData.content, storedInsets.length)
+    // this Block's view of it changes. ⛔ A stored `insets[]` — what the build extracted
+    // before 2026-09-27 — is no longer read: no store serves one since the site-content
+    // Model dropped the field (2026-09-28), and a site pushed again carries its insets in
+    // its content.
+    const lifted = liftInsets(blockData.content)
     this.rawContent = lifted.content || {}
     this.parsedContent = this.parseContent(lifted.content)
 
@@ -135,11 +136,11 @@ export default class Block {
       ? blockData.subsections.map((block, i) => new Block(block, `${id}_${i}`, this.page))
       : []
 
-    // Insets — inline @-referenced components positioned in content flow: a stored
-    // `insets[]` first, then the leaves lifted from the content, in document order.
-    // Each receives its `[…]` text as `content.title` and its `{…}` as params.
+    // Insets — inline @-referenced components positioned in content flow: the leaves
+    // lifted from the content, in document order. Each receives its `[…]` text as
+    // `content.title` and its `{…}` as params.
     this.insets = []
-    const insetData = [...storedInsets, ...lifted.leaves]
+    const insetData = lifted.leaves
     for (let i = 0; i < insetData.length; i++) {
       const ref = insetData[i]
       const title = ref.title || ''

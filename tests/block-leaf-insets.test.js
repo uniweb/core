@@ -97,24 +97,12 @@ describe('lifting leaf insets', () => {
   })
 })
 
-describe('a stored insets[] — content from before the lift moved into core', () => {
-  it('is still read, placeholders and all', () => {
+describe('a stored insets[] — what the build extracted before 2026-09-27', () => {
+  it('is no longer read: no store serves one, and a site pushed again carries its insets in its content', () => {
     const block = build({
-      content: docWith(para('a'), { type: 'inset_placeholder', attrs: { refId: 'inset_0', embedKind: 'visual' } }),
+      content: docWith(para('a'), ref('Chart')),
       insets: [{ refId: 'inset_0', type: 'Diagram', params: {}, title: 'Overview', embedKind: 'visual' }],
     })
-    expect(block.insets).toHaveLength(1)
-    expect(block.getInset('inset_0').type).toBe('Diagram')
-  })
-
-  it('numbers lifted leaves after it, so no two insets share a refId', () => {
-    const block = build({
-      content: docWith(
-        { type: 'inset_placeholder', attrs: { refId: 'inset_0', embedKind: 'visual' } },
-        ref('Chart'),
-      ),
-      insets: [{ refId: 'inset_0', type: 'Diagram', params: {}, title: null, embedKind: 'visual' }],
-    })
-    expect(block.insets.map((b) => [b.refId, b.type])).toEqual([['inset_0', 'Diagram'], ['inset_1', 'Chart']])
+    expect(block.insets.map((b) => [b.refId, b.type])).toEqual([['inset_0', 'Chart']])
   })
 })
