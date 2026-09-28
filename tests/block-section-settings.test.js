@@ -127,3 +127,36 @@ describe('the component’s variables', () => {
     }
   })
 })
+
+describe('block.fetch — the section’s own data', () => {
+  it('reads `params.fetch`, where a stored section carries it, and keeps it from the component', () => {
+    const block = build({ fetch: { query: 'members', as: 'team' }, layout: 'grid' })
+    expect(block.fetch).toEqual({ query: 'members', as: 'team' })
+    expect(block.properties).toEqual({ layout: 'grid' })
+  })
+
+  it('reads the `fetch` beside the params — framework’s own build output — when params hold none', () => {
+    const block = new Block({ type: 'Team', content: { type: 'doc', content: [] }, params: {}, fetch: { query: 'members' } }, 's0', mockPage())
+    expect(block.fetch).toEqual({ query: 'members' })
+  })
+
+  it('prefers `params.fetch` when both are present', () => {
+    const block = new Block(
+      { type: 'Team', content: { type: 'doc', content: [] }, params: { fetch: { query: 'new' } }, fetch: { query: 'old' } },
+      's0',
+      mockPage()
+    )
+    expect(block.fetch).toEqual({ query: 'new' })
+  })
+})
+
+describe('sectionFetches — a page’s sections’ own data, from raw content', () => {
+  it('reads `params.fetch` first, then the `fetch` beside the params, at any depth', async () => {
+    const { sectionFetches } = await import('../src/fetch-config.js')
+    const sections = [
+      { params: { fetch: { query: 'a' } } },
+      { fetch: { query: 'b' }, subsections: [{ params: { fetch: { query: 'c' } }, fetch: { query: 'stale' } }] },
+    ]
+    expect(sectionFetches(sections)).toEqual([{ query: 'a' }, { query: 'b' }, { query: 'c' }])
+  })
+})

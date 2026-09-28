@@ -818,7 +818,10 @@ export function sectionFetches(sections) {
   const walk = (list) => {
     for (const s of list || []) {
       if (!s || typeof s !== 'object') continue
-      if (s.fetch) out.push(s.fetch)
+      // A stored section carries its fetch in `params.fetch` (2026-09-28); framework's own build
+      // output beside the params — the same order as the Block's.
+      const own = s.params?.fetch || s.fetch
+      if (own) out.push(own)
       if (Array.isArray(s.subsections)) walk(s.subsections)
     }
   }

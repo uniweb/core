@@ -72,7 +72,7 @@ export default class Block {
     this.preset = blockData.preset
 
     // ⭐ THE SECTION'S OWN SETTINGS — the names framework reserves in its params
-    // (`@uniweb/schemas/section`): `theme`, `background`, `grid`, `vars`. Framework applies
+    // (`@uniweb/schemas/section`): `theme`, `background`, `grid`, `vars`, `fetch`. Framework applies
     // each — the runtime paints the background and the color context around the component,
     // the page stylesheet applies the section's theme and its component's variables, kit's
     // `ChildGrid` lays out the child sections — so each is lifted onto the block, normalized
@@ -86,9 +86,10 @@ export default class Block {
     const rawBg = setting('background')
     const gridParam = setting('grid')
     const varsParam = setting('vars')
+    const fetchParam = setting('fetch')
     const standardOptions = blockConfig.standardOptions
     const {
-      theme: _theme, background: _background, grid: _grid, vars: _vars,
+      theme: _theme, background: _background, grid: _grid, vars: _vars, fetch: _fetch,
       standardOptions: _standardOptions, properties: _properties,
       ...componentParams
     } = own
@@ -180,9 +181,10 @@ export default class Block {
       )
     }
 
-    // Fetch configuration (from section frontmatter)
-    // Supports local files (path) or remote URLs (url)
-    this.fetch = blockData.fetch || null
+    // The section's own data — what its `query:` / `fetch:` declares. A stored section carries it
+    // in `params.fetch` [Diego, 2026-09-28], which wins when present; the `fetch` beside the params
+    // is framework's own build output, and a store's older field.
+    this.fetch = fetchParam || blockData.fetch || null
 
     // The layout the author chose for this section's child sections — the reserved
     // `grid:` section key [Diego, 2026-09-27]: `3` (equal columns) or `'40/60'`
