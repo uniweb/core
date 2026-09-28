@@ -81,20 +81,13 @@ export default class Block {
     // once for every renderer, and a component NEVER receives one as a param [Diego,
     // 2026-09-28]. It reads them from the block, or through kit. ⛔ Until then a component
     // also received `theme` (the mode), `background` and `vars` as params, and nothing read
-    // them there. `standardOptions` and `properties` are the older editor envelopes.
-    const own = blockConfig.properties || blockConfig
-    const setting = (name) => (blockConfig[name] !== undefined ? blockConfig[name] : own[name])
-    const rawTheme = setting('theme')
-    const rawBg = setting('background')
-    const gridParam = setting('grid')
-    const varsParam = setting('vars')
-    const fetchParam = setting('fetch')
-    const standardOptions = blockConfig.standardOptions
+    // them there. ⛔ An editor's older envelope — `params.standardOptions` and `params.properties`
+    // — is no longer read (2026-09-28): an editor's preview sends a section's params as stored,
+    // and no store publishes the envelope. Either name is an ordinary param now.
     const {
-      theme: _theme, background: _background, grid: _grid, vars: _vars, fetch: _fetch,
-      standardOptions: _standardOptions, properties: _properties,
+      theme: rawTheme, background: rawBg, grid: gridParam, vars: varsParam, fetch: fetchParam,
       ...componentParams
-    } = own
+    } = blockConfig
     this.properties = componentParams
 
     // The section's theme: `theme.yml`'s own keys scoped to the section — `colors`,
@@ -115,18 +108,10 @@ export default class Block {
     // them inline on the section, and a neighbour reads them through `getBlockInfo()`.
     this.contextOverrides = theme.effectiveTokens
 
-    // ⚠️ The older editor envelope: `colors` (a section palette, and tokens per context) and
-    // `foundationStyles`, read by the page stylesheet until an editor writes the section's
-    // `theme` instead (uwx-format.md § A page section's fields). Nothing else reads it.
-    this.standardOptions = standardOptions || {}
-
     // What the runtime draws behind the section — normalized once (its shape, and store-held
     // assets resolved to URLs) for every renderer, and for a component that draws it itself
-    // (`background: 'self'` in `meta.js`, with kit's `SectionBackground`). An editor's preview
-    // may still send it inside the older envelope, which wins while it does.
-    this.background =
-      this.standardOptions.background ||
-      (rawBg ? Block.normalizeBackground(rawBg, this.parseOptions()) : null)
+    // (`background: 'self'` in `meta.js`, with kit's `SectionBackground`).
+    this.background = rawBg ? Block.normalizeBackground(rawBg, this.parseOptions()) : null
 
     // Values for the CSS variables the component declares in `meta.js` `vars:` — merged into
     // `componentVars` when the component is known (`initComponent`).

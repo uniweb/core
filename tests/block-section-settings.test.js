@@ -24,9 +24,18 @@ describe('the params a component receives', () => {
     expect(block.properties).toEqual({ layout: 'center' })
   })
 
-  it('leave out the older editor envelope too', () => {
-    const block = build({ standardOptions: { background: { mode: 'color', color: 'red' } }, layout: 'center' })
-    expect(block.properties).toEqual({ layout: 'center' })
+  it('hold an older editor envelope as an ordinary param — it is no longer read (2026-09-28)', () => {
+    const standardOptions = { background: { mode: 'color', color: 'red' } }
+    const block = build({ standardOptions, layout: 'center' })
+    expect(block.properties).toEqual({ standardOptions, layout: 'center' })
+    expect(block.background).toBeNull()
+    expect(block).not.toHaveProperty('standardOptions')
+  })
+
+  it('come from the params themselves, never from a nested `properties`', () => {
+    const block = build({ properties: { theme: 'dark', layout: 'grid' }, layout: 'center' })
+    expect(block.themeName).toBe('')
+    expect(block.properties).toEqual({ properties: { theme: 'dark', layout: 'grid' }, layout: 'center' })
   })
 
   it('do not change the stored params', () => {
@@ -99,9 +108,9 @@ describe('block.background', () => {
     expect(build({}).background).toBeNull()
   })
 
-  it('takes an editor’s older envelope while one is sent', () => {
+  it('is the section’s own, never an older editor envelope’s', () => {
     const block = build({ standardOptions: { background: { mode: 'color', color: 'red' } }, background: 'blue' })
-    expect(block.background).toEqual({ mode: 'color', color: 'red' })
+    expect(block.background).toEqual({ mode: 'color', color: 'blue' })
   })
 })
 
