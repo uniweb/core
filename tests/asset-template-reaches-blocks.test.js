@@ -93,7 +93,7 @@ describe('section backgrounds resolve too', () => {
   })
 
   const bgOf = (content) =>
-    new Website({ content }).pages[0].bodyBlocks[0].standardOptions.background
+    new Website({ content }).pages[0].bodyBlocks[0].background
 
   it('resolves an image background through the template', () => {
     const bg = bgOf(withBackground({ image: { assetId: ID, assetExt: 'jpg' } }))

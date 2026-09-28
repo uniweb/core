@@ -135,3 +135,26 @@ describe('the site\'s binding reaches layout sections and top-level pages, and n
     expect(delivered(w, w.getPage('/about/team').bodyBlocks[0])).toEqual({ status: 'none', data: null })
   })
 })
+
+describe('page.getAllBlocks — every block the page renders at its top level', () => {
+  it('takes every area the layout shows — a sidebar too — beside the body', () => {
+    const w = new Website({
+      content: {
+        config: { name: 'Test', defaultLanguage: 'en' },
+        theme: {},
+        pages: [{ route: '/', isIndex: true, title: 'Home', layout: {}, sections: [{ type: 'Body', content: doc('Body') }] }],
+        layouts: {
+          default: {
+            header: area('/layout/header', 'Header'),
+            left: area('/layout/left', 'Sidebar'),
+            footer: area('/layout/footer', 'Footer'),
+          },
+        },
+      },
+    })
+    const page = w.pages[0]
+    expect(types(page.getAllBlocks()).sort()).toEqual(['Body', 'Footer', 'Header', 'Sidebar'])
+    // …where the neighbours' order stays header · body · footer
+    expect(types(page.getPageBlocks())).toEqual(['Header', 'Body', 'Footer'])
+  })
+})

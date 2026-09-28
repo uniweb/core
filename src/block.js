@@ -71,60 +71,63 @@ export default class Block {
     const blockConfig = blockData.params || blockData.config || {}
     this.preset = blockData.preset
 
-    // Normalize theme: supports string ("light") or object ({ mode, ...tokenOverrides })
-    // Resolve bare palette refs (e.g. "primary: neutral-900" → var(--neutral-900))
+    // ⭐ THE SECTION'S OWN SETTINGS — the names framework reserves in its params
+    // (`@uniweb/schemas/section`): `theme`, `background`, `grid`, `vars`. Framework applies
+    // each — the runtime paints the background and the color context around the component,
+    // the page stylesheet applies the section's theme and its component's variables, kit's
+    // `ChildGrid` lays out the child sections — so each is lifted onto the block, normalized
+    // once for every renderer, and a component NEVER receives one as a param [Diego,
+    // 2026-09-28]. It reads them from the block, or through kit. ⛔ Until then a component
+    // also received `theme` (the mode), `background` and `vars` as params, and nothing read
+    // them there. `standardOptions` and `properties` are the older editor envelopes.
+    const own = blockConfig.properties || blockConfig
+    const setting = (name) => (blockConfig[name] !== undefined ? blockConfig[name] : own[name])
+    const rawTheme = setting('theme')
+    const rawBg = setting('background')
+    const gridParam = setting('grid')
+    const varsParam = setting('vars')
+    const standardOptions = blockConfig.standardOptions
+    const {
+      theme: _theme, background: _background, grid: _grid, vars: _vars,
+      standardOptions: _standardOptions, properties: _properties,
+      ...componentParams
+    } = own
+    this.properties = componentParams
+
+    // The section's theme: `theme.yml`'s own keys scoped to the section — `colors`,
+    // `contexts`, `vars` — plus `mode`, the color context it pins. `theme: dark` is the
+    // shorthand for `{ mode: dark }`, and a token written beside `mode` applies to the section
+    // in any context (`normalizeSectionTheme`). The page stylesheet applies the overrides
+    // (`buildSectionOverrides`, @uniweb/theming).
     //
     // themeName values:
-    //   '' (empty) = Auto — section inherits from site's appearance/scheme
+    //   '' (empty) = Auto — the section follows the site's light/dark scheme
     //   'light'    = Pinned to light context
     //   'medium'   = Pinned to dim context
     //   'dark'     = Pinned to dark context
-    const rawTheme = blockConfig.theme
-    if (rawTheme && typeof rawTheme === 'object') {
-      const { mode, ...overrides } = rawTheme
-      this.themeName = mode || ''
-      if (Object.keys(overrides).length > 0) {
-        for (const key of Object.keys(overrides)) {
-          overrides[key] = normalizeTokenValue(overrides[key])
-        }
-        this.contextOverrides = overrides
-      } else {
-        this.contextOverrides = null
-      }
-    } else {
-      this.themeName = rawTheme ?? ''
-      this.contextOverrides = null
-    }
+    const theme = Block.normalizeSectionTheme(rawTheme)
+    this.themeName = theme.mode
+    this.themeOverrides = theme.overrides
+    // The tokens in effect whatever the scheme (`normalizeSectionTheme`): the renderers apply
+    // them inline on the section, and a neighbour reads them through `getBlockInfo()`.
+    this.contextOverrides = theme.effectiveTokens
 
-    this.standardOptions = blockConfig.standardOptions || {}
-    this.properties = blockConfig.properties || blockConfig
+    // ⚠️ The older editor envelope: `colors` (a section palette, and tokens per context) and
+    // `foundationStyles`, read by the page stylesheet until an editor writes the section's
+    // `theme` instead (uwx-format.md § A page section's fields). Nothing else reads it.
+    this.standardOptions = standardOptions || {}
 
-    // Normalize params.theme to string so components always see "light"/"dark"/"medium",
-    // not the raw object. Done after properties assignment to avoid mutating source data.
-    if (this.properties.theme && typeof this.properties.theme === 'object') {
-      this.properties = { ...this.properties, theme: this.themeName }
-    }
+    // What the runtime draws behind the section — normalized once (its shape, and store-held
+    // assets resolved to URLs) for every renderer, and for a component that draws it itself
+    // (`background: 'self'` in `meta.js`, with kit's `SectionBackground`). An editor's preview
+    // may still send it inside the older envelope, which wins while it does.
+    this.background =
+      this.standardOptions.background ||
+      (rawBg ? Block.normalizeBackground(rawBg, this.parseOptions()) : null)
 
-    // `grid` rides in the section's params, as every key the author writes does — so it
-    // travels and round-trips with no field of its own — but the NAME is framework's:
-    // it is lifted to `block.grid` below and a component never receives it as a param.
-    let gridParam = null
-    if (Object.hasOwn(this.properties, 'grid')) {
-      const { grid, ...rest } = this.properties
-      gridParam = grid
-      this.properties = rest
-    }
-
-    // Extract background from params into standardOptions
-    // Content authors set background in section frontmatter; the runtime
-    // reads it from standardOptions to render the Background component.
-    const rawBg = blockConfig.background
-    if (rawBg && !this.standardOptions.background) {
-      this.standardOptions = {
-        ...this.standardOptions,
-        background: Block.normalizeBackground(rawBg, this.parseOptions())
-      }
-    }
+    // Values for the CSS variables the component declares in `meta.js` `vars:` — merged into
+    // `componentVars` when the component is known (`initComponent`).
+    this.sectionVars = varsParam && typeof varsParam === 'object' ? varsParam : null
 
     // Child blocks (subsections)
     this.childBlocks = blockData.subsections
@@ -511,7 +514,7 @@ export default class Block {
     // Merge component-level CSS vars: meta.js defaults + frontmatter overrides
     // Source: meta.js vars field (defaults), section frontmatter vars: key (overrides)
     if (meta.vars) {
-      this.componentVars = Block.mergeComponentVars(meta.vars, this.properties.vars)
+      this.componentVars = Block.mergeComponentVars(meta.vars, this.sectionVars)
     }
 
     return this.Component
@@ -725,6 +728,73 @@ export default class Block {
    *        asset-URL pattern, used to resolve a store-held background.
    * @returns {Object} Normalized background config with mode
    */
+  /**
+   * A section's theme, from its `theme:` — `theme.yml`'s own keys scoped to the section,
+   * plus `mode`, the color context it pins:
+   *
+   *     theme: dark                      the shorthand for { mode: dark }
+   *     theme:
+   *       mode: dark                     light | medium | dark; left out, the section follows the site
+   *       colors: { primary: '#0a6' }    like theme.yml `colors` — a palette, shades generated
+   *       contexts: { dark: { … } }      like theme.yml `contexts` — tokens per color context
+   *       vars: { header-height: 5rem }  like theme.yml `vars` — the foundation's variables
+   *       heading: primary-900          a token beside `mode` — the section's in any context
+   *
+   * Token values resolve bare palette references (`neutral-900` → `var(--neutral-900)`).
+   *
+   * @param {string|Object|null|undefined} raw
+   * @returns {{ mode: string, overrides: Object|null, effectiveTokens: Object|null }}
+   *   `overrides` is `{ colors, contexts, vars, tokens }` (each null when unset) or null when
+   *   the section overrides nothing; `effectiveTokens` are the tokens in effect whatever the
+   *   scheme — a pinned section's context's own over those beside `mode`; for a section that
+   *   follows the site, those beside `mode` it sets in no context — or null. The renderers
+   *   apply them inline, so they reach the page even where a host places no page stylesheet.
+   */
+  static normalizeSectionTheme(raw) {
+    if (raw === undefined || raw === null || raw === '') return { mode: '', overrides: null, effectiveTokens: null }
+    if (typeof raw !== 'object' || Array.isArray(raw)) return { mode: String(raw), overrides: null, effectiveTokens: null }
+
+    const { mode, colors, contexts, vars, ...tokens } = raw
+    const tokenMap = (map) => {
+      if (!map || typeof map !== 'object' || Array.isArray(map)) return null
+      const out = {}
+      for (const [name, value] of Object.entries(map)) {
+        if (value === undefined || value === null || value === '') continue
+        out[name] = normalizeTokenValue(value)
+      }
+      return Object.keys(out).length > 0 ? out : null
+    }
+    const nonEmpty = (map) =>
+      map && typeof map === 'object' && !Array.isArray(map) && Object.keys(map).length > 0 ? { ...map } : null
+
+    const byContext = {}
+    if (contexts && typeof contexts === 'object') {
+      for (const [context, map] of Object.entries(contexts)) {
+        const normalized = tokenMap(map)
+        if (normalized) byContext[context] = normalized
+      }
+    }
+    const overrides = {
+      colors: nonEmpty(colors),
+      contexts: Object.keys(byContext).length > 0 ? byContext : null,
+      vars: nonEmpty(vars),
+      tokens: tokenMap(tokens),
+    }
+    const pinned = typeof mode === 'string' ? mode : ''
+    // A context's own token beats one written beside `mode`, as in the page stylesheet. A
+    // section that follows the site has no context of its own, so a token it also sets per
+    // context is left to the stylesheet's per-scheme rules rather than applied here.
+    const perContext = new Set(Object.values(byContext).flatMap((map) => Object.keys(map)))
+    const effective = pinned
+      ? { ...(overrides.tokens || {}), ...(byContext[pinned] || {}) }
+      : Object.fromEntries(Object.entries(overrides.tokens || {}).filter(([name]) => !perContext.has(name)))
+    return {
+      mode: pinned,
+      overrides: Object.values(overrides).some(Boolean) ? overrides : null,
+      effectiveTokens: Object.keys(effective).length > 0 ? effective : null,
+    }
+  }
+
   static normalizeBackground(raw, options) {
     return Block.resolveBackgroundMedia(Block.normalizeBackgroundShape(raw), options)
   }

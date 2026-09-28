@@ -327,6 +327,22 @@ export default class Page {
   }
 
   /**
+   * Every section block the page renders at its top level: its body, and each layout area it
+   * shows — header, footer, and any other area its layout declares, a sidebar included. A
+   * block's child sections are its own (`block.childBlocks`). What the page stylesheet covers
+   * (`buildSectionOverrides`, @uniweb/theming), where `getPageBlocks()` is the header · body ·
+   * footer order that neighbours count in.
+   * @returns {Block[]}
+   */
+  getAllBlocks() {
+    const blocks = [...this.bodyBlocks]
+    for (const areaBlocks of Object.values(this.getLayoutAreas())) {
+      if (Array.isArray(areaBlocks)) blocks.push(...areaBlocks)
+    }
+    return blocks
+  }
+
+  /**
    * Get body blocks
    * @returns {Block[]}
    */

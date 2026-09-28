@@ -53,6 +53,10 @@ export default class Uniweb {
     }
 
     this.childBlockRenderer = null
+    // The runtime's section-background renderer — the same one it draws behind every section —
+    // for kit's `SectionBackground`, which a component that paints its own background uses
+    // (`background: 'self'`). Filled by each boot path, like `childBlockRenderer`.
+    this.backgroundRenderer = null
     this.routingComponents = {}
     this.language = 'en'
 
