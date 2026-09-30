@@ -293,7 +293,8 @@ export function landingRoute(site, page, seen = new Set()) {
  *    [Diego]; until then no page matched it.
  * 2. **The page** (`findPage`). None ⇒ `notFound`, with the site's not-found page: its
  *    `notFound` content, else the page at `/404`.
- * 3. **An authored `redirect:`** ⇒ a `302` to it, as written.
+ * 3. **An authored `redirect:`** ⇒ a `302` to it: a page of the site in this locale, anything
+ *    else as written (`authoredRedirectLocation`).
  * 4. **An authored `rewrite:`** ⇒ the page is served from there; only a host that proxies can.
  * 5. **A page with no content** ⇒ a `302` to where it lands (`landingRoute`), in this locale
  *    (`localeUrl`) — when that is not the page itself.
@@ -328,7 +329,8 @@ export function resolveRoute(site, path, context = {}) {
 
   // 3 · 4 · what an author wrote on the page
   if (typeof page.redirect === 'string' && page.redirect) {
-    return { ...redirect(page.redirect, RESOLUTION_STATUS.pageRedirect, 'authored'), ...found }
+    const location = authoredRedirectLocation(index, found.route, page.redirect, { activeLocale, defaultLocale })
+    return { ...redirect(location, RESOLUTION_STATUS.pageRedirect, 'authored'), ...found }
   }
   if (typeof page.rewrite === 'string' && page.rewrite) {
     return { kind: 'rewrite', target: page.rewrite, ...found }
@@ -349,4 +351,53 @@ export function resolveRoute(site, path, context = {}) {
 
 function redirect(location, status, reason) {
   return { kind: 'redirect', status, location, reason }
+}
+
+const HAS_SCHEME = /^[a-z][a-z0-9+.-]*:/i
+
+/**
+ * An authored `redirect:` resolved against the page that carries it: a URL with a scheme or a
+ * path from the root as written, a relative one against the page's own route — `academic` on
+ * `/solutions` is `/solutions/academic`. The build resolves a site's redirects by this rule, and
+ * `resolveRoute` resolves a payload's that were not (a pushed page carries its target as written).
+ *
+ * @param {string} route - the page's own route
+ * @param {string} target - its `redirect:`
+ * @returns {string}
+ */
+export function authoredRedirectTarget(route, target) {
+  if (typeof target !== 'string' || !target) return target
+  if (target.startsWith('/') || HAS_SCHEME.test(target)) return target
+  return route === '/' ? `/${target}` : `${route}/${target}`
+}
+
+/**
+ * ⭐ WHERE AN AUTHORED REDIRECT SENDS A VISITOR OF THIS LOCALE — a page of the site in their
+ * language, as a page with no content sends them (ruled for containers 2026-09-30 [Diego]; for an
+ * authored redirect the same day, asked by the host that serves it).
+ *
+ * - A URL with a scheme, a protocol-relative one, or a path that already carries a served locale's
+ *   prefix: as written — the author named where.
+ * - A path naming a page of the site: that page's URL in this locale (`localeUrl`) — its prefix and
+ *   its translated slugs — with any query or fragment kept.
+ * - Any other path — a file, a route the site does not hold: as written.
+ *
+ * ⛔ Until 2026-09-30 every authored redirect went as written, so a French visitor was sent to the
+ * English page, and a relative target was left for the browser to resolve against the URL it had
+ * asked for rather than the page.
+ *
+ * @returns {string}
+ */
+function authoredRedirectLocation(index, route, target, { activeLocale, defaultLocale }) {
+  const resolved = authoredRedirectTarget(route, target)
+  if (!resolved.startsWith('/') || resolved.startsWith('//')) return resolved
+  const cut = resolved.search(/[?#]/)
+  const path = cut < 0 ? resolved : resolved.slice(0, cut)
+  const suffix = cut < 0 ? '' : resolved.slice(cut)
+  const first = path.split('/')[1] || ''
+  if (first && index.locales.includes(first)) return resolved
+  const canonical = path === '/' ? '/' : path.replace(/\/$/, '')
+  const named = findPage(index, canonical, { activeLocale: index.siteDefaultLocale, defaultLocale: index.siteDefaultLocale })
+  if (!named) return resolved
+  return localeUrl(index, activeLocale, canonical, { activeLocale, defaultLocale }) + suffix
 }

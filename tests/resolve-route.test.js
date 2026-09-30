@@ -107,6 +107,38 @@ describe('a redirect', () => {
     expect(resolveRoute(content(), '/moved')).toMatchObject({ reason: 'authored', location: 'https://example.com/elsewhere' })
   })
 
+  describe('an authored redirect goes to a page of the site in the visitor\'s language', () => {
+    // ⛔ Until 2026-09-30 every authored redirect went as written: a French visitor was sent to the
+    // English page, and a relative target was left to the browser to resolve against its own URL.
+    const pages = [
+      page('/'), page('/about'), page('/docs'), page('/docs/a'), page('/solutions/academic'),
+      empty('/solutions', { redirect: 'academic' }),
+      page('/old', { redirect: '/docs/a' }),
+      page('/frag', { redirect: '/docs/a#part' }),
+      page('/file', { redirect: '/files/report.pdf' }),
+      page('/pinned', { redirect: '/en/about' }),
+    ]
+    const site = (locale) => content({ activeLocale: locale, i18n: { routeTranslations: { fr: { '/docs': '/documents' } } } }, pages)
+    const at = (locale, path) => resolveRoute(site(locale), path).location
+
+    it('a page of the site: its URL in this locale, a query or fragment kept', () => {
+      expect(at('en', '/old')).toBe('/docs/a')
+      expect(at('fr', '/fr/old')).toBe('/fr/documents/a')
+      expect(at('fr', '/fr/frag')).toBe('/fr/documents/a#part')
+    })
+
+    it('a relative target resolves against the page that carries it', () => {
+      expect(at('en', '/solutions')).toBe('/solutions/academic')
+      expect(at('fr', '/fr/solutions')).toBe('/fr/solutions/academic')
+    })
+
+    it('anything else as written: a file, a URL elsewhere, a path naming its locale', () => {
+      expect(at('fr', '/fr/file')).toBe('/files/report.pdf')
+      expect(at('fr', '/fr/pinned')).toBe('/en/about')
+      expect(resolveRoute(content(FR), '/fr/moved')).toMatchObject({ reason: 'authored', location: 'https://example.com/elsewhere' })
+    })
+  })
+
   it('a page with no content: 302 to its first descendant with content, past an empty one', () => {
     expect(resolveRoute(content(), '/docs')).toMatchObject({ kind: 'redirect', status: 302, reason: 'container', location: '/docs/intro' })
   })
