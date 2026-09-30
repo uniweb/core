@@ -666,6 +666,13 @@ export function stripLocalePrefix(route, activeLocale, defaultLocale) {
  * ⚖️ Matching is not resolving: a hit means the ROUTE exists. Whether the record
  * behind a parametric page exists is a data question answered later.
  *
+ * ⚠️ **It is a SUBSET of `Website#getPage`, not the whole rule.** It strips no locale
+ * prefix, reverse-translates no route (`config.i18n.routeTranslations`), matches no
+ * index page by its nav route, and promotes no folder to its `isIndex` child —
+ * `getPage` does all four. So for a localized URL, or a folder with an index child,
+ * the two can name different pages. *(This comment called it "one rule, for every
+ * lane" without that caveat until 2026-09-30.)*
+ *
  * @param {Array<Object>|{pages?: Array<Object>}} source - the pages, or a payload holding them
  * @param {string} route - the concrete path
  * @returns {{ page: Object|null, params: Record<string,string> }} `page` is null when nothing matches
