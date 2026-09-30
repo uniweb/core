@@ -18,6 +18,7 @@
     "./insets": "./src/insets.js",
     "./locale-config": "./src/locale-config.js",
     "./route-match": "./src/route-match.js",
+    "./resolve-route": "./src/resolve-route.js",
     "./section-id": "./src/section-id.js",
     "./services": "./src/services.js",
     "./sort": "./src/sort.js",

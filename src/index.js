@@ -83,6 +83,16 @@ export {
   recordRouteBase,
   findPageForRoute,
 } from './route-match.js'
+// What a URL names — a page, a redirect, a rewrite, or nothing — for every lane. Also the
+// zero-React leaf `@uniweb/core/resolve-route`, which is how a host reaches it.
+export {
+  resolveRoute,
+  routeIndex,
+  localeOfPath,
+  localeUrl,
+  landingRoute,
+  RESOLUTION_STATUS,
+} from './resolve-route.js'
 export { isRichSchema } from './schemas.js'
 // ⛔ `Tracker` is NOT on the package entry. It is a FEATURE, not part of the
 // object graph this package exists to define, and putting it here made every

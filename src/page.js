@@ -8,6 +8,7 @@
 import Block from './block.js'
 import ObservableState from './observable-state.js'
 import { normalizeSeo } from './seo.js'
+import { landingRoute } from './resolve-route.js'
 
 // Normalize a page's nav-visibility into a deduped hideIn array (the layout-area
 // names the page is suppressed from). Reads the canonical hideIn (array, or a single
@@ -588,33 +589,14 @@ export default class Page {
    * page.getNavigableRoute() // Returns '/docs/getting-started'
    */
   getNavigableRoute() {
-    return this._landingRoute() ?? this.route // nothing below has content: its own route
-  }
-
-  /**
-   * The route this page lands on — its own when it has content or an index child,
-   * else the first descendant's with content, depth-first in page order — or null
-   * when nothing in it has content.
-   *
-   * ⛔ Until 2026-09-30 the walk took the FIRST child's answer whatever it was, and a
-   * child always answers (its own route, as a last resort): a container whose first
-   * child was an empty leaf redirected to that empty page, never to a later sibling
-   * with content. The null is what lets the walk go on past it.
-   *
-   * @private
-   * @returns {string|null}
-   */
-  _landingRoute() {
-    if (this.hasContent()) return this.route
-    const children = this.children || []
-    // Prefer the index child (designated landing page for this folder).
-    // Return this folder's own route so the URL stays clean (/Articles, not /Articles/index).
-    if (children.some((c) => c.isIndex)) return this.route
-    for (const child of children) {
-      const route = child._landingRoute()
-      if (route) return route
-    }
-    return null
+    // ⭐ ONE RULE with the resolver's (`landingRoute`, `./resolve-route.js`): itself when it has
+    // content or an `isIndex` child, else its first descendant with content, depth-first in page
+    // order. ⛔ Until 2026-09-30 an empty first child ended the walk, so a container sent visitors
+    // to a page with nothing on it while a later sibling had content. A page the site's index
+    // does not hold — a record's page, a layout area — lands on itself.
+    const index = this.website?._routeIndex
+    const data = index?.byRoute.get(this.route)
+    return (data && landingRoute(index, data)) || this.route
   }
 
   /**

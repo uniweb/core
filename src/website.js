@@ -11,12 +11,19 @@ import FetcherDispatcher from './fetcher-dispatcher.js'
 import ObservableState from './observable-state.js'
 import { normalizeSeo } from './seo.js'
 import { resolveDefaultLocale, localeLabel } from './locale-config.js'
-import { matchDynamicRoute, decodeRouteValue, recordTitle, routeBinding, routeParamName, parentRouteOf } from './route-match.js'
+import { matchDynamicRoute, recordTitle, routeBinding, routeParamName, parentRouteOf } from './route-match.js'
 import { resolveFetchConfigs, pageRouteQuery, recordPages } from './fetch-config.js'
 import { declaredKeys } from './data-keys.js'
 import { pageRecordConfig, planFor, runPlanSync } from './page-data.js'
 import { findLayoutEntry } from './layout-name.js'
 import { resolveService } from './services.js'
+import {
+  routeIndex,
+  resolveRoute as resolveRouteIn,
+  localeUrl,
+  translateRoute as translateRouteIn,
+  reverseTranslateRoute as reverseTranslateRouteIn,
+} from './resolve-route.js'
 
 /**
  * Services whose provider is not simply an address, keyed by name.
@@ -103,7 +110,10 @@ export default class Website {
     this.locales = []
     this.activeLang = 'en'
     this.langs = []
-    this._routeTranslations = {}
+    // What a URL names — the one rule, over this content (`./resolve-route.js`).
+    this._routeIndex = null
+    // A payload page → its Page, for the pages `resolveRoute` names.
+    this._pageOfData = new Map()
     this.basePath = ''
     this.versionedScopes = {}
     this.assets = {}
@@ -166,7 +176,13 @@ export default class Website {
     this._dynamicPageCache = new Map()
     this._recordPages = null
 
-    this.pages = regularPages.map((page, index) => new Page(page, index, this))
+    this._pageOfData = new Map()
+    this.pages = regularPages.map((page, index) => {
+      const instance = new Page(page, index, this)
+      this._pageOfData.set(page, instance)
+      return instance
+    })
+    this._routeIndex = routeIndex(content)
     this.buildPageHierarchy()
 
     this.activePage =
@@ -192,7 +208,6 @@ export default class Website {
     this.activeLang = this.activeLocale
     this.langs = this.locales.map((l) => ({ label: l.label || l.code, value: l.code }))
 
-    this._routeTranslations = this._buildRouteTranslations(config)
     this.versionedScopes = versionedScopes
     this.assets = assets
   }
@@ -320,86 +335,34 @@ export default class Website {
   }
 
   /**
-   * Build forward and reverse route translation maps per locale
-   * @private
-   */
-  _buildRouteTranslations(config) {
-    const translations = config.i18n?.routeTranslations || {}
-    const result = {}
-    for (const [locale, routes] of Object.entries(translations)) {
-      const forward = new Map()  // canonical → translated
-      const reverse = new Map()  // translated → canonical
-      for (const [canonical, translated] of Object.entries(routes)) {
-        forward.set(canonical, translated)
-        reverse.set(translated, canonical)
-      }
-      result[locale] = { forward, reverse }
-    }
-    return result
-  }
-
-  /**
    * Translate a canonical route to a locale-specific display route
    * Supports exact match and prefix match (e.g., /blog → /noticias also applies to /blog/my-post)
+   *
+   * One rule with the resolver's (`./resolve-route.js`), over the same content.
    *
    * @param {string} canonicalRoute - Internal route (e.g., '/about')
    * @param {string} [locale] - Target locale (defaults to active locale)
    * @returns {string} Translated route or original if no translation exists
    */
   translateRoute(canonicalRoute, locale = this.activeLocale) {
-    if (!locale || locale === this.siteDefaultLocale) return canonicalRoute
-    const entry = this._routeTranslations[locale]
-    if (!entry) return canonicalRoute
-    // Exact match
-    const translated = entry.forward.get(canonicalRoute)
-    if (translated) return translated
-    // Prefix match (e.g., /blog matches /blog/my-post → /noticias/my-post)
-    for (const [canonical, trans] of entry.forward) {
-      if (canonicalRoute.startsWith(canonical + '/')) {
-        return trans + canonicalRoute.slice(canonical.length)
-      }
-    }
-    return canonicalRoute
+    return translateRouteIn(this._routeIndex, canonicalRoute, locale)
   }
 
   /**
    * Reverse-translate a display route back to the canonical route
    * Used when resolving incoming URLs to find the matching page
    *
+   * ⭐ It DECODES first (`./resolve-route.js`): a browser percent-encodes a translated slug —
+   * `/Sites-Web/Th%C3%A8me-du-site-Web` — and the translations are authored as plain text.
+   * Without it every translated route carrying a non-ASCII character or an apostrophe resolved
+   * to nothing, while the same route with an all-ASCII slug worked.
+   *
    * @param {string} displayRoute - Display route (e.g., '/acerca-de')
    * @param {string} [locale] - Source locale (defaults to active locale)
    * @returns {string} Canonical route or original if no translation exists
    */
   reverseTranslateRoute(displayRoute, locale = this.activeLocale) {
-    if (!locale || locale === this.siteDefaultLocale) return displayRoute
-    const entry = this._routeTranslations[locale]
-    if (!entry) return displayRoute
-
-    // The caller hands us a route that came from a URL, and a browser
-    // percent-encodes everything outside the unreserved set — so a French slug
-    // arrives as `/Sites-Web/Th%C3%A8me-du-site-Web`. The translation map is
-    // built from site.yml, where it is authored as plain text. Decoding here
-    // rather than at each call site is deliberate: getPage(), normalizeRoute()
-    // and getLocaleUrl() all feed this, and a future caller would have to
-    // remember otherwise.
-    //
-    // Without it translateRoute() emits a URL this method cannot read back —
-    // every translated route carrying a non-ASCII character or an apostrophe
-    // resolved to nothing and rendered the 404 page, while the SAME route with
-    // an all-ASCII slug worked. The helper is shared with the captured-param
-    // decode in `route-match.js`, which needs the identical guard.
-    const route = decodeRouteValue(displayRoute)
-
-    // Exact match
-    const canonical = entry.reverse.get(route)
-    if (canonical) return canonical
-    // Prefix match
-    for (const [trans, canon] of entry.reverse) {
-      if (route.startsWith(trans + '/')) {
-        return canon + route.slice(trans.length)
-      }
-    }
-    return route
+    return reverseTranslateRouteIn(this._routeIndex, displayRoute, locale)
   }
 
   /**
@@ -458,124 +421,64 @@ export default class Website {
   }
 
   /**
-   * Get page by route
-   * Matches in priority order:
-   * 1. Exact match on actual route
-   * 2. Index page nav route match
-   * 3. Dynamic route pattern match (e.g., /blog/:slug matches /blog/my-post)
+   * Get page by route — the page a URL names, or undefined.
+   *
+   * ⭐ **The rule is `resolveRoute`** (`./resolve-route.js`), the one every lane calls: the
+   * active locale's prefix, the page as given or by its translated route (a folder resolving to
+   * its `isIndex` child), an index page by its own URL, then the parametric pages in page order.
+   * This maps what it names to this Website's Page — a parametric page's concrete Page made here,
+   * with its record looked up (`_createDynamicPage`).
+   *
+   * A page that redirects is still returned: it is the page the URL names, and what to do about
+   * its redirect is `resolveRoute`'s to say. A URL naming no page — the locale served unprefixed,
+   * asked for with its prefix, included — returns undefined.
    *
    * @param {string} route - The route to find
    * @returns {Page|undefined}
    */
   getPage(route) {
-    // Strip locale prefix if present (e.g., '/fr/about' → '/about')
-    // Pages are stored with non-prefixed routes; the locale is a URL concern,
-    // not a page identity concern.
-    // Decode before ANY comparison: a published payload can hold translated
-    // display routes verbatim, so the direct match below needs the same plain
-    // text form the reverse-translate path does.
-    let stripped = decodeRouteValue(route)
-    if (this.activeLocale && this.activeLocale !== this.defaultLocale) {
-      const prefix = `/${this.activeLocale}`
-      if (stripped === prefix || stripped === `${prefix}/`) {
-        stripped = '/'
-      } else if (stripped.startsWith(`${prefix}/`)) {
-        stripped = stripped.slice(prefix.length)
-      }
-    }
-
-    // Normalize trailing slashes for consistent matching
-    const normalizedStripped = stripped === '/' ? '/' : stripped.replace(/\/$/, '')
-
-    // Priority 1: Direct match on the (possibly display) route.
-    // Handles published-payload sites where the page map may already contain
-    // locale-translated display routes (e.g. fr pages have fr routes).
-    // For file-system sites whose page map uses canonical routes this will
-    // simply fall through to the reverse-translate path below.
-    const directMatch = this.pages.find((page) => page.route === normalizedStripped)
-    if (directMatch) {
-      // Folder with index child: always resolve to the index page.
-      // The index child is the designated landing page for this folder URL.
-      const indexChild = directMatch.children.find((c) => c.isIndex)
-      if (indexChild) return indexChild
-      return directMatch
-    }
-
-    // Reverse-translate display route to canonical (e.g., '/acerca-de' → '/about')
-    //
-    // Feed it the TRAILING-SLASH-NORMALIZED form. The translation map is keyed
-    // without a trailing slash, so `/acerca-de/` missed the exact lookup and
-    // fell through to the prefix branch, which rewrites only the FIRST segment
-    // — `/blogue/mi-articulo/` became `/blog/mi-articulo/`, leaving the child
-    // segment untranslated and pointing at no page. It looked like it worked
-    // for as long as every child slug happened to be identical in both locales.
-    stripped = this.reverseTranslateRoute(normalizedStripped)
-
-    // A translation VALUE may itself carry a trailing slash, so normalize again
-    // rather than assuming the input normalization covered it.
-    const normalizedRoute = stripped === '/' ? '/' : stripped.replace(/\/$/, '')
-
-    // Priority 1b: Exact match on canonical route
-    const exactMatch = this.pages.find((page) => page.route === normalizedRoute)
-    if (exactMatch) {
-      const indexChild = exactMatch.children.find((c) => c.isIndex)
-      if (indexChild) return indexChild
-      return exactMatch
-    }
-
-    // Priority 2: Index page nav route match
-    const indexMatch = this.pages.find((page) => page.isIndex && page.getNavRoute() === normalizedRoute)
-    if (indexMatch) return indexMatch
-
-    // Priority 3: Dynamic route pattern matching — on the canonical route, then on the display route,
-    // as Priorities 1 and 1b match a static page in either payload shape. A published payload's
-    // parametric page carries its locale's own pattern (`/noticias/:slug`), which only the display
-    // route matches. ⛔ Until 2026-09-26 only the canonical route was tried, so a backend-served
-    // site's `/es/noticias/x` showed the not-found page without asking for its record. The canonical
-    // route goes first so a file-lane site — whose patterns are all canonical — matches as before.
-    for (const candidate of new Set([normalizedRoute, normalizedStripped])) {
-      const found = this._matchDynamicPage(candidate)
-      if (found) return found
-    }
-
-    return undefined
+    const result = resolveRouteIn(this._routeIndex, route, this._routeContext())
+    return result.kind !== 'notFound' && result.page ? this._pageFor(result) : undefined
   }
 
   /**
-   * The dynamic page a concrete route names, from the cache or a fresh match of the dynamic
-   * patterns — or undefined.
+   * ⭐ **WHAT A URL NAMES, on this Website** — `resolveRoute` (`./resolve-route.js`), with its
+   * page as this Website's Page: a page, a redirect (`location`, `status`, `reason`), a page
+   * served from elsewhere (`rewrite`), or not found (`page`: the site's not-found page, or null).
+   *
+   * @param {string} route - a path, with any deployment base removed
+   * @returns {Object} the resolution
+   */
+  resolveRoute(route) {
+    const result = resolveRouteIn(this._routeIndex, route, this._routeContext())
+    if (result.kind === 'notFound') return { ...result, page: this.notFoundPage }
+    if (!result.page) return result
+    return { ...result, page: this._pageFor(result) ?? null }
+  }
+
+  /** The locale context a route is resolved in: this Website's, which a host may have set. */
+  _routeContext() {
+    return { activeLocale: this.activeLocale, defaultLocale: this.defaultLocale }
+  }
+
+  /**
+   * The Page of a resolution: the payload page's own, or — for a parametric page — the concrete
+   * page at the resolved route, from the cache or made now.
    *
    * @private
-   * @param {string} route - a concrete route, in the form the page patterns are matched against
-   * @returns {Page|undefined}
    */
-  _matchDynamicPage(route) {
-    if (this._dynamicPageCache.has(route)) {
-      return this._dynamicPageCache.get(route)
-    }
-
-    // Try to match against dynamic route patterns
-    for (const page of this.pages) {
-      // Check if this is a dynamic page (has :param in route)
-      if (!page.route.includes(':')) continue
-
-      const match = this._matchDynamicRoute(page.route, route)
-      if (match) {
-        // Create a dynamic page instance with the concrete route and params
-        const result = this._createDynamicPage(page, route, match.params)
-        if (result) {
-          const { page: dynamicPage, recordsLoaded } = result
-          // Only cache when the records were available at creation time.
-          // If DataStore was empty, skip caching so the next render recreates
-          // the page with fresh data (correct title, not-found state, etc.).
-          if (recordsLoaded) {
-            this._dynamicPageCache.set(route, dynamicPage)
-          }
-          return dynamicPage
-        }
-      }
-    }
-    return undefined
+  _pageFor({ page, route, params, template }) {
+    if (!template) return this._pageOfData.get(page)
+    if (this._dynamicPageCache.has(route)) return this._dynamicPageCache.get(route)
+    const templatePage = this._pageOfData.get(page)
+    const result = templatePage ? this._createDynamicPage(templatePage, route, params) : null
+    if (!result) return undefined
+    const { page: dynamicPage, recordsLoaded } = result
+    // Only cache when the records were available at creation time. If DataStore was empty,
+    // skip caching so the next render recreates the page with fresh data (correct title,
+    // not-found state, etc.).
+    if (recordsLoaded) this._dynamicPageCache.set(route, dynamicPage)
+    return dynamicPage
   }
 
   /**
@@ -1105,47 +1008,11 @@ export default class Website {
   getLocaleUrl(localeCode, route = null) {
     // Use getNavRoute() so index pages return the clean folder URL
     // (e.g., /Articles instead of /Articles/index)
-    let targetRoute = route || this.activePage.getNavRoute()
-
-    // Strip current locale prefix if present in route
-    if (this.activeLocale && this.activeLocale !== this.defaultLocale) {
-      const prefix = `/${this.activeLocale}`
-      if (targetRoute === prefix || targetRoute === `${prefix}/`) {
-        targetRoute = '/'
-      } else if (targetRoute.startsWith(`${prefix}/`)) {
-        targetRoute = targetRoute.slice(prefix.length)
-      }
-    }
-
-    // Reverse-translate from current locale to canonical route
-    targetRoute = this.reverseTranslateRoute(targetRoute)
-
-    // Per-domain locale: if a domain is designated for this locale,
-    // return a full cross-domain URL instead of a path-based prefix.
-    const domainLocales = this.config?.domainLocales
-    if (domainLocales) {
-      const designated = Object.entries(domainLocales).find(([, lang]) => lang === localeCode)
-      if (designated) {
-        const domain = designated[0]
-        const translatedRoute = this.translateRoute(targetRoute, localeCode)
-        return `https://${domain}${translatedRoute === '/' ? '/' : translatedRoute}`
-      }
-    }
-
-    // Default locale uses root path (no prefix), no translation needed
-    if (localeCode === this.defaultLocale) {
-      return targetRoute
-    }
-
-    // Translate canonical route to target locale's display route
-    const translatedRoute = this.translateRoute(targetRoute, localeCode)
-
-    // Other locales use /locale/ prefix
-    if (translatedRoute === '/') {
-      return `/${localeCode}/`
-    }
-
-    return `/${localeCode}${translatedRoute}`
+    const targetRoute = route || this.activePage.getNavRoute()
+    // ⭐ One rule with a redirect's destination (`localeUrl`, `./resolve-route.js`): the locale
+    // served unprefixed shows the canonical route, a locale with its own domain is that domain,
+    // any other is `/{code}` plus its translated route.
+    return localeUrl(this._routeIndex, localeCode, targetRoute, this._routeContext())
   }
 
   /**
