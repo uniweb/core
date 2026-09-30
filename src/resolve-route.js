@@ -356,10 +356,16 @@ function redirect(location, status, reason) {
 const HAS_SCHEME = /^[a-z][a-z0-9+.-]*:/i
 
 /**
- * An authored `redirect:` resolved against the page that carries it: a URL with a scheme or a
- * path from the root as written, a relative one against the page's own route — `academic` on
- * `/solutions` is `/solutions/academic`. The build resolves a site's redirects by this rule, and
- * `resolveRoute` resolves a payload's that were not (a pushed page carries its target as written).
+ * An authored `redirect:` resolved against the page that carries it, as a browser resolves a
+ * relative URL with the page as a FOLDER: a URL with a scheme, or a protocol-relative one, as
+ * written; `academic` on `/solutions` is `/solutions/academic`; `./x` and `../x` step as they do
+ * in a URL, on a relative target and on a path from the root alike. A trailing slash and an empty
+ * segment are kept, as a URL keeps them — the page a path names is matched with a trailing slash
+ * or without. Any query or fragment rides along untouched.
+ *
+ * The build resolves a site's redirects by this rule, and `resolveRoute` resolves a payload's that
+ * were not (a pushed page carries its target as written). ⛔ Until 2026-09-30 a relative target was
+ * joined to the page's route and no `.` or `..` was resolved, so `../pricing` stayed in the path.
  *
  * @param {string} route - the page's own route
  * @param {string} target - its `redirect:`
@@ -367,8 +373,28 @@ const HAS_SCHEME = /^[a-z][a-z0-9+.-]*:/i
  */
 export function authoredRedirectTarget(route, target) {
   if (typeof target !== 'string' || !target) return target
-  if (target.startsWith('/') || HAS_SCHEME.test(target)) return target
-  return route === '/' ? `/${target}` : `${route}/${target}`
+  if (target.startsWith('//') || HAS_SCHEME.test(target)) return target
+  const cut = target.search(/[?#]/)
+  const path = cut < 0 ? target : target.slice(0, cut)
+  const suffix = cut < 0 ? '' : target.slice(cut)
+  const base = route === '/' ? '/' : `${route}/`
+  return removeDotSegments(path.startsWith('/') ? path : base + path) + suffix
+}
+
+/** RFC 3986 § 5.2.4 for a path from the root: `.` and `..` segments resolved, nothing else changed. */
+function removeDotSegments(path) {
+  const segments = path.split('/').slice(1)
+  const out = []
+  segments.forEach((segment, i) => {
+    const last = i === segments.length - 1
+    if (segment === '.' || segment === '..') {
+      if (segment === '..') out.pop()
+      if (last) out.push('')
+      return
+    }
+    out.push(segment)
+  })
+  return '/' + out.join('/')
 }
 
 /**

@@ -8,7 +8,7 @@
 
 import { describe, it, expect } from 'vitest'
 import Website from '../src/website.js'
-import { resolveRoute, routeIndex, localeOfPath, localeUrl, landingRoute } from '../src/resolve-route.js'
+import { resolveRoute, routeIndex, localeOfPath, localeUrl, landingRoute, authoredRedirectTarget } from '../src/resolve-route.js'
 
 const page = (route, extra = {}) => ({ route, title: route, sections: [{ type: 'Text' }], ...extra })
 const empty = (route, extra = {}) => ({ route, title: route, sections: [], hasContent: false, ...extra })
@@ -162,6 +162,33 @@ describe('a redirect', () => {
   it('an authored redirect, and a rewrite, come before a container\'s', () => {
     expect(resolveRoute(content(), '/moved').reason).toBe('authored')
     expect(resolveRoute(content(), '/shop')).toMatchObject({ kind: 'rewrite', target: 'https://shop.example.com', route: '/shop' })
+  })
+})
+
+describe('authoredRedirectTarget — a relative redirect resolved as a URL, the page a folder', () => {
+  // ⛔ Until 2026-09-30 a relative target was joined to the page's route with no `.` or `..`
+  // resolved, so `../pricing` stayed in the path.
+  it.each([
+    ['/solutions', 'academic', '/solutions/academic'],
+    ['/solutions', './academic', '/solutions/academic'],
+    ['/team/lead', '../../about', '/about'],
+    ['/docs/start', './../intro/', '/docs/intro/'],
+    ['/a', '../../../x', '/x'],
+    ['/a/b', '/c/../d', '/d'],
+    ['/', 'x', '/x'],
+  ])('%s + %s → %s', (route, target, expected) => {
+    expect(authoredRedirectTarget(route, target)).toBe(expected)
+  })
+
+  it('keeps what a URL keeps: a trailing slash, an empty segment, a query and a fragment', () => {
+    expect(authoredRedirectTarget('/solutions', 'academic/')).toBe('/solutions/academic/')
+    expect(authoredRedirectTarget('/odd', 'a//b')).toBe('/odd/a//b')
+    expect(authoredRedirectTarget('/p', 'x/../y?q=a/../b#h')).toBe('/p/y?q=a/../b#h')
+  })
+
+  it('leaves a URL with a scheme, or a protocol-relative one, as written', () => {
+    expect(authoredRedirectTarget('/p', 'https://e.org/a/../b')).toBe('https://e.org/a/../b')
+    expect(authoredRedirectTarget('/p', '//cdn.example/y')).toBe('//cdn.example/y')
   })
 })
 
