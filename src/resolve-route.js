@@ -308,8 +308,10 @@ export function landingRoute(site, page, seen = new Set()) {
  *
  * In order:
  * 1. **The locale served unprefixed, asked for with its prefix** — `/en/docs` where `en` is the
- *    default (or the host's own locale) — is a `301` to the path without it. Ruled 2026-09-30
- *    [Diego]; until then no page matched it.
+ *    default (or the host's own locale) — is a `301` to the path without it, and when the rest names
+ *    a page, to this locale's own URL for it: `/fr/about` on a French host is `/a-propos`, in one
+ *    hop. Ruled 2026-09-30 [Diego]; until then no page matched it. ⛔ Until 2026-10-01 it went to the
+ *    rest as written, and `/about` was a second `301`.
  * 2. **The page** (`findPage`). None ⇒ `notFound`, with the site's not-found page: its
  *    `notFound` content, else the page at `/404`.
  * 3. **An authored `redirect:`** ⇒ a `302` to it: a page of the site in this locale, anything
@@ -322,8 +324,9 @@ export function landingRoute(site, page, seen = new Set()) {
  *
  * ⭐ **One URL per page per language** (ruled 2026-10-01): a page asked for at another route than
  * this locale shows it at — `/fr/blog` where French shows `/fr/blogue` — is a `301` there
- * (`localeOwnUrl`), before 4 and 6. A redirect (3) and a container (5) already send the visitor
- * to this locale's URL for their destination, in one hop.
+ * (`localeOwnUrl`), before 4 and 6, and folded into 1. A redirect (3) and a container (5) already
+ * send the visitor to this locale's URL for their destination, in one hop. Only `301`s fold: a
+ * `302` is temporary, so a prefixed path to one is two hops, the `302` its own.
  *
  * `status` is what a host that sends one sends. A static host has its own ways to say each kind.
  *
@@ -339,11 +342,19 @@ export function resolveRoute(site, path, context = {}) {
   const defaultLocale = context.defaultLocale ?? index.defaultLocale
   const raw = typeof path === 'string' && path ? path : '/'
 
-  // 1 · the unprefixed locale, asked for with its prefix. The rest of the path goes as written.
+  // 1 · the unprefixed locale, asked for with its prefix: to the locale's own URL for the page the
+  // rest of the path names, in ONE 301 — `/fr/about` on a French host is `/a-propos`, never `/about`
+  // first (ruled 2026-10-01 [Diego]: "fold them into a single 301"). The rest as written when it names
+  // no page. Only 301s fold: a container's or an authored 302 is temporary, and stays its own hop.
+  // The redirect names no page, as before.
   if (defaultLocale) {
     const prefix = `/${defaultLocale}`
-    if (raw === prefix || raw === `${prefix}/`) return redirect('/', RESOLUTION_STATUS.localeRedirect, 'locale')
-    if (raw.startsWith(`${prefix}/`)) return redirect(raw.slice(prefix.length), RESOLUTION_STATUS.localeRedirect, 'locale')
+    const rest = raw === prefix || raw === `${prefix}/` ? '/' : raw.startsWith(`${prefix}/`) ? raw.slice(prefix.length) : null
+    if (rest !== null) {
+      const ctx = { activeLocale, defaultLocale }
+      const own = findPage(index, rest, ctx) ? localeOwnUrl(index, rest, ctx) : null
+      return redirect(own || rest, RESOLUTION_STATUS.localeRedirect, 'locale')
+    }
   }
 
   // 2 · the page

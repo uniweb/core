@@ -100,6 +100,21 @@ describe('a page asked for at another route than its locale shows it at', () => 
     expect(resolveRoute(content({ ...FR, domainLocale: 'fr' }), '/about')).toMatchObject({ status: 301, location: '/a-propos' })
   })
 
+  // Ruled 2026-10-01 [Diego, in backend's session]: "fold them into a single 301 straight to
+  // /a-propos". ⛔ Until then `/fr/about` took two: to `/about` by the prefix, then to `/a-propos`.
+  it('the host\'s own prefix and a translated route are ONE 301, straight to the locale\'s URL', () => {
+    const frHost = content({ ...FR, domainLocale: 'fr' })
+    expect(resolveRoute(frHost, '/fr/about')).toEqual({ kind: 'redirect', status: 301, location: '/a-propos', reason: 'locale' })
+    expect(resolveRoute(frHost, '/fr/blog/hello')).toMatchObject({ status: 301, location: '/blogue/hello' })
+  })
+
+  it('the fold stops at 301s — a container\'s 302 is its own hop; a path naming no page goes as written', () => {
+    const frHost = content({ ...FR, domainLocale: 'fr' })
+    expect(resolveRoute(frHost, '/fr/docs')).toMatchObject({ status: 301, location: '/documents' })
+    expect(resolveRoute(frHost, '/documents')).toMatchObject({ status: 302, reason: 'container' })
+    expect(resolveRoute(frHost, '/fr/nothing')).toMatchObject({ status: 301, location: '/nothing' })
+  })
+
   it('CONTROL — the locale\'s own route, an untranslated page, the default locale: the page', () => {
     for (const site of [content(FR), own]) {
       expect(resolveRoute(site, '/fr/a-propos')).toMatchObject({ kind: 'page', status: 200 })
