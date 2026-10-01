@@ -43,6 +43,16 @@ describe('a `data:` ref that asks for whole records', () => {
     expect(dataRefOf(null)).toEqual({ ref: null, whole: false })
   })
 
+  it('a registered schema in its normalized form says whole outright, beside the qualified ref', () => {
+    expect(dataRefOf({ kind: 'schema', schema: '@acme/article', whole: true })).toEqual({ ref: '@acme/article', whole: true })
+    expect(dataRefOf({ kind: 'schema', schema: '@acme/member', whole: false })).toEqual({ ref: '@acme/member', whole: false })
+    expect(dataRefOf({ kind: 'fields', fields: { title: { type: 'string' } } })).toEqual({ ref: null, whole: false })
+    expect(declaredKeys({ team: { kind: 'schema', schema: '@acme/member', whole: false }, faq: { kind: 'concept' } })).toEqual([
+      ['team', '@acme/member', false],
+      ['faq', null, false],
+    ])
+  })
+
   it('a key declared whole is filled by the same fetch — the ref, not the suffix, is matched', () => {
     const queries = { articles: { schema: '@std/article' } }
     const map = fillDeclaredKeys(declaredKeys({ post: '@std/article/*' }), [{ query: 'articles', as: 'articles' }], { queries })

@@ -37,7 +37,11 @@ export const WHOLE_SUFFIX = '/*'
  * 2026-09-27 [Diego]). The runtime asks each key's question accordingly; a key declared whole
  * that its fetch cannot fill whole is `null`.
  *
- * @param {*} value - one `data:` entry's value, authored or leaned
+ * A registered foundation schema in its normalized form (`schemaFormat: 3`, `@uniweb/schemas`'s
+ * `normalizeFoundationSchema`) writes every ref as `{ kind: 'schema', schema, whole }`, the ref
+ * qualified and `whole` said outright — read here like any entry naming one.
+ *
+ * @param {*} value - one `data:` entry's value, authored, leaned or normalized
  * @returns {{ ref: string|null, whole: boolean }}
  */
 export function dataRefOf(value) {
@@ -46,7 +50,7 @@ export function dataRefOf(value) {
     : (value && typeof value === 'object' && typeof value.schema === 'string' ? value.schema : '')
   if (!raw) return { ref: null, whole: false }
   if (raw.endsWith(WHOLE_SUFFIX)) return { ref: raw.slice(0, -WHOLE_SUFFIX.length) || null, whole: true }
-  return { ref: raw, whole: false }
+  return { ref: raw, whole: typeof value === 'object' && value.whole === true }
 }
 
 /**
