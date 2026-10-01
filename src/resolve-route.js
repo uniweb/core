@@ -112,18 +112,27 @@ function servedLocales(config, siteDefaultLocale) {
 
 const indexOf = (site) => (site && site.byRoute instanceof Map ? site : routeIndex(site))
 
+/**
+ * The entry whose route is the LONGEST prefix of `route`, at a segment boundary — a page below
+ * translated pages takes its nearest translated ancestor's URL. ⛔ Until 2026-10-01 the first entry
+ * in page order won, so under `/docs` → `/documents` and `/docs/intro` → `/documents/introduction`,
+ * `/docs/intro/step` became `/documents/intro/step`.
+ */
+function nearestPrefix(map, route) {
+  let best = null
+  for (const [from, to] of map) {
+    if (route.startsWith(from + '/') && (!best || from.length > best[0].length)) best = [from, to]
+  }
+  return best ? best[1] + route.slice(best[0].length) : route
+}
+
 /** A canonical route → the route this locale shows it at (`/blog` → `/noticias`, by prefix too). */
 export function translateRoute(site, canonicalRoute, locale) {
   const index = indexOf(site)
   if (!locale || locale === index.siteDefaultLocale) return canonicalRoute
   const entry = index.translations[locale]
   if (!entry) return canonicalRoute
-  const exact = entry.forward.get(canonicalRoute)
-  if (exact) return exact
-  for (const [canonical, translated] of entry.forward) {
-    if (canonicalRoute.startsWith(canonical + '/')) return translated + canonicalRoute.slice(canonical.length)
-  }
-  return canonicalRoute
+  return entry.forward.get(canonicalRoute) || nearestPrefix(entry.forward, canonicalRoute)
 }
 
 /**
@@ -136,12 +145,7 @@ export function reverseTranslateRoute(site, displayRoute, locale) {
   const entry = index.translations[locale]
   if (!entry) return displayRoute
   const route = decodeRouteValue(displayRoute)
-  const exact = entry.reverse.get(route)
-  if (exact) return exact
-  for (const [translated, canonical] of entry.reverse) {
-    if (route.startsWith(translated + '/')) return canonical + route.slice(translated.length)
-  }
-  return route
+  return entry.reverse.get(route) || nearestPrefix(entry.reverse, route)
 }
 
 /**

@@ -249,6 +249,19 @@ describe('the parts', () => {
     expect(localeUrl(domains, 'fr', '/blog')).toBe('https://exemple.fr/blogue')
   })
 
+  it('a route under translated pages takes its nearest translated ancestor\'s URL, both ways', () => {
+    // The build writes an entry only for a page that declares a `slug:`; a page below one is
+    // translated by the longest entry that is a prefix of its route. ⛔ Until 2026-10-01 the FIRST
+    // entry in page order won, so `/docs/intro/step` became `/documents/intro/step`, and its real
+    // French URL named no page.
+    const nested = content({ activeLocale: 'fr', i18n: { routeTranslations: { fr: { '/docs': '/documents', '/docs/intro': '/documents/introduction' } } } },
+      [page('/'), page('/docs'), page('/docs/intro'), page('/docs/intro/step'), page('/404')])
+    const index = routeIndex(nested)
+    expect(localeUrl(index, 'fr', '/docs/intro/step', { activeLocale: 'en' })).toBe('/fr/documents/introduction/step')
+    expect(resolveRoute(nested, '/fr/documents/introduction/step')).toMatchObject({ kind: 'page', route: '/docs/intro/step' })
+    expect(localeUrl(index, 'en', '/fr/documents/introduction/step')).toBe('/docs/intro/step')
+  })
+
   it('takes the content or its index, alike', () => {
     const c = content(FR)
     expect(resolveRoute(routeIndex(c), '/fr/a-propos')).toEqual(resolveRoute(c, '/fr/a-propos'))
