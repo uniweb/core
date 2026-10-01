@@ -79,13 +79,15 @@ export function declaredKeys(componentData, foundationData = null) {
 /**
  * Do two schema refs name the same schema?
  *
- * ⭐ `@/<name>` is "this project's own `<name>`", and what that project is differs by who
- * wrote it: in a foundation's `meta.js` it is the foundation's schema, in a site's
- * `queries.yml` the site's — and a site synced to a host has its queries' `@/` refs
- * qualified with its org (`@acme/member`). So a local ref matches a ref of ANY scope with
- * the same name; two scoped refs match only when their scopes agree. Decided 2026-09-14
- * (the plan's §7 left it to framework): `@/member` and `@acme/member` match,
- * `@std/person` and `@acme/person` do not.
+ * ⭐ `@/<name>` is `<name>` in the FOUNDATION's own scope — the one in its name
+ * (`@acme/marketing` → `@acme/member`) — in its `meta.js` and in a site's `queries.yml`
+ * alike. A push qualifies a site's `@/` refs with that scope (`@uniweb/build`'s
+ * `uwx/self-scope.js`, ruled 2026-09-22), never with the org that owns the site. This match
+ * does not know the scope, so a local ref matches a ref of ANY scope with the same name; two
+ * scoped refs match only when their scopes agree. Decided 2026-09-14 (the plan's §7 left it
+ * to framework): `@/member` and `@acme/member` match, `@std/person` and `@acme/person` do not.
+ * ⛔ Until 2026-10-01 this said a site's `@/` meant the site's own schema, qualified with the
+ * site's org — the rule before 2026-09-22 — which read as if `@/` had two meanings.
  *
  * @param {string|null|undefined} a
  * @param {string|null|undefined} b
