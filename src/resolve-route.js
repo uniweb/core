@@ -408,14 +408,21 @@ function removeDotSegments(path) {
  *   its translated slugs — with any query or fragment kept.
  * - Any other path — a file, a route the site does not hold: as written.
  *
+ * The author wrote the target against the CANONICAL routes, whatever routes the payload's pages
+ * carry: a relative one resolves against the page's canonical route, and a page is found by its
+ * canonical route or, on a payload whose pages carry this locale's own routes, through the
+ * translations. Both kinds of payload give one answer.
+ *
  * ⛔ Until 2026-09-30 every authored redirect went as written, so a French visitor was sent to the
  * English page, and a relative target was left for the browser to resolve against the URL it had
- * asked for rather than the page.
+ * asked for rather than the page. ⛔ Until 2026-10-01 the target was looked up only as a route of
+ * the payload, so on a payload of French routes `/blog` named no page and the French visitor was
+ * still sent to the English one.
  *
  * @returns {string}
  */
 function authoredRedirectLocation(index, route, target, { activeLocale, defaultLocale }) {
-  const resolved = authoredRedirectTarget(route, target)
+  const resolved = authoredRedirectTarget(reverseTranslateRoute(index, route, activeLocale), target)
   if (!resolved.startsWith('/') || resolved.startsWith('//')) return resolved
   const cut = resolved.search(/[?#]/)
   const path = cut < 0 ? resolved : resolved.slice(0, cut)
@@ -423,7 +430,14 @@ function authoredRedirectLocation(index, route, target, { activeLocale, defaultL
   const first = path.split('/')[1] || ''
   if (first && index.locales.includes(first)) return resolved
   const canonical = path === '/' ? '/' : path.replace(/\/$/, '')
-  const named = findPage(index, canonical, { activeLocale: index.siteDefaultLocale, defaultLocale: index.siteDefaultLocale })
-  if (!named) return resolved
+  if (!namesPage(index, canonical, activeLocale)) return resolved
   return localeUrl(index, activeLocale, canonical, { activeLocale, defaultLocale }) + suffix
+}
+
+/** Whether a canonical route names a page of the payload: by that route, or by this locale's. */
+function namesPage(index, canonical, locale) {
+  const asCanonical = { activeLocale: index.siteDefaultLocale, defaultLocale: index.siteDefaultLocale }
+  return Boolean(
+    findPage(index, canonical, asCanonical) || findPage(index, translateRoute(index, canonical, locale), asCanonical),
+  )
 }

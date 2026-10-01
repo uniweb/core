@@ -137,6 +137,38 @@ describe('a redirect', () => {
       expect(at('fr', '/fr/pinned')).toBe('/en/about')
       expect(resolveRoute(content(FR), '/fr/moved')).toMatchObject({ reason: 'authored', location: 'https://example.com/elsewhere' })
     })
+
+    describe('on a payload whose pages carry this locale\'s own routes, with the translations beside them', () => {
+      // A host may serve a locale that way. The author wrote every target against the canonical
+      // routes, so a target is found through the translations and a relative one resolves against
+      // the page's canonical route.
+      // ⛔ Until 2026-10-01 a canonical target matched no page of such a payload and went as
+      // written: a French visitor was sent to the English page.
+      const own = content({ activeLocale: 'fr', i18n: { routeTranslations: { fr: { '/docs': '/documents', '/docs/intro': '/documents/introduction', '/blog': '/blogue' } } } }, [
+        page('/'), page('/documents'), page('/documents/introduction'), page('/blogue'),
+        page('/blogue/:slug', { isDynamic: true, paramName: 'slug' }),
+        page('/old', { redirect: '/docs/intro' }),
+        page('/latest', { redirect: '/blog/hello' }),
+        page('/documents/start', { redirect: '../intro' }),
+        page('/documents/sheet', { redirect: 'files/sheet.pdf' }),
+        page('/file', { redirect: '/files/report.pdf' }),
+      ])
+      const at = (path) => resolveRoute(own, path).location
+
+      it('a page of the site: its URL in this locale', () => {
+        expect(at('/fr/old')).toBe('/fr/documents/introduction')
+        expect(at('/fr/latest')).toBe('/fr/blogue/hello')
+      })
+
+      it('a relative target: against the page\'s canonical route, as on a payload of canonical routes', () => {
+        expect(at('/fr/documents/start')).toBe('/fr/documents/introduction')
+        expect(at('/fr/documents/sheet')).toBe('/docs/sheet/files/sheet.pdf')
+      })
+
+      it('CONTROL — anything else as written', () => {
+        expect(at('/fr/file')).toBe('/files/report.pdf')
+      })
+    })
   })
 
   it('a page with no content: 302 to its first descendant with content, past an empty one', () => {
