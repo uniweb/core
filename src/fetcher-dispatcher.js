@@ -44,10 +44,10 @@ function collectTransports(decl, { source, dev }) {
 
   let raw
   try {
-    // A built foundation carries its declarations under `default.capabilities`
-    // — framework/build/src/generate-entry.js spreads the source `main.js`
-    // default (props, transports, …) into `capabilities`, and `decl` here is
-    // that built `default` (= { meta, capabilities, layoutMeta }). Transports
+    // A built foundation carries what the runtime reads of its `main.js` under
+    // `default.capabilities` — framework/build/src/generate-entry.js references
+    // the code keys there, `transports` among them — and `decl` here is that
+    // built `default` (= { meta, capabilities, layoutMeta }). Transports
     // therefore live at `default.capabilities.transports`: a single direct
     // read, no fallback chain (the runtime only ever sees the built shape).
     raw = decl.capabilities?.transports

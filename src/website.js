@@ -773,13 +773,6 @@ export default class Website {
   }
 
   /**
-   * Get remote props from foundation config
-   */
-  getRemoteProps() {
-    return globalThis.uniweb?.foundationConfig?.props || null
-  }
-
-  /**
    * Get routing components (Link, useNavigate, etc.)
    */
   getRoutingComponents() {
