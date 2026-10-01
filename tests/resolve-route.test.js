@@ -63,9 +63,52 @@ describe('a page', () => {
 
   it('in a locale: its prefix comes off, and a translated route reaches the canonical page', () => {
     expect(resolveRoute(content(FR), '/fr/a-propos')).toMatchObject({ kind: 'page', route: '/about' })
-    expect(resolveRoute(content(FR), '/fr/about')).toMatchObject({ kind: 'page', route: '/about' })
     expect(resolveRoute(content(FR), '/fr/blogue/bonjour')).toMatchObject({ kind: 'page', template: '/blog/:slug', params: { slug: 'bonjour' } })
     expect(resolveRoute(content(FR), '/fr')).toMatchObject({ kind: 'page', route: '/' })
+  })
+})
+
+describe('a page asked for at another route than its locale shows it at', () => {
+  // Ruled 2026-10-01 [Diego]: one URL per page per language — a `301`, as for the unprefixed
+  // locale's own prefix. ⛔ Until then `/fr/about` was the French page on a payload of canonical
+  // routes and not found on one whose pages carry the French routes.
+  const own = content(FR, [
+    page('/'), page('/a-propos'), page('/blogue'), page('/blogue/:slug', { isDynamic: true, paramName: 'slug' }),
+    empty('/documents'), page('/documents/introduction'), page('/articles'), page('/404'),
+  ])
+
+  it('the canonical route under a translated locale: 301 to the locale\'s own, on both kinds of payload', () => {
+    for (const site of [content(FR), own]) {
+      expect(resolveRoute(site, '/fr/about')).toMatchObject({ kind: 'redirect', status: 301, reason: 'locale', location: '/fr/a-propos' })
+      expect(resolveRoute(site, '/fr/blog')).toMatchObject({ status: 301, location: '/fr/blogue' })
+      expect(resolveRoute(site, '/fr/blog/hello')).toMatchObject({ status: 301, location: '/fr/blogue/hello' })
+      expect(resolveRoute(site, '/fr/documents/intro')).toMatchObject({ status: 301, location: '/fr/documents/introduction' })
+    }
+  })
+
+  it('it still names the page, so a Website still finds it', () => {
+    expect(resolveRoute(content(FR), '/fr/about')).toMatchObject({ route: '/about', page: expect.objectContaining({ route: '/about' }) })
+    expect(resolveRoute(own, '/fr/about').page).toMatchObject({ route: '/a-propos' })
+  })
+
+  it('a redirect or a container goes to its own destination, in one hop', () => {
+    expect(resolveRoute(content(FR), '/fr/docs')).toMatchObject({ status: 302, reason: 'container', location: '/fr/documents/introduction' })
+    expect(resolveRoute(own, '/fr/docs')).toMatchObject({ status: 302, reason: 'container', location: '/fr/documents/introduction' })
+  })
+
+  it('on a host whose own locale is translated, its unprefixed canonical route too', () => {
+    expect(resolveRoute(content({ ...FR, domainLocale: 'fr' }), '/about')).toMatchObject({ status: 301, location: '/a-propos' })
+  })
+
+  it('CONTROL — the locale\'s own route, an untranslated page, the default locale: the page', () => {
+    for (const site of [content(FR), own]) {
+      expect(resolveRoute(site, '/fr/a-propos')).toMatchObject({ kind: 'page', status: 200 })
+      expect(resolveRoute(site, '/fr/a-propos/')).toMatchObject({ kind: 'page', status: 200 })
+      expect(resolveRoute(site, '/fr/blogue/hello')).toMatchObject({ kind: 'page', status: 200 })
+      expect(resolveRoute(site, '/fr/articles')).toMatchObject({ kind: 'page', status: 200 })
+    }
+    expect(resolveRoute(content(), '/about')).toMatchObject({ kind: 'page', status: 200 })
+    expect(resolveRoute(content(), '/blog/hello')).toMatchObject({ kind: 'page', status: 200 })
   })
 })
 
@@ -96,7 +139,7 @@ describe('the locale served unprefixed, asked for with its prefix', () => {
   })
 
   it('CONTROL — another locale\'s prefix is that locale, never redirected', () => {
-    expect(resolveRoute(content(FR), '/fr/about').kind).toBe('page')
+    expect(resolveRoute(content(FR), '/fr/a-propos').kind).toBe('page')
     expect(resolveRoute(content(), '/english-guide').kind).toBe('notFound')
   })
 })

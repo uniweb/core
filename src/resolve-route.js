@@ -34,7 +34,8 @@ export const RESOLUTION_STATUS = Object.freeze({
   // A page's redirect — authored, or a page with no content going to its content. Temporary:
   // what a container lands on changes when its pages do.
   pageRedirect: 302,
-  // The locale a host serves unprefixed, asked for with its prefix: the same page, for good.
+  // A URL other than the locale's own, for the same page, for good: the unprefixed locale asked
+  // for with its prefix, or a page asked for at another route than the locale shows it at.
   localeRedirect: 301,
 })
 
@@ -208,25 +209,31 @@ export function localeOfPath(path, config = {}) {
   return { locale: unprefixed, prefixed: false, path: raw }
 }
 
-/**
- * The page a path names — as `Website#getPage` has always found it — or null.
- *
- * In order: the active locale's prefix comes off; the page whose route is the path as given (a
- * published payload may carry a locale's own routes); else the path reverse-translated and the
- * page of that canonical route (a folder resolving to its `isIndex` child either way); else an
- * index page whose own URL is the path; else the parametric pages in page order, against the
- * canonical route and then the path as given. A static page always wins.
- *
- * @returns {{ page: Object, route: string, params: Object, template: string|null } | null}
- */
-function findPage(index, path, { activeLocale, defaultLocale }) {
+/** The route a path asks for: decoded, the active locale's prefix off, no trailing slash. */
+function askedRoute(path, activeLocale, defaultLocale) {
   let stripped = decodeRouteValue(path)
   if (activeLocale && activeLocale !== defaultLocale) {
     const prefix = `/${activeLocale}`
     if (stripped === prefix || stripped === `${prefix}/`) stripped = '/'
     else if (stripped.startsWith(`${prefix}/`)) stripped = stripped.slice(prefix.length)
   }
-  const asGiven = stripped === '/' ? '/' : stripped.replace(/\/$/, '')
+  return stripped === '/' ? '/' : stripped.replace(/\/$/, '')
+}
+
+/**
+ * The page a path names — as `Website#getPage` has always found it — or null.
+ *
+ * In order: the active locale's prefix comes off; the page whose route is the path as given (a
+ * published payload may carry a locale's own routes); else the path reverse-translated and the
+ * page of that canonical route (a folder resolving to its `isIndex` child either way); else that
+ * canonical route as this locale shows it, on a payload of the locale's own routes; else an index
+ * page whose own URL is one of them; else the parametric pages in page order, against the
+ * canonical route, the path as given and the locale's route. A static page always wins.
+ *
+ * @returns {{ page: Object, route: string, params: Object, template: string|null } | null}
+ */
+function findPage(index, path, { activeLocale, defaultLocale }) {
+  const asGiven = askedRoute(path, activeLocale, defaultLocale)
 
   const promoted = (page) => (index.childrenOf.get(page.route) || []).find(isIndex) || page
   const exactly = (route) => index.byRoute.get(route)
@@ -245,10 +252,18 @@ function findPage(index, path, { activeLocale, defaultLocale }) {
     return { page, route: page.route, params: {}, template: null }
   }
 
-  const indexPage = index.pages.find((p) => isIndex(p) && navRoute(p) === canonical)
+  // A canonical route asked for on a payload whose pages carry this locale's own routes.
+  const shown = translateRoute(index, canonical, activeLocale)
+  const translated = shown !== asGiven ? exactly(shown) : null
+  if (translated) {
+    const page = promoted(translated)
+    return { page, route: page.route, params: {}, template: null }
+  }
+
+  const indexPage = index.pages.find((p) => isIndex(p) && (navRoute(p) === canonical || navRoute(p) === shown))
   if (indexPage) return { page: indexPage, route: indexPage.route, params: {}, template: null }
 
-  for (const candidate of new Set([canonical, asGiven])) {
+  for (const candidate of new Set([canonical, asGiven, shown])) {
     for (const page of index.pages) {
       if (!page.route.includes(':')) continue
       const hit = matchDynamicRoute(page.route, candidate)
@@ -305,6 +320,11 @@ export function landingRoute(site, page, seen = new Set()) {
  * 6. Otherwise the page. A parametric page's record may still not exist; that is the render's
  *    data step to say.
  *
+ * ⭐ **One URL per page per language** (ruled 2026-10-01): a page asked for at another route than
+ * this locale shows it at — `/fr/blog` where French shows `/fr/blogue` — is a `301` there
+ * (`localeOwnUrl`), before 4 and 6. A redirect (3) and a container (5) already send the visitor
+ * to this locale's URL for their destination, in one hop.
+ *
  * `status` is what a host that sends one sends. A static host has its own ways to say each kind.
  *
  * @param {Object} site - one locale's site content (`{ pages, config, notFound? }`), or its `routeIndex`
@@ -331,17 +351,24 @@ export function resolveRoute(site, path, context = {}) {
   if (!found) return { kind: 'notFound', status: RESOLUTION_STATUS.notFound, page: index.notFound }
   const { page } = found
 
-  // 3 · 4 · what an author wrote on the page
+  // 3 · what an author wrote on the page: a redirect goes to its own destination, in one hop
   if (typeof page.redirect === 'string' && page.redirect) {
     const location = authoredRedirectLocation(index, found.route, page.redirect, { activeLocale, defaultLocale })
     return { ...redirect(location, RESOLUTION_STATUS.pageRedirect, 'authored'), ...found }
   }
+
+  // 4 · 6 · asked for at another route than this locale shows the page at: there, for good. The
+  // redirect still names the page, so a Website still finds it.
+  const ownUrl = () => {
+    const location = localeOwnUrl(index, raw, { activeLocale, defaultLocale })
+    return location && { ...redirect(location, RESOLUTION_STATUS.localeRedirect, 'locale'), ...found }
+  }
   if (typeof page.rewrite === 'string' && page.rewrite) {
-    return { kind: 'rewrite', target: page.rewrite, ...found }
+    return ownUrl() || { kind: 'rewrite', target: page.rewrite, ...found }
   }
 
   // 5 · a page with no content goes to its content. The DECISION is canonical (`page.route`);
-  // the DESTINATION is this locale's URL for it.
+  // the DESTINATION is this locale's URL for it, in one hop.
   if (!hasContent(page)) {
     const landing = landingRoute(index, page)
     if (landing && landing !== page.route) {
@@ -350,7 +377,27 @@ export function resolveRoute(site, path, context = {}) {
     }
   }
 
-  return { kind: 'page', status: RESOLUTION_STATUS.page, ...found }
+  return ownUrl() || { kind: 'page', status: RESOLUTION_STATUS.page, ...found }
+}
+
+/**
+ * ⭐ THE URL THIS LOCALE SHOWS A PAGE AT, when the path asked for it at another route — the
+ * canonical route under a translated locale (`/fr/blog` where French shows `/fr/blogue`), or a
+ * translated folder with an untranslated child (`/fr/documents/intro`). Null when the path is that
+ * route already, which it always is in the site's default locale, whose routes are the canonical
+ * ones. A trailing slash or a percent-encoding is not another route.
+ *
+ * Ruled 2026-10-01 [Diego]: one URL per page per language, a `301` like the unprefixed locale's
+ * own prefix. ⛔ Until then `/fr/blog` was the French page on a payload of canonical routes and
+ * not found on one whose pages carry the French routes.
+ *
+ * @returns {string|null}
+ */
+function localeOwnUrl(index, path, { activeLocale, defaultLocale }) {
+  const asked = askedRoute(path, activeLocale, defaultLocale)
+  const canonical = reverseTranslateRoute(index, asked, activeLocale)
+  if (translateRoute(index, canonical, activeLocale) === asked) return null
+  return localeUrl(index, activeLocale, canonical, { activeLocale, defaultLocale })
 }
 
 function redirect(location, status, reason) {
