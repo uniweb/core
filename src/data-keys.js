@@ -37,9 +37,12 @@ export const WHOLE_SUFFIX = '/*'
  * 2026-09-27 [Diego]). The runtime asks each key's question accordingly; a key declared whole
  * that its fetch cannot fill whole is `null`.
  *
- * A registered foundation schema in its normalized form (`schemaFormat: 3`, `@uniweb/schemas`'s
- * `normalizeFoundationSchema`) writes every ref as `{ kind: 'schema', schema, whole }`, the ref
- * qualified and `whole` said outright — read here like any entry naming one.
+ * Who passes what. The runtime: a section type's LEAN `data` — a ref string or null, from the
+ * runtime schema the build extracts (`@uniweb/build`'s `runtime-schema.js`) — and the foundation's
+ * own `main.js` `data:` as written. A build-time reader: a `meta.js` value as written, or a
+ * registered foundation schema's in its normalized form (`schemaFormat: 3`, `@uniweb/schemas`'s
+ * `normalizeFoundationSchema`), which writes every ref as `{ kind: 'schema', schema, whole }` — the
+ * ref qualified and `whole` said outright.
  *
  * @param {*} value - one `data:` entry's value, authored, leaned or normalized
  * @returns {{ ref: string|null, whole: boolean }}
