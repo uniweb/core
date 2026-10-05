@@ -191,6 +191,48 @@ describe('the record names the page by the one title rule — `recordTitle` (rul
   })
 })
 
+describe('a link to the record\'s page shows the record\'s image — `recordImage` (2026-10-05)', () => {
+  // ⛔ Until then every record's page shared the page's or the site's `seo.image`.
+  const imageSite = ({ pageSeo, siteSeo } = {}) => new Website({
+    content: {
+      config: { name: 'T', defaultLanguage: 'en', ...LIVE, ...(siteSeo && { seo: siteSeo }) },
+      theme: {},
+      pages: [
+        { route: '/', isIndex: true, title: 'Home', sections: [] },
+        { route: '/blog', title: 'Blog', sections: [], fetch: { query: 'articles', path: '/data/articles.json', as: 'articles' } },
+        { route: '/blog/:slug', isDynamic: true, paramName: 'slug', title: 'Article', sections: [], ...(pageSeo && { seo: pageSeo }) },
+      ],
+    },
+  })
+  const shared = (w, slug) => w.getPage(`/blog/${slug}`).getHeadMeta().og.image
+
+  it('a record with an image shares it', () => {
+    const w = imageSite()
+    w.dataStore.set(recordKey(w, 'hello'), { data: [{ $name: 'hello', title: 'Hello', image: '/img/hello.jpg' }] })
+    expect(shared(w, 'hello')).toBe('/img/hello.jpg')
+  })
+
+  it('it takes the page\'s place, and the page\'s own image serves a record that has none', () => {
+    const w = imageSite({ pageSeo: { image: '/og/blog.png' } })
+    w.dataStore.set(recordKey(w, 'hello'), { data: [{ $name: 'hello', title: 'Hello', image: '/img/hello.jpg' }] })
+    w.dataStore.set(recordKey(w, 'bare'), { data: [{ $name: 'bare', title: 'Bare' }] })
+    expect(shared(w, 'hello')).toBe('/img/hello.jpg')
+    expect(shared(w, 'bare')).toBe('/og/blog.png')
+  })
+
+  it('the site\'s image comes last', () => {
+    const w = imageSite({ siteSeo: { image: '/og/site.png' } })
+    w.dataStore.set(recordKey(w, 'bare'), { data: [{ $name: 'bare', title: 'Bare' }] })
+    expect(shared(w, 'bare')).toBe('/og/site.png')
+  })
+
+  it('a value that is not text is not an image — the next one is shared', () => {
+    const w = imageSite({ siteSeo: { image: '/og/site.png' } })
+    w.dataStore.set(recordKey(w, 'hello'), { data: [{ $name: 'hello', title: 'Hello', image: { url: '/img/x.jpg' } }] })
+    expect(shared(w, 'hello')).toBe('/og/site.png')
+  })
+})
+
 describe('recordPageFor — the page a query\'s records link to (ruled 2026-09-14)', () => {
   const pagesOf = (pages) => new Website({ content: { config: { name: 'T', defaultLanguage: 'en' }, theme: {}, pages } })
 

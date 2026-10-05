@@ -11,7 +11,7 @@ import FetcherDispatcher from './fetcher-dispatcher.js'
 import ObservableState from './observable-state.js'
 import { normalizeSeo } from './seo.js'
 import { resolveDefaultLocale, localeLabel } from './locale-config.js'
-import { matchDynamicRoute, recordTitle, routeBinding, routeParamName, parentRouteOf } from './route-match.js'
+import { matchDynamicRoute, recordTitle, recordImage, routeBinding, routeParamName, parentRouteOf } from './route-match.js'
 import { resolveFetchConfigs, pageRouteQuery, recordPages } from './fetch-config.js'
 import { declaredKeys } from './data-keys.js'
 import { pageRecordConfig, planFor, runPlanSync } from './page-data.js'
@@ -636,6 +636,11 @@ export default class Website {
         if (currentItem.description || currentItem.excerpt) {
           pageData.description = currentItem.description || currentItem.excerpt
         }
+        // ⭐ And by its picture: a link to the page shows the record's image (`recordImage`).
+        // ⛔ Until 2026-10-05 it showed the page's or the site's `seo.image`, the same for
+        // every record.
+        const image = recordImage(currentItem)
+        if (image) pageData.seo = { ...(pageData.seo || {}), image }
       } else if (answered) {
         // The cache answered and the record is not there: the set is loaded and this ID is
         // not in it, or the record question answered `[]` — definitive not found.

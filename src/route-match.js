@@ -298,6 +298,27 @@ export function recordTitle(record) {
 }
 
 /**
+ * A record's SHARED IMAGE — what a link to the page about it shows (its `og:image`).
+ *
+ * ONE RULE, read where `recordTitle` is: the parametric page (`Website._createDynamicPage`)
+ * and the static build's page expansion. It is the record's `image` — the card's picture,
+ * which a page names itself from as it does from the card's title — and it takes the
+ * place of the page's own `seo.image`, which then serves a record that has none. A site's
+ * `seo.image` comes last (`Page.getHeadMeta`).
+ *
+ * Only a non-empty string is an image: a localized map or an object is structure this
+ * rule cannot write into a meta tag.
+ *
+ * @param {Object} record
+ * @returns {string|undefined}
+ */
+export function recordImage(record) {
+  if (!record || typeof record !== 'object') return undefined
+  const image = record.image
+  return typeof image === 'string' && image.trim() !== '' ? image : undefined
+}
+
+/**
  * The record field a route param is matched on — ONE MAP, read by the local match
  * (`routeParamValue`, below) and by the records service's record question (`match`,
  * `./detail-url.js`), so the two lanes cannot disagree about what a folder's name
