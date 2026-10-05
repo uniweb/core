@@ -1,61 +1,23 @@
-import { isRichSchema } from '../src/schemas.js'
-
-describe('isRichSchema', () => {
-  it('returns false for non-objects and plain values', () => {
-    expect(isRichSchema(null)).toBe(false)
-    expect(isRichSchema(undefined)).toBe(false)
-    expect(isRichSchema('string')).toBe(false)
-    expect(isRichSchema(42)).toBe(false)
-    expect(isRichSchema([])).toBe(false)
-  })
-
-  it('returns false for simple keyed-object schemas (tagged-block form)', () => {
-    expect(isRichSchema({ label: 'string', href: 'string' })).toBe(false)
-    expect(
-      isRichSchema({
-        type: { type: 'select', options: ['a', 'b'], default: 'a' }
-      })
-    ).toBe(false)
-  })
-
-  it('returns false for the full @uniweb/schemas format (fields as keyed object)', () => {
-    const full = {
-      name: 'person',
-      version: '1.0.0',
-      fields: { name: 'string', role: 'string' }
-    }
-    expect(isRichSchema(full)).toBe(false)
-  })
-
-  it('recognizes a fields array as rich', () => {
-    expect(isRichSchema({ fields: [{ id: 'a', type: 'text' }] })).toBe(true)
-  })
-
-  it('recognizes isComposite:true as rich', () => {
-    expect(isRichSchema({ isComposite: true })).toBe(true)
-  })
-
-  it('recognizes a childSchema presence as rich', () => {
-    expect(
-      isRichSchema({
-        childSchema: { fields: [{ id: 'n', type: 'text' }] }
-      })
-    ).toBe(true)
-  })
-})
+/**
+ * `@uniweb/core` carries no data-schema helpers — it ships to every site in every lane, and what a
+ * data schema means lives in `@uniweb/schemas`.
+ *
+ * These tests once imported '../src/schemas.js' DIRECTLY, so they passed while the barrel exported
+ * only `isRichSchema` and `import { normalizeSchema } from "@uniweb/core"` returned undefined. The
+ * frontend was blocked by it and found it by RUNNING the import rather than reading the file: a test
+ * that never goes through the path a consumer uses is testing a shape no consumer sees. So this
+ * suite asserts the ENTRY, not the module — and asserts the absence, because "we removed it" is the
+ * claim a consumer feels.
+ */
 
 describe('public surface', () => {
-  // These tests once imported '../src/schemas.js' DIRECTLY, so they passed while
-  // the barrel exported only `isRichSchema` and `import { normalizeSchema } from
-  // "@uniweb/core"` returned undefined. The frontend was blocked by it and found
-  // it by RUNNING the import rather than reading the file: a test that never goes
-  // through the path a consumer uses is testing a shape no consumer sees.
-  //
-  // So this suite asserts the ENTRY, not the module — and now asserts the
-  // absence too, because "we removed it" is the claim a consumer feels.
-  it('exports isRichSchema from the package entry', async () => {
+  it('⛔ no longer exports isRichSchema — format 3 says kind: "form"', async () => {
+    // Removed 2026-10-05: its readers (the runtime's field defaults, the build's runtime schema)
+    // went when the runtime stopped filling field defaults, and the editor — its last reader,
+    // outside framework — reads a format-3 value's `kind` instead. What makes a value a form is
+    // tested where it is decided: `framework/schemas/tests/foundation.test.js`.
     const entry = await import('../src/index.js')
-    expect(typeof entry.isRichSchema).toBe('function')
+    expect(entry.isRichSchema).toBeUndefined()
   })
 
   it('⛔ no longer exports normalizeSchema — it moved to @uniweb/schemas', async () => {

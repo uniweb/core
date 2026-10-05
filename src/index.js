@@ -93,7 +93,10 @@ export {
   landingRoute,
   RESOLUTION_STATUS,
 } from './resolve-route.js'
-export { isRichSchema } from './schemas.js'
+// ⛔ No `isRichSchema` (removed 2026-10-05). It told a form-shaped `data:` value from a field
+// map for the runtime's field defaults and the build's runtime schema; both went when the
+// runtime stopped filling field defaults. A registered schema says it outright — `kind: 'form'`
+// in format 3 (`@uniweb/schemas/foundation`) — and the editor, its last reader, reads that.
 // ⛔ `Tracker` is NOT on the package entry. It is a FEATURE, not part of the
 // object graph this package exists to define, and putting it here made every
 // consumer of core carry 1,576 gzip of it -- press, unipress, `@uniweb/api`
