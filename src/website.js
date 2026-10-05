@@ -755,7 +755,7 @@ export default class Website {
   /**
    * Get layout metadata from foundation config
    * @param {string} layoutName - Layout name
-   * @returns {Object|null} Layout meta { areas, transitions, defaults }
+   * @returns {Object|null} Layout meta { transitions, layers, scroll, defaults } — a page's areas are its site's `layout/` folder (`getLayoutAreas`)
    */
   getLayoutMeta(layoutName) {
     return findLayoutEntry(globalThis.uniweb?.foundationConfig?.layoutMeta, layoutName) || null

@@ -1,14 +1,17 @@
 /**
  * The rich-form-schema predicate. One function, and deliberately only one.
  *
- * Rich schemas live under `data.schemas` in a component's meta.js. They drive
- * two author input paths that both land at `content.data[schema-id]`: tagged
- * markdown blocks (``` ```yaml:<id> ``` ```) and the editor's FormBlock widget.
+ * A rich form schema is a value in a component's meta.js `data:` (`{ fields: [...] }`).
+ * It drives two author input paths that both land at `content.data[key]`: tagged
+ * markdown blocks (``` ```yaml:<key> ``` ```) and the editor's FormBlock widget.
  *
- * `isRichSchema` is a **dispatch** predicate — "is this already the rich shape?"
- * — and it is read at render by `runtime/src/prepare-props.js` (`applySchemas`)
- * and at build by `build/src/runtime-schema.js`. Both are on the hot path of
- * every site, which is what earns it a place in this package.
+ * `isRichSchema` is a **dispatch** predicate — "is this already the rich shape?".
+ * It was read at render by the runtime's `applySchemas` and at build by
+ * `build/src/runtime-schema.js`, and being on the hot path of every site is what
+ * put it in this package. ⚠️ Both readers went on 2026-10-05, when the runtime
+ * stopped filling field defaults: no framework code reads it now, and its reader
+ * is an editor's. By the rule below it belongs in `@uniweb/schemas/editor-form`
+ * — to move once that reader has.
  *
  * ⛔ **Do not add editor-side schema code here.** `normalizeSchema` — "can this
  * be edited, and as what?" — sat beside this function until 2026-09-01 purely
