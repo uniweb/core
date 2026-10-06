@@ -36,13 +36,16 @@
  *
  * ## ⛔ The HOST tier only — and the reason is mechanical, not a policy
  *
- * `resolveService` reads the site's authored tier first and the host's second.
- * This does not, because it cannot: its caller `resolveFetchConfigs` is a leaf
- * that runs in an SSR isolate over a plain content object with no `Website` to
- * hand. It reads `config.services` directly, so the authored tier is not
- * available here. ⇒ **A site does not declare its own record provider**, which
- * is also the standing ruling — a third-party source is a foundation transport,
- * not site-level config *(2026-09-04, the retired `fetcher:` vocabulary)*.
+ * `resolveService` reads two tiers: the host's offer, then the site's authored
+ * declaration for what the host does not offer. *(This said "the site's authored
+ * tier first" until 2026-10-06; the host's offer has come first since 2026-09-10.)*
+ * This reads the host's alone, because it cannot read the other: its caller
+ * `resolveFetchConfigs` is a leaf that runs in an SSR isolate over a plain
+ * content object with no `Website` to hand. It reads `config.services` directly,
+ * so the authored tier is not available here. ⇒ **A site does not declare its
+ * own record provider**, which is also the standing ruling — a third-party
+ * source is a foundation transport, not site-level config *(2026-09-04, the
+ * retired `fetcher:` vocabulary)*.
  *
  * ## ⛔ A pattern, not a base — and the reason is a deleted function
  *
