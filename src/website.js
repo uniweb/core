@@ -1158,7 +1158,7 @@ export default class Website {
    * The registry is open: any name resolves, whether or not the framework ships
    * a client for it.
    *
-   * @param {string} name - the service name — `search`, `submit`, `api`, …
+   * @param {string} name - the service name — `search`, `submit`, `backend`, …
    * @returns {boolean}
    */
   isServiceEnabled(name) {
