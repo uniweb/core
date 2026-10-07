@@ -6,56 +6,72 @@ describe('declaredKeys — what a section\'s component receives (ruled 2026-09-1
     expect(declaredKeys(
       { post: '@std/article', form: { fields: [{ id: 'name' }] }, team: { schema: '@/member' } },
       { profile: '@/profile' },
-    )).toEqual([['post', '@std/article', false], ['form', null, false], ['team', '@/member', false], ['profile', '@/profile', false]])
+    )).toEqual([['post', '@std/article', false, false], ['form', null, false, false], ['team', '@/member', false, false], ['profile', '@/profile', false, false]])
   })
 
   it('a key both declare is the component\'s', () => {
-    expect(declaredKeys({ profile: '@/cv' }, { profile: '@/profile', site: {} })).toEqual([['profile', '@/cv', false], ['site', null, false]])
+    expect(declaredKeys({ profile: '@/cv' }, { profile: '@/profile', site: {} })).toEqual([['profile', '@/cv', false, false], ['site', null, false, false]])
   })
 
   it('reads the build\'s lean map as it reads the authored one', () => {
-    expect(declaredKeys({ post: '@std/article', notes: null })).toEqual([['post', '@std/article', false], ['notes', null, false]])
+    expect(declaredKeys({ post: '@std/article', notes: null })).toEqual([['post', '@std/article', false, false], ['notes', null, false, false]])
+    expect(declaredKeys({ post: { schema: '@std/article', single: true } })).toEqual([['post', '@std/article', false, true]])
   })
 
   it('`data: false`, no `data:`, or a list declare nothing — the foundation\'s keys still reach the section', () => {
     expect(declaredKeys(false)).toEqual([])
     expect(declaredKeys(undefined)).toEqual([])
     expect(declaredKeys(['articles'])).toEqual([])
-    expect(declaredKeys(false, { profile: '@/profile' })).toEqual([['profile', '@/profile', false]])
+    expect(declaredKeys(false, { profile: '@/profile' })).toEqual([['profile', '@/profile', false, false]])
   })
 })
 
-// ⭐ `/*` after a ref asks for WHOLE records — the record as stored — where a bare ref asks for
-// briefs (ruled 2026-09-27 [Diego]).
-describe('a `data:` ref that asks for whole records', () => {
-  it('`/*` after the ref, in either spelling, is whole; the ref is what precedes it', () => {
-    expect(dataRefOf('@std/article/*')).toEqual({ ref: '@std/article', whole: true })
-    expect(dataRefOf({ schema: '@/member/*' })).toEqual({ ref: '@/member', whole: true })
-    expect(declaredKeys({ post: '@std/article/*', list: '@std/article' })).toEqual([
-      ['post', '@std/article', true],
-      ['list', '@std/article', false],
+// ⭐ A key says how many records it holds and how much of each — `single` and `whole`, independent
+// (ruled 2026-10-07 [Diego]; `whole` since 2026-09-27, spelled `/*` until 2026-10-07).
+describe('a `data:` key\'s two flags — single and whole', () => {
+  it('the long form says each outright; the short form is a list of briefs', () => {
+    expect(dataRefOf('@std/article')).toEqual({ ref: '@std/article', single: false, whole: false })
+    expect(dataRefOf({ schema: '@std/article' })).toEqual({ ref: '@std/article', single: false, whole: false })
+    expect(dataRefOf({ schema: '@std/article', single: true })).toEqual({ ref: '@std/article', single: true, whole: false })
+    expect(dataRefOf({ schema: '@std/article', whole: true })).toEqual({ ref: '@std/article', single: false, whole: true })
+    expect(dataRefOf({ schema: '@/member', single: true, whole: true })).toEqual({ ref: '@/member', single: true, whole: true })
+  })
+
+  it('declaredKeys carries both — `single` appended, so a caller reading three is unchanged', () => {
+    const [[key, ref, whole], all] = [declaredKeys({ post: { schema: '@std/article', whole: true } })[0], declaredKeys({
+      post: { schema: '@std/article', single: true, whole: true },
+      list: '@std/article',
+    })]
+    expect([key, ref, whole]).toEqual(['post', '@std/article', true])
+    expect(all).toEqual([
+      ['post', '@std/article', true, true],
+      ['list', '@std/article', false, false],
     ])
   })
 
-  it('CONTROL — a bare ref, an inline shape and nothing at all ask for briefs', () => {
-    expect(dataRefOf('@std/article')).toEqual({ ref: '@std/article', whole: false })
-    expect(dataRefOf({ fields: [{ id: 'x' }] })).toEqual({ ref: null, whole: false })
-    expect(dataRefOf(null)).toEqual({ ref: null, whole: false })
+  it('CONTROL — an inline shape, a field map with a field named schema, and nothing at all name no schema', () => {
+    expect(dataRefOf({ fields: [{ id: 'x' }] })).toEqual({ ref: null, single: false, whole: false })
+    expect(dataRefOf({ schema: 'string', title: 'string' })).toEqual({ ref: null, single: false, whole: false })
+    expect(dataRefOf(null)).toEqual({ ref: null, single: false, whole: false })
   })
 
-  it('a registered schema in its normalized form says whole outright, beside the qualified ref', () => {
-    expect(dataRefOf({ kind: 'schema', schema: '@acme/article', whole: true })).toEqual({ ref: '@acme/article', whole: true })
-    expect(dataRefOf({ kind: 'schema', schema: '@acme/member', whole: false })).toEqual({ ref: '@acme/member', whole: false })
-    expect(dataRefOf({ kind: 'fields', fields: { title: { type: 'string' } } })).toEqual({ ref: null, whole: false })
-    expect(declaredKeys({ team: { kind: 'schema', schema: '@acme/member', whole: false }, faq: { kind: 'concept' } })).toEqual([
-      ['team', '@acme/member', false],
-      ['faq', null, false],
+  it('⛔ `/*` is not read — retired, and refused by the build and register before anything reaches here', () => {
+    expect(dataRefOf('@std/article/*')).toEqual({ ref: '@std/article/*', single: false, whole: false })
+  })
+
+  it('a registered schema in its normalized form says both outright, beside the qualified ref', () => {
+    expect(dataRefOf({ kind: 'schema', schema: '@acme/article', single: true, whole: true })).toEqual({ ref: '@acme/article', single: true, whole: true })
+    expect(dataRefOf({ kind: 'schema', schema: '@acme/member', single: false, whole: false })).toEqual({ ref: '@acme/member', single: false, whole: false })
+    expect(dataRefOf({ kind: 'fields', fields: { title: { type: 'string' } } })).toEqual({ ref: null, single: false, whole: false })
+    expect(declaredKeys({ team: { kind: 'schema', schema: '@acme/member', single: false, whole: false }, faq: { kind: 'concept' } })).toEqual([
+      ['team', '@acme/member', false, false],
+      ['faq', null, false, false],
     ])
   })
 
-  it('a key declared whole is filled by the same fetch — the ref, not the suffix, is matched', () => {
+  it('a key holding one whole record is filled by the same fetch — by its schema, like any other', () => {
     const queries = { articles: { schema: '@std/article' } }
-    const map = fillDeclaredKeys(declaredKeys({ post: '@std/article/*' }), [{ query: 'articles', as: 'articles' }], { queries })
+    const map = fillDeclaredKeys(declaredKeys({ post: { schema: '@std/article', single: true, whole: true } }), [{ query: 'articles', as: 'articles' }], { queries })
     expect([...map.keys()]).toEqual(['post'])
   })
 })

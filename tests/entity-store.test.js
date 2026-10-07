@@ -55,11 +55,12 @@ const declaring = (...keys) => ({ data: Object.fromEntries(keys.map((key) => [ke
 const ANY = declaring('articles', 'members', 'posts', 'related', 'pubs', 'teams', 'post', 'people', 'categories', 'tags', 'pager', 'news', 'highlights', 'devfail', 'article', 'key', 'config')
 
 /**
- * The meta of a component that expects its keys' records WHOLE (`'@x/y/*'`, ruled 2026-09-27
- * [Diego]): each is asked whole — a parametric page's record by its own request, a list off the
- * records service record by record. A key declared without `/*` gets briefs.
+ * The meta of a component that expects its keys' records WHOLE (`{ schema, whole: true }`, ruled
+ * 2026-09-27 [Diego]; spelled `'@x/y/*'` until 2026-10-07): each is asked whole — a parametric page's
+ * record by its own request, a list off the records service record by record. A key declared
+ * without `whole` gets briefs.
  */
-const declaringWhole = (...keys) => ({ data: Object.fromEntries(keys.map((key) => [key, `@test/${key}/*`])) })
+const declaringWhole = (...keys) => ({ data: Object.fromEntries(keys.map((key) => [key, { schema: `@test/${key}`, whole: true }])) })
 const WHOLE = declaringWhole('articles', 'members')
 
 function makePage(overrides = {}) {
@@ -842,7 +843,7 @@ describe('⭐ declared keys — a section receives what its component declares, 
     const block = { fetch: null, dynamicContext: null, page: { route: '/', fetch: null, parent: null, dynamicContext: null }, website: w }
     const result = await w.entityStore.fetch(block, null)
     expect(result.data.profile).toEqual(profile)
-    expect(w.declaredKeys({ data: { posts: '@/post' } })).toEqual([['posts', '@/post', false], ['profile', '@/profile', false]])
+    expect(w.declaredKeys({ data: { posts: '@/post' } })).toEqual([['posts', '@/post', false, false], ['profile', '@/profile', false, false]])
   })
 })
 

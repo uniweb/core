@@ -24,7 +24,7 @@ export { substitutePlaceholders } from './substitute-placeholders.js'
 // reads them and a consumer that needs them imports `@uniweb/core/records-service`.
 export { resolveFetchConfigs, routeQuery, pageRouteQuery, routeSelection, sectionFetches, siteReaches, withoutRouteVariables, CURRENT_MODES, currentFor } from './fetch-config.js'
 export { buildDetailConfig, ROUTE_HANDLE_KEY } from './detail-url.js'
-export { declaredKeys, sameSchema, fillDeclaredKeys, dataRefOf, WHOLE_SUFFIX } from './data-keys.js'
+export { declaredKeys, sameSchema, fillDeclaredKeys, dataRefOf } from './data-keys.js'
 // ⭐ What a page needs — the one rule. `fetchLevels` is the part every lane has an answer for
 // (which fetches reach a block); the drivers and the per-key program are `@uniweb/core/page-data`.
 export { fetchLevels } from './page-data.js'

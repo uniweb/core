@@ -97,6 +97,16 @@ const CASES = {
     block: (w) => block({ page: page({ parent: list, dynamicContext: on('zzz') }) }, w),
     meta: declaring('posts'),
   },
+  'a key holding ONE record — the binding asked for its first': {
+    config: { queries: { posts: { schema: '@/post' } } },
+    block: (w) => block({ page: page({ route: '/posts', fetch: LIST }) }, w),
+    meta: { data: { posts: { schema: '@/post', single: true } } },
+  },
+  'a key holding ONE record, `exclude` — the first of the others': {
+    config: { queries: { posts: { schema: '@/post' } } },
+    block: (w) => block({ page: page({ parent: list, dynamicContext: on('a') }), fetch: { ...LIST, as: 'related', current: 'exclude' } }, w),
+    meta: { data: { related: { schema: '@/post', single: true } } },
+  },
   'two keys at once — one filled by name, one by schema': {
     config: { queries: { posts: { schema: '@/post' } } },
     block: (w) => block({
@@ -149,5 +159,57 @@ describe('the plan’s two drivers agree', () => {
     expect(fetched.data.posts).toBeUndefined() // absent, never `[]`
     // nothing was cached, so the render still has nothing to read — and says so
     expect(entityStore.resolve(target(), declaring('posts')).status).toBe('pending')
+  })
+})
+
+// ⭐ A KEY DECLARED `single: true` ASKS FOR ONE RECORD (ruled 2026-10-07 [Diego]): the binding's
+// question cut to its first record, so a whole one is fetched whole alone. The store still answers a
+// list — of one, or none — and the runtime makes it the record (`runtime/src/prepare-props.js`).
+describe('a `single` key asks for one record', () => {
+  const NAMED = [
+    { $name: 'a', slug: 'a', title: 'A' },
+    { $name: 'b', slug: 'b', title: 'B' },
+    { $name: 'c', slug: 'c', title: 'C' },
+  ]
+  const fileLane = (req) => {
+    const own = /^\/data\/posts\/([a-z]+)\.json$/.exec(req.path || '')
+    if (own) return { data: { $name: own[1], brief: { title: own[1].toUpperCase() }, body: { text: 'Full' } }, meta: { whole: true } }
+    return { data: NAMED }
+  }
+
+  it('off the records service: one question, cut to one, asked whole when the key is whole', async () => {
+    const { entityStore, website, asked } = makeHarness({
+      answer: () => ({ data: [{ $uuid: 'u1', $name: 'a', brief: { title: 'A' } }], meta: { whole: true } }),
+      config: { services: { records: '/_records/ask/{locale}' }, queries: { posts: { schema: '@/post', sort: 'title' } } },
+    })
+    const target = () => block({ page: page({ route: '/posts', fetch: LIST }) }, website)
+    const result = await entityStore.fetch(target(), { data: { posts: { schema: '@/post', single: true, whole: true } } })
+    expect(asked).toHaveBeenCalledTimes(1)
+    expect(asked.mock.calls[0][0]).toMatchObject({ ask: '/_records/ask/en', whole: true, narrow: { limit: 1 } })
+    expect(result.data.posts).toHaveLength(1)
+  })
+
+  it('off the file lane: the list, then ONE record\'s own file — never one per record of the set', async () => {
+    const { entityStore, website, asked } = makeHarness({ answer: fileLane, config: { queries: { posts: { schema: '@/post' } } } })
+    const target = () => block({ page: page({ route: '/posts', fetch: LIST }) }, website)
+    const result = await entityStore.fetch(target(), { data: { posts: { schema: '@/post', single: true, whole: true } } })
+    const paths = asked.mock.calls.map(([req]) => req.path)
+    expect(paths).toEqual(['/data/posts.json', '/data/posts/a.json'])
+    expect(result.data.posts).toEqual([{ $name: 'a', brief: { title: 'A' }, body: { text: 'Full' } }])
+  })
+
+  it('CONTROL — a list key declared whole asks for every record\'s own file', async () => {
+    const { entityStore, website, asked } = makeHarness({ answer: fileLane, config: { queries: { posts: { schema: '@/post' } } } })
+    const target = () => block({ page: page({ route: '/posts', fetch: LIST }) }, website)
+    await entityStore.fetch(target(), { data: { posts: { schema: '@/post', whole: true } } })
+    expect(asked.mock.calls.map(([req]) => req.path)).toEqual(['/data/posts.json', '/data/posts/a.json', '/data/posts/b.json', '/data/posts/c.json'])
+  })
+
+  it('a parametric page\'s record is still found in the query\'s whole set', async () => {
+    const { entityStore, website, asked } = makeHarness({ answer: fileLane, config: { queries: { posts: { schema: '@/post' } } } })
+    const target = () => block({ page: page({ parent: list, dynamicContext: on('c') }) }, website)
+    const result = await entityStore.fetch(target(), { data: { posts: { schema: '@/post', single: true } } })
+    expect(asked.mock.calls[0][0].narrow).toBeUndefined()
+    expect(result.data.posts).toEqual([NAMED[2]])
   })
 })

@@ -80,13 +80,14 @@ export function fetchLevels({ own = null, page = null, parent = null, route = nu
  * Each filling fetch is resolved on its own, so two fetches of one `as` can fill two keys.
  *
  * @param {Object} input
- * @param {Array<[string, string|null, boolean]>} input.declared - `declaredKeys(meta)`
+ * @param {Array<[string, string|null, boolean, boolean]>} input.declared - `declaredKeys(meta)`
  * @param {Array<*>} input.levels - `fetchLevels`
  * @param {Object} [input.holds] - what the block already holds, by key
  * @param {Object|null} [input.queries] - the site's `config.queries`
  * @param {Object} [input.options] - what each fetch is resolved with (`resolveFetchConfigs`)
- * @returns {Map<string, { cfg: Object, held: *, whole: boolean }>} declared key → its filling config,
- *   and whether its component expects whole records, in the order `declared` lists the keys
+ * @returns {Map<string, { cfg: Object, held: *, whole: boolean, single: boolean }>} declared key → its
+ *   filling config, and its two flags — whether its component expects whole records, and one record —
+ *   in the order `declared` lists the keys
  */
 export function blockFills({ declared, levels, holds = {}, queries = null, options = {} }) {
   const out = new Map()
@@ -102,12 +103,12 @@ export function blockFills({ declared, levels, holds = {}, queries = null, optio
     if (!firstOfKey.has(fetch.as)) firstOfKey.set(fetch.as, `${at}:${index}`)
   }))
 
-  const wholeKeys = new Set(declared.filter(([, , whole]) => whole).map(([key]) => key))
+  const flags = new Map(declared.map(([key, , whole, single]) => [key, { whole: whole === true, single: single === true }]))
   for (const [key, { fetch, level, index }] of fills) {
     const cfg = resolveFetchConfigs([fetch], options).get(fetch.as)
     if (!cfg) continue
     const held = firstOfKey.get(fetch.as) === `${level}:${index}` ? holds[fetch.as] : undefined
-    out.set(key, { cfg, held, whole: wholeKeys.has(key) })
+    out.set(key, { cfg, held, ...flags.get(key) })
   }
   return out
 }
@@ -159,12 +160,18 @@ function heldWhole(peekRecord, match) {
  * reading the cache never does, because the cache holds answers only.
  *
  * ⭐ **What is asked follows what the component expects** (`whole`, from its `data:` —
- * `'@std/article/*'`; ruled 2026-09-27 [Diego]). Briefs by default: the records service's question
- * as it is, a compiled file's list, and on a parametric page the record FOUND in its query's set.
- * Whole records when declared: the question carries `whole: true`, and a list off the service is
+ * `{ schema, whole: true }`; ruled 2026-09-27 [Diego]). Briefs by default: the records service's
+ * question as it is, a compiled file's list, and on a parametric page the record FOUND in its query's
+ * set. Whole records when declared: the question carries `whole: true`, and a list off the service is
  * followed by each record's own request. A key declared whole that cannot be filled whole — its
  * source has no request for one record — is `null`: the contract cannot be met. An external query's
  * records have no data schema and so no brief: what its source answers is each record whole.
+ *
+ * ⭐ **And how many** (`single`, ruled 2026-10-07 [Diego]): a key that holds one record asks for one —
+ * the binding's question cut to its first record (`narrow.limit: 1`), so a whole one is fetched whole
+ * alone, never each record of the set. The answer is still a list, of one or none, which the runtime
+ * makes the record or `null` (`runtime/src/prepare-props.js`). A parametric page's record is found in
+ * the query's whole set as before: `current: only` asks for one already.
  *
  * ⛔ **A failed request delivers NOTHING under its key, and says so.** The key is absent from the
  * returned value and the message rides on `error`, because `[]` is a value: a request that failed
@@ -188,9 +195,10 @@ function heldWhole(peekRecord, match) {
  *   and a record found there answers with the brief it holds. No value at all means *unknown*,
  *   which is not the same as `[]`, *not in the set*.
  * @param {boolean} [where.whole] - the component expects whole records
+ * @param {boolean} [where.single] - the component expects one record
  * @returns {Generator<Object|Object[], { value?: *, error?: string, errorConfig?: Object }>}
  */
-export function* keyProgram(cfg, { dynamicContext = null, route = null, held = undefined, peekRecord = null, current: forced = null, opportunistic = false, whole = false } = {}) {
+export function* keyProgram(cfg, { dynamicContext = null, route = null, held = undefined, peekRecord = null, current: forced = null, opportunistic = false, whole = false, single = false } = {}) {
   /** A step this caller can do without: a miss answers `{ missing: true }` instead of stopping. */
   const maybe = (request) => (opportunistic ? { request, optional: true } : request)
   // The block holds this fetch's answer already — a static build prerendered it.
@@ -207,14 +215,19 @@ export function* keyProgram(cfg, { dynamicContext = null, route = null, held = u
   // How this fetch uses the page's record: by the query it names (`currentFor`).
   const current = forced ?? (dynamicContext ? currentFor(cfg, route) : null)
 
+  // What a list of the binding's records is asked as — its first only, for a key holding one — and
+  // the answer cut to it here too, since a source need not honour `narrow` (a foundation's transport).
+  const listed = single ? firstOnly(cfg) : cfg
+  const cut = (data) => (single && Array.isArray(data) ? data.slice(0, 1) : data)
+
   if (current === 'exclude') {
     // The query's records without this page's, its `limit` counting the others.
-    const view = othersView(cfg)
+    const view = othersView(listed)
     const asked = whole && cfg.ask ? { ...view, whole: true } : view
     const answer = yield asked
     if (answer.error) return { error: answer.error, errorConfig: asked }
     if (answer.data === undefined || answer.data === null) return {}
-    const others = othersOf(answer.data, cfg, isPageRecord(dynamicContext, cfg.routeField))
+    const others = othersOf(answer.data, listed, isPageRecord(dynamicContext, cfg.routeField))
     if (!whole || cfg.ask) return { value: others }
     return yield* wholeRecordsOf(cfg, others)
   }
@@ -273,12 +286,21 @@ export function* keyProgram(cfg, { dynamicContext = null, route = null, held = u
 
   // A fetch the page's record plays no part in, and `current: include`: the records as the fetch
   // describes them, the page's among the rest.
-  const asked = whole && cfg.ask ? { ...cfg, whole: true } : cfg
+  const asked = whole && cfg.ask ? { ...listed, whole: true } : listed
   const answer = yield asked
   if (answer.error) return { error: answer.error, errorConfig: asked }
   if (answer.data === undefined || answer.data === null) return {}
-  if (!whole || cfg.ask) return { value: answer.data }
-  return yield* wholeRecordsOf(cfg, answer.data)
+  if (!whole || cfg.ask) return { value: cut(answer.data) }
+  return yield* wholeRecordsOf(cfg, cut(answer.data))
+}
+
+/**
+ * A `single` key's question: the binding's own, cut to its first record. The fetch's `narrow` is
+ * where a cut belongs — applied after the query's set on every lane — and a `limit` of its own is at
+ * least one, so the first record is the same either way.
+ */
+function firstOnly(cfg) {
+  return { ...cfg, narrow: { ...(cfg.narrow || {}), limit: 1 } }
 }
 
 /**
@@ -340,14 +362,14 @@ function asSteps(value) {
 /**
  * Every filling key's program, ready to run.
  *
- * @param {Map<string, { cfg: Object, held: *, whole?: boolean }>} fills - `blockFills`
+ * @param {Map<string, { cfg: Object, held: *, whole?: boolean, single?: boolean }>} fills - `blockFills`
  * @param {Object} where - passed to each `keyProgram`
  * @returns {Map<string, Generator>}
  */
 export function planFor(fills, where = {}) {
   const plan = new Map()
-  for (const [key, { cfg, held, whole = false }] of fills) {
-    plan.set(key, keyProgram(cfg, { ...where, held, whole }))
+  for (const [key, { cfg, held, whole = false, single = false }] of fills) {
+    plan.set(key, keyProgram(cfg, { ...where, held, whole, single }))
   }
   return plan
 }
