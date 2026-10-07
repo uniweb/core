@@ -16,10 +16,11 @@ import { applyBasePath } from './base-path.js'
  *      deployment offers, which the site never had to know about. When a host
  *      offers a service, that is the answer: it is the authority on what a
  *      hosted site is given.
- *   2. **The site**, authored — `search:`, `submit:`, `assistant:`, `tracking:`
- *      in site.yml. The operator's own declaration — used for anything the host
- *      does not provide, and on a static site, where no host speaks, the whole
- *      answer.
+ *   2. **The site**, authored — its entry under `services:` in site.yml, which a
+ *      built site carries as `config.<name>`. The operator's own declaration —
+ *      used for anything the host does not provide, and on a static site, where
+ *      no host speaks, the whole answer. *(This named the top-level `search:`,
+ *      `submit:`, `assistant:` and `tracking:` keys, retired 2026-10-06.)*
  *
  * ## ⛔ THE TWO TIERS ARE NOT TWO SOURCES OF ONE KIND OF THING
  *
