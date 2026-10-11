@@ -91,6 +91,7 @@ export {
   localeOfPath,
   localeUrl,
   landingRoute,
+  carryQuery,
   RESOLUTION_STATUS,
 } from './resolve-route.js'
 // ⛔ No `isRichSchema` (removed 2026-10-05). It told a form-shaped `data:` value from a field

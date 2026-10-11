@@ -8,7 +8,7 @@
 
 import { describe, it, expect } from 'vitest'
 import Website from '../src/website.js'
-import { resolveRoute, routeIndex, localeOfPath, localeUrl, landingRoute, authoredRedirectTarget } from '../src/resolve-route.js'
+import { resolveRoute, routeIndex, localeOfPath, localeUrl, landingRoute, authoredRedirectTarget, carryQuery } from '../src/resolve-route.js'
 
 const page = (route, extra = {}) => ({ route, title: route, sections: [{ type: 'Text' }], ...extra })
 const empty = (route, extra = {}) => ({ route, title: route, sections: [], hasContent: false, ...extra })
@@ -279,6 +279,49 @@ describe('authoredRedirectTarget — a relative redirect resolved as a URL, the 
   it('leaves a URL with a scheme, or a protocol-relative one, as written', () => {
     expect(authoredRedirectTarget('/p', 'https://e.org/a/../b')).toBe('https://e.org/a/../b')
     expect(authoredRedirectTarget('/p', '//cdn.example/y')).toBe('//cdn.example/y')
+  })
+})
+
+describe('carryQuery — what the visitor asked with rides along a redirect', () => {
+  // ⛔ Until 2026-10-11 the runtime navigated to a redirect's location alone, so a root that
+  // redirects dropped the token of a link a site's backend mails to it (`/?verify=…`).
+  const ORIGIN = 'https://example.com'
+
+  it("completes the redirect a root gives — a mailed link's token reaches the page it lands on", () => {
+    const r = resolveRoute(content({}, [page('/', { isIndex: true, redirect: '/about' }), page('/about')]), '/')
+    expect(r).toMatchObject({ kind: 'redirect', location: '/about' })
+    expect(carryQuery(r.location, { search: '?verify=abc' }, ORIGIN)).toBe('/about?verify=abc')
+  })
+
+  it('carries the query and the fragment onto a location that names neither', () => {
+    expect(carryQuery('/welcome', { search: '?reset=t', hash: '#form' }, ORIGIN)).toBe('/welcome?reset=t#form')
+    expect(carryQuery('/fr/', { search: '?offer=t' }, ORIGIN)).toBe('/fr/?offer=t')
+    expect(carryQuery('/a', { search: 'x=1', hash: 'h' }, ORIGIN)).toBe('/a?x=1#h')
+  })
+
+  it("keeps the location's own query, and its own fragment", () => {
+    expect(carryQuery('/pricing?plan=pro', { search: '?verify=abc' }, ORIGIN)).toBe('/pricing?plan=pro')
+    expect(carryQuery('/a#top', { search: '?q=1', hash: '#h' }, ORIGIN)).toBe('/a?q=1#top')
+    expect(carryQuery('/a?', { search: '?q=1' }, ORIGIN)).toBe('/a?')
+  })
+
+  it('changes nothing when the visitor asked with nothing', () => {
+    expect(carryQuery('/welcome', { search: '', hash: '' }, ORIGIN)).toBe('/welcome')
+    expect(carryQuery('/welcome', { search: '?', hash: '#' }, ORIGIN)).toBe('/welcome')
+    expect(carryQuery('/welcome', undefined, ORIGIN)).toBe('/welcome')
+  })
+
+  it('carries onto this origin written in full', () => {
+    expect(carryQuery('https://example.com/welcome', { search: '?verify=abc' }, ORIGIN)).toBe('https://example.com/welcome?verify=abc')
+  })
+
+  it('⛔ never onto another origin — a token minted for this site stays on it', () => {
+    expect(carryQuery('https://elsewhere.org/', { search: '?reset=secret' }, ORIGIN)).toBe('https://elsewhere.org/')
+    expect(carryQuery('//elsewhere.org/x', { search: '?reset=secret' }, ORIGIN)).toBe('//elsewhere.org/x')
+    expect(carryQuery('https://fr.example.com/', { search: '?offer=t' }, ORIGIN)).toBe('https://fr.example.com/')
+    expect(carryQuery('http://example.com/welcome', { search: '?verify=abc' }, ORIGIN)).toBe('http://example.com/welcome')
+    // With no origin to compare with, a location with a scheme is taken to be elsewhere.
+    expect(carryQuery('https://example.com/welcome', { search: '?verify=abc' })).toBe('https://example.com/welcome')
   })
 })
 

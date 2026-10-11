@@ -330,6 +330,10 @@ export function landingRoute(site, page, seen = new Set()) {
  *
  * `status` is what a host that sends one sends. A static host has its own ways to say each kind.
  *
+ * ⭐ **A redirect's `location` names nothing of the request's query or fragment** — a path in, a
+ * location out. `carryQuery` adds them, as the runtime does before it navigates and as a host that
+ * answers with an HTTP redirect should, so a link's parameters reach the page the visitor lands on.
+ *
  * @param {Object} site - one locale's site content (`{ pages, config, notFound? }`), or its `routeIndex`
  * @param {string} path - the request path, with any deployment base removed
  * @param {{ activeLocale?: string, defaultLocale?: string }} [context] - defaults to the content's
@@ -413,6 +417,46 @@ function localeOwnUrl(index, path, { activeLocale, defaultLocale }) {
 
 function redirect(location, status, reason) {
   return { kind: 'redirect', status, location, reason }
+}
+
+/**
+ * ⭐ **WHAT THE VISITOR ASKED WITH RIDES ALONG.** A redirect's `location` with the query and the
+ * fragment of the URL the visitor arrived at, as an HTTP redirect keeps them: the request's query
+ * unless the location names its own, and its fragment unless the location names one. So a link's
+ * parameters reach the page the visitor lands on — a campaign's tags, or a token a site's backend
+ * mails to the site's root (`/?verify=…`).
+ *
+ * ⛔ **Never onto another origin.** A query can carry a token minted for this site, so a location
+ * on another origin — another site, a locale's own domain — goes as written. Without an `origin`,
+ * every location with a scheme, or protocol-relative, is taken to be elsewhere.
+ *
+ * ⛔ Until 2026-10-11 the runtime navigated to the location alone, so on a root that redirects — an
+ * authored `redirect:`, a page with no content of its own — a mailed link lost its token before any
+ * code could read it.
+ *
+ * @param {string} location - a redirect's `location`
+ * @param {{ search?: string, hash?: string }} [request] - the request's query (`?…`) and fragment
+ *   (`#…`) — a `Location` will do
+ * @param {string|null} [origin] - the site's origin (`https://example.com`)
+ * @returns {string}
+ */
+export function carryQuery(location, { search = '', hash = '' } = {}, origin = null) {
+  const query = search && search !== '?' ? (search.startsWith('?') ? search : `?${search}`) : ''
+  const fragment = hash && hash !== '#' ? (hash.startsWith('#') ? hash : `#${hash}`) : ''
+  if (typeof location !== 'string' || !location || (!query && !fragment)) return location
+  if (location.startsWith('//') || HAS_SCHEME.test(location)) {
+    let target = null
+    try {
+      target = origin ? new URL(location, origin) : null
+    } catch {
+      target = null
+    }
+    if (!target || target.origin !== origin) return location
+  }
+  const cut = location.indexOf('#')
+  const path = cut < 0 ? location : location.slice(0, cut)
+  const own = cut < 0 ? '' : location.slice(cut)
+  return path + (path.includes('?') ? '' : query) + (own || fragment)
 }
 
 const HAS_SCHEME = /^[a-z][a-z0-9+.-]*:/i
