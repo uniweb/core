@@ -86,6 +86,16 @@ describe('block.themeName and block.themeOverrides', () => {
     expect(block.contextOverrides).toEqual({ heading: 'h' })
   })
 
+  it('a token is a name and a value a stylesheet can hold, or nothing', () => {
+    // Applied inline and in the page stylesheet, so a value that could end its
+    // declaration or its element is left out (@uniweb/theming's isCssValue).
+    const block = build({
+      theme: { heading: 'red;}</style><script>x</script>', 'a{b': '#fff', body: '#222', contexts: { dark: { link: 'url(javascript:x)' } } },
+    })
+    expect(block.contextOverrides).toEqual({ body: '#222' })
+    expect(block.themeOverrides.contexts).toBeNull()
+  })
+
   it('a context’s own token beats one written beside `mode`', () => {
     const block = build({ theme: { mode: 'dark', heading: 'any', contexts: { dark: { heading: 'dark-only' } } } })
     expect(block.contextOverrides).toEqual({ heading: 'dark-only' })

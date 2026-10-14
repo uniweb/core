@@ -9,7 +9,7 @@ import {
   parseContent as parseSemanticContent,
   resolveAssetUrl
 } from '@uniweb/semantic-parser'
-import { normalizeTokenValue } from '@uniweb/theming'
+import { normalizeTokenValue, isCssName, isCssValue } from '@uniweb/theming'
 import { sectionDomId } from './section-id.js'
 import { liftInsets } from './insets.js'
 
@@ -744,12 +744,18 @@ export default class Block {
     if (typeof raw !== 'object' || Array.isArray(raw)) return { mode: String(raw), overrides: null, effectiveTokens: null }
 
     const { mode, colors, contexts, vars, ...tokens } = raw
+    // A token is written into the page — inline on the section and in its stylesheet — so
+    // it is a name and a value a stylesheet can hold, or nothing (@uniweb/theming's rule:
+    // a value cannot end its declaration, its rule or its element). ⛔ Until 2026-10-14 any
+    // value was applied inline as written.
     const tokenMap = (map) => {
       if (!map || typeof map !== 'object' || Array.isArray(map)) return null
       const out = {}
       for (const [name, value] of Object.entries(map)) {
         if (value === undefined || value === null || value === '') continue
-        out[name] = normalizeTokenValue(value)
+        const normalized = normalizeTokenValue(value)
+        if (!isCssName(name) || !isCssValue(normalized)) continue
+        out[name] = normalized
       }
       return Object.keys(out).length > 0 ? out : null
     }
