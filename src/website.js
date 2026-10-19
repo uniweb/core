@@ -1275,6 +1275,11 @@ export default class Website {
       // These are templates for generating pages, not actual navigable pages
       if (page.route.includes(':')) return false
 
+      // ⭐ And the pages made from one — a record's own page (/blog/my-post). The SPA keeps
+      // those out of `this.pages` (`_dynamicPageCache`), but a static build expands them into
+      // ordinary pages, and they joined every menu there: a blog's menu listed each article.
+      if (page.dynamicContext) return false
+
       // Exclude index pages (route ends in /index) from navigation — they are
       // represented by their parent folder entry which links to them via navigableRoute
       if (page.isIndex && page.route.endsWith('/index')) return false
