@@ -17,9 +17,8 @@ import { describe, it, expect } from 'vitest'
 import { resolveFetchConfigs, isFetchRefinement } from '../src/fetch-config.js'
 
 const WHO =
-  'A live-pinned consumer reads this name. See ' +
-  'framework/_contracts/live-pinned-consumers.json for who, and say "live now" — ' +
-  'they bundle the clone, so this is already broken for them at commit time.'
+  'A consumer that builds against this checkout reads this name. Tell them before ' +
+  'renaming it, and say "live now" — they get the change at commit time, not at a release.'
 
 // A services block exactly as a host stamps it onto the payload. The `records`
 // row is the live-records lane; the rows beside it are other services and this

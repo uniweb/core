@@ -22,9 +22,8 @@
  * dispatches. They differ in where an answer comes from and in nothing else, so a render cannot
  * look for something its fetch never asked for.
  *
- * *The copies this replaces, and what each of them got wrong:*
- * `kb/framework/plans/what-a-page-needs.md`. The import boundary that stops the next one:
- * `framework/_contracts/page-data-rule-boundary.test.js`.
+ * It replaces several copies of this rule, each of which got something wrong, and a
+ * contract test holds the import boundary that stops the next one.
  *
  * @module
  */

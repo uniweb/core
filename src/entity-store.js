@@ -35,8 +35,7 @@ export default class EntityStore {
   /**
    * The fetches that reach a block — `fetchLevels` (`./page-data.js`), the one rule, read
    * off this block's graph. ⛔ Do not spell the levels out here: every lane that has
-   * needed this answer has written its own list, and each list has drifted
-   * (`kb/framework/plans/what-a-page-needs.md`).
+   * needed this answer has written its own list, and each list has drifted.
    */
   _levels(block, route = this._route(block)) {
     const page = block.page

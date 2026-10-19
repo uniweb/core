@@ -10,8 +10,7 @@
  * ⛔ Nothing else notices when it breaks. In the browser a disagreement is invisible: `BlockRenderer`
  * renders what `fetch` returned, so the block shows its data whether or not `resolve` could find it
  * again. It shows up only where a render has no second chance — the HTML a crawler, a link preview or
- * an agent reads — which is exactly the class of failure that made
- * `kb/framework/plans/what-a-page-needs.md` necessary.
+ * an agent reads — which is exactly the class of failure this rule was made for.
  *
  * ⚖️ Every case is its own control: `resolve` is asked BEFORE the fetch and must be `pending`, so
  * "ready afterwards" cannot pass by the plan asking for nothing.
