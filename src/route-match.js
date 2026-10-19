@@ -527,6 +527,13 @@ export function routeParamName(pattern, declared = null) {
  * included — when a page holds that route. A top-level page has none: the homepage
  * is not everyone's parent.
  *
+ * ⭐ Past a version folder, the versioned section. In `docs/v1/` + `docs/v2/` the latest
+ * version's pages sit at `/docs/…` and hang from `/docs`; an older one's sit at
+ * `/docs/v1/…`, and `/docs/v1` is a folder, never a page — so they hang from `/docs` too.
+ * The segment is a version by the build's own convention (`v1`, `v2.1`). ⛔ Until
+ * 2026-10-19 they had no parent: every menu listed them as top-level pages, and no
+ * branch of the tree held them.
+ *
  * ⛔ Measured 2026-09-11, before this existed: the prefetch read the declared field
  * only, so on a payload without it `/members/alice` resolved no configs at all,
  * while the SPA inferred `/members` and fetched the list and the record itself.
@@ -544,8 +551,15 @@ export function parentRouteOf(route, { declared = null, has } = {}) {
   const cut = r.lastIndexOf('/')
   if (cut <= 0) return null
   const up = r.slice(0, cut)
-  return has(up) ? up : null
+  if (has(up)) return up
+  const versionCut = up.lastIndexOf('/')
+  if (versionCut <= 0 || !VERSION_SEGMENT.test(up.slice(versionCut + 1))) return null
+  const section = up.slice(0, versionCut)
+  return has(section) ? section : null
 }
+
+/** A version folder's name — `v1`, `v2.1` — the build's convention for a versioned section. */
+const VERSION_SEGMENT = /^v\d+(\.\d+)?$/
 
 /**
  * The base route a record's URL composes onto, for a page that ADDRESSES ONE RECORD —
