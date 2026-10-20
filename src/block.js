@@ -74,21 +74,33 @@ export default class Block {
     const blockConfig = blockData.params || blockData.config || {}
 
     // ⭐ THE SECTION'S OWN SETTINGS — the names framework reserves in its params
-    // (`@uniweb/schemas/section`): `theme`, `background`, `grid`, `vars`, `fetch`. Framework applies
-    // each — the runtime paints the background and the color context around the component,
-    // the page stylesheet applies the section's theme and its component's variables, kit's
-    // `ChildGrid` lays out the child sections — so each is lifted onto the block, normalized
-    // once for every renderer, and a component NEVER receives one as a param [Diego,
-    // 2026-09-28]. It reads them from the block, or through kit. ⛔ Until then a component
-    // also received `theme` (the mode), `background` and `vars` as params, and nothing read
-    // them there. ⛔ An editor's older envelope — `params.standardOptions` and `params.properties`
-    // — is no longer read (2026-09-28): an editor's preview sends a section's params as stored,
-    // and no store publishes the envelope. Either name is an ordinary param now.
+    // (`@uniweb/schemas/section`): `theme`, `background`, `grid`, `vars`, `fetch`, `sticky`.
+    // Framework applies each — the runtime paints the background and the color context around
+    // the component and makes sticky the box that can stick, the page stylesheet applies the
+    // section's theme and its component's variables, kit's `ChildGrid` lays out the child
+    // sections — so each is lifted onto the block, normalized once for every renderer, and a
+    // component NEVER receives one as a param [Diego, 2026-09-28]. It reads them from the
+    // block, or through kit. ⛔ Until then a component also received `theme` (the mode),
+    // `background` and `vars` as params, and nothing read them there. ⛔ An editor's older
+    // envelope — `params.standardOptions` and `params.properties` — is no longer read
+    // (2026-09-28): an editor's preview sends a section's params as stored, and no store
+    // publishes the envelope. Either name is an ordinary param now.
     const {
       theme: rawTheme, background: rawBg, grid: gridParam, vars: varsParam, fetch: fetchParam,
+      sticky: stickyParam,
       ...componentParams
     } = blockConfig
     this.properties = componentParams
+
+    // Whether the section stays in view as the page scrolls — what the author wrote (`true` or
+    // `false`; anything else is no answer), else its type's default from `meta.js`, which
+    // `initComponent` reads, else not. The runtime applies it to the box that can stick: a
+    // component's own markup sits in boxes as tall as itself, where `sticky` cannot move
+    // (2026-10-19).
+    this.stickySetting = typeof stickyParam === 'boolean' ? stickyParam : null
+    this.sticky = this.stickySetting ?? false
+    // How far below the top it stays — its type's `top`, a CSS length; null is the very top.
+    this.stickyTop = null
 
     // The section's theme: `theme.yml`'s own keys scoped to the section — `colors`,
     // `contexts`, `vars` — plus `mode`, the color context it pins. `theme: dark` is the
@@ -506,7 +518,30 @@ export default class Block {
       this.componentVars = Block.mergeComponentVars(meta.vars, this.sectionVars)
     }
 
+    // The type's `sticky`: `true`, or `{ default, top }` — the author's value wins.
+    const sticky = Block.normalizeStickyDeclaration(meta.sticky)
+    this.sticky = this.stickySetting ?? sticky.default
+    this.stickyTop = sticky.top
+
     return this.Component
+  }
+
+  /**
+   * A section type's `sticky` declaration, as `meta.js` may write it: `true` or `false`, or
+   * `{ default, top }` — `top` a CSS length, for a type that sits below another sticking
+   * element.
+   *
+   * @param {*} declared
+   * @returns {{ default: boolean, top: string|null }}
+   */
+  static normalizeStickyDeclaration(declared) {
+    if (declared && typeof declared === 'object') {
+      return {
+        default: declared.default === true,
+        top: typeof declared.top === 'string' && declared.top.trim() ? declared.top.trim() : null,
+      }
+    }
+    return { default: declared === true, top: null }
   }
 
   /**

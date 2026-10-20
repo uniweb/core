@@ -377,6 +377,20 @@ export default class Page {
   }
 
   /**
+   * Whether a layout area stays in view as the page scrolls: any of its sections is sticky
+   * (`sticky:`, a setting of the section). The runtime makes sticky the box it gives the area;
+   * a layout that wraps the area in an element of its own makes THAT element sticky when this
+   * is true, since a box sticks only within its parent, and the area's sits in the layout's.
+   *
+   * @param {string} areaName
+   * @returns {boolean}
+   */
+  isSticky(areaName) {
+    const blocks = this.getLayoutAreas()[areaName]
+    return Array.isArray(blocks) && blocks.some((block) => block.sticky)
+  }
+
+  /**
    * Get layout params for this page (merged with defaults at render time)
    * @returns {Object}
    */

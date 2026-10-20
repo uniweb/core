@@ -1,5 +1,5 @@
 /**
- * A section's own settings — `theme`, `background`, `grid`, `vars`, the names framework
+ * A section’s own settings — `theme`, `background`, `grid`, `vars`, `sticky`, the names framework
  * reserves in its params (`@uniweb/schemas/section`). Framework applies each, so the Block
  * lifts each onto itself, normalized, and a component never receives one as a param
  * [Diego, 2026-09-28].
@@ -7,6 +7,7 @@
 
 import { describe, it, expect } from 'vitest'
 import Block from '../src/block.js'
+import Page from '../src/page.js'
 
 function mockPage() {
   return {
@@ -177,5 +178,69 @@ describe('sectionFetches — a page’s sections’ own data, from raw content',
       { fetch: { query: 'b' }, subsections: [{ params: { fetch: { query: 'c' } }, fetch: { query: 'stale' } }] },
     ]
     expect(sectionFetches(sections)).toEqual([{ query: 'a' }, { query: 'b' }, { query: 'c' }])
+  })
+})
+
+describe('block.sticky and block.stickyTop', () => {
+  // A component's own markup sits in boxes as tall as itself, where `sticky` cannot move, so the
+  // section asks and the runtime makes sticky the box that can (2026-10-19).
+  const withFoundation = (meta, fn) => {
+    const prev = globalThis.uniweb
+    globalThis.uniweb = { getComponent: () => () => null, getComponentMeta: () => meta }
+    try {
+      return fn()
+    } finally {
+      globalThis.uniweb = prev
+    }
+  }
+  const initialized = (params, meta) => withFoundation(meta, () => {
+    const block = build(params)
+    block.initComponent()
+    return block
+  })
+
+  it('is a setting of the section: lifted onto the block, never a param', () => {
+    const block = build({ sticky: true, layout: 'center' })
+    expect(block.sticky).toBe(true)
+    expect(block.properties).toEqual({ layout: 'center' })
+  })
+
+  it('takes a boolean only — anything else is no answer', () => {
+    expect(build({ sticky: false }).sticky).toBe(false)
+    expect(build({ sticky: 'yes' }).stickySetting).toBeNull()
+    expect(build({ sticky: 'yes' }).properties).toEqual({})
+  })
+
+  it("defaults to its type's `meta.js` declaration, and the author's value wins", () => {
+    expect(initialized({}, { sticky: true }).sticky).toBe(true)
+    expect(initialized({ sticky: false }, { sticky: true }).sticky).toBe(false)
+    expect(initialized({ sticky: true }, {}).sticky).toBe(true)
+  })
+
+  it('takes `top` from the object form, a CSS length', () => {
+    const block = initialized({}, { sticky: { default: true, top: 'var(--header-height)' } })
+    expect(block.sticky).toBe(true)
+    expect(block.stickyTop).toBe('var(--header-height)')
+  })
+
+  it('CONTROL — a type that declares nothing does not stick, at the very top', () => {
+    const block = initialized({}, {})
+    expect(block.sticky).toBe(false)
+    expect(block.stickyTop).toBeNull()
+  })
+})
+
+describe('page.isSticky(area)', () => {
+  // A layout that wraps an area in an element of its own asks, and makes that element sticky.
+  const page = (areas) => ({ getLayoutAreas: () => areas })
+  const isSticky = (areas, name) => Page.prototype.isSticky.call(page(areas), name)
+
+  it('is true when any of the area’s sections is sticky', () => {
+    expect(isSticky({ header: [{ sticky: false }, { sticky: true }] }, 'header')).toBe(true)
+  })
+
+  it('CONTROL — false when none is, and for an area the page does not draw', () => {
+    expect(isSticky({ header: [{ sticky: false }] }, 'header')).toBe(false)
+    expect(isSticky({ header: [{ sticky: true }] }, 'left')).toBe(false)
   })
 })
