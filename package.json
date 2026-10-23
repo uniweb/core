@@ -20,6 +20,7 @@
     "./route-match": "./src/route-match.js",
     "./resolve-route": "./src/resolve-route.js",
     "./section-id": "./src/section-id.js",
+    "./section-type": "./src/section-type.js",
     "./services": "./src/services.js",
     "./sort": "./src/sort.js",
     "./tracker": "./src/tracker.js",

@@ -16,6 +16,7 @@ import { resolveFetchConfigs, pageRouteQuery, recordPages } from './fetch-config
 import { declaredKeys } from './data-keys.js'
 import { pageRecordConfig, planFor, runPlanSync } from './page-data.js'
 import { findLayoutEntry } from './layout-name.js'
+import { defaultSectionType } from './section-type.js'
 import { resolveService } from './services.js'
 import {
   routeIndex,
@@ -709,10 +710,11 @@ export default class Website {
   }
 
   /**
-   * Get default block type from foundation config
+   * The type a section that names none renders with — the foundation's
+   * `defaultSection`, else `Section` (`section-type.js`, the rule a push fills by too).
    */
   getDefaultBlockType() {
-    return globalThis.uniweb?.foundationConfig?.defaultSection || 'Section'
+    return defaultSectionType(globalThis.uniweb?.foundationConfig)
   }
 
   // ─────────────────────────────────────────────────────────────────
