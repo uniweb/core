@@ -15,6 +15,7 @@
     "./fetch-config": "./src/fetch-config.js",
     "./layout-name": "./src/layout-name.js",
     "./page-data": "./src/page-data.js",
+    "./page-shell": "./src/page-shell.js",
     "./icon-corpus": "./src/icon-corpus.js",
     "./insets": "./src/insets.js",
     "./locale-config": "./src/locale-config.js",
