@@ -5,11 +5,11 @@
  * page it serves without rendering it, and inside an isolate (`@uniweb/runtime/ssr` re-exports it,
  * versioned with the runtime) as the shell `createPageRenderer` renders into.
  *
- * ⭐ Page assembly is framework's [Diego, 2026-10-23: hosting is "supposed to do hosting right,
+ * ⭐ Page assembly is framework's [Diego, 2026-10-23: a host is "supposed to do hosting right,
  * not rendering or page assembling. That's our job."]. A host hands in what only it knows — the
  * addresses it resolved and the content it read — and serves what comes back. ⛔ Until then each
- * host wrote its own shell, and the one serving uniweb.io escaped `__DATA__` its own way, as
- * invalid JSON, so no page of that site could start.
+ * host wrote its own shell, and one escaped `__DATA__` its own way, as invalid JSON, so no page
+ * of the site it served could start.
  *
  * Its output is a function of its inputs only — no request, no clock — because a host caches it
  * under a key of publish-time facts, one entry serving a site's every hostname.
