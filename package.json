@@ -9,7 +9,6 @@
     "./records-service": "./src/records-service.js",
     "./data-paths": "./src/data-paths.js",
     "./data-script": "./src/data-script.js",
-    "./escape-html": "./src/escape-html.js",
     "./data-keys": "./src/data-keys.js",
     "./datastore": "./src/datastore.js",
     "./detail-url": "./src/detail-url.js",
