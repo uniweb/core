@@ -538,10 +538,11 @@ export default class Page {
         const lang = this.website.activeLocale
         const defaultLang = this.website.defaultLocale
 
-        // Phase 5 of the CDN migration: prefer the content-addressed URL from
-        // __DATA__.config.pageHashes (the publish handler emits it). Falls
-        // back to the legacy /{lang}/_pages/{route}.json shape when the map
-        // isn't present (older sites that haven't republished yet).
+        // A host that splits a site's content names each page's address in
+        // `config.pageHashes`, and that address wins. Without one, the static
+        // build's own layout: `/{lang}/_pages/{route}.json` beside the site
+        // (`build/src/prerender.js`). ⛔ This called that layout "legacy", for
+        // sites that had not republished, until 2026-10-24.
         const hashes = this.website.config?.pageHashes
         const hashedUrl = hashes?.[lang]?.[this.route]
 
@@ -556,10 +557,10 @@ export default class Page {
 
         const res = await fetch(url)
         if (res.status === 404 && _shouldReloadOnHashed404(hashedUrl)) {
-          // Stale tab: this tab's __DATA__ map references a publish that
-          // no longer exists in R2. One reload usually picks up the fresh
+          // Stale tab: this tab's `__DATA__` names the addresses of a publish
+          // the host no longer serves. One reload usually picks up the fresh
           // HTML (and a fresh map). Capped at 2 attempts to defend against
-          // a malformed publish where new HTML and new R2 also disagree.
+          // a publish whose new HTML and new addresses also disagree.
           window.location.reload()
           return
         }
@@ -758,14 +759,14 @@ export default class Page {
 /**
  * Helper for the stale-tab 404→reload guard in Page.loadContent.
  *
- * Phase 5 of the CDN migration writes content-addressed `_pages/...-{hash}.json`
- * files. Each publish wipes the prior hashes from R2 and writes fresh ones.
- * A browser tab loaded against a previous publish carries a stale __DATA__
- * map; on SPA navigation it'll request a hash that no longer exists.
- * Reloading the tab pulls fresh HTML (and a fresh map). The session-scoped
- * counter caps reloads at 2 so a malformed publish (where new HTML and new
- * R2 disagree) doesn't trigger an infinite loop — after 2 failed reloads
- * we render the synthetic 404 path instead.
+ * A host's split content is content-addressed (`config.pageHashes`), and a
+ * publish replaces the addresses. A browser tab loaded against a previous
+ * publish carries a stale map; on SPA navigation it requests an address that
+ * is no longer served. Reloading the tab pulls fresh HTML (and a fresh map).
+ * The session-scoped counter caps reloads at 2 so a publish whose new HTML and
+ * new addresses disagree doesn't trigger an infinite loop. After 2 failed
+ * reloads the page is marked empty with a warning, as any other failed fetch
+ * is. ⛔ This said it rendered "the synthetic 404 path" until 2026-10-24.
  *
  * Only fires when the request was a hashed URL: legacy non-hashed 404s
  * keep the prior "mark empty, log warning" behavior (they're not symptomatic
