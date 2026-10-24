@@ -58,6 +58,10 @@ export default class Uniweb {
     // (`background: 'self'`). Filled by each boot path, like `childBlockRenderer`.
     this.backgroundRenderer = null
     this.routingComponents = {}
+    // How this host switches locale: `({ locale, route, url }) => void`, or null for a page load
+    // of `url` (`Website#switchLocale`). An editor's preview, which hands the runtime each
+    // locale's content itself, sets it through `initUniweb({ localeSwitch })`.
+    this.localeSwitch = null
     this.language = 'en'
 
     // Framework-level inset components — every foundation gets these

@@ -22,9 +22,11 @@ import {
   routeIndex,
   resolveRoute as resolveRouteIn,
   localeUrl,
+  canonicalRoute,
   translateRoute as translateRouteIn,
   reverseTranslateRoute as reverseTranslateRouteIn,
 } from './resolve-route.js'
+import { applyBasePath } from './base-path.js'
 
 /**
  * Services whose provider is not simply an address, keyed by name.
@@ -1004,6 +1006,38 @@ export default class Website {
     // served unprefixed shows the canonical route, a locale with its own domain is that domain,
     // any other is `/{code}` plus its translated route.
     return localeUrl(this._routeIndex, localeCode, targetRoute, this._routeContext())
+  }
+
+  /**
+   * Show the page in another locale.
+   *
+   * A locale is its own document, with its own content and routes, so this is a page load of
+   * `getLocaleUrl()` with the base path applied. A host that hands the runtime each locale's
+   * content itself, like an editor's preview, switches its own way instead
+   * (`uniweb.localeSwitch`): it is told the locale, the page's canonical route and the URL a
+   * page load would go to.
+   *
+   * For a menu that switches from code, like a `<select>`. A menu of links needs no call:
+   * `<Link reload href={website.getLocaleUrl(code)}>` loads the page, and the runtime hands a
+   * click on a link to another locale's page to such a host the same way.
+   *
+   * @param {string} localeCode - One of `getLocales()`
+   * @param {string} [route] - The page, canonical or as the active locale shows it
+   *   (default: the current page)
+   * @returns {boolean} false when the site has no such locale, and nothing happens
+   */
+  switchLocale(localeCode, route = null) {
+    if (!this.getLocale(localeCode)) return false
+    const context = this._routeContext()
+    const page = route || this.activePage.getNavRoute()
+    const url = applyBasePath(localeUrl(this._routeIndex, localeCode, page, context), this.basePath)
+    const hostSwitch = globalThis.uniweb?.localeSwitch
+    if (hostSwitch) {
+      hostSwitch({ locale: localeCode, route: canonicalRoute(this._routeIndex, page, context), url })
+    } else if (typeof window !== 'undefined') {
+      window.location.assign(url)
+    }
+    return true
   }
 
   /**

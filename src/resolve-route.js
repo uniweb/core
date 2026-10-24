@@ -150,6 +150,29 @@ export function reverseTranslateRoute(site, displayRoute, locale) {
 }
 
 /**
+ * A page's canonical route, from its route canonical or as the active locale shows it: the
+ * active locale's prefix comes off, then its display route is reverse-translated. How
+ * `localeUrl` reads the route it is given.
+ *
+ * @param {Object} site - a locale's site content, or its `routeIndex`
+ * @param {string} route - the page's route, canonical or as the active locale shows it
+ * @param {{ activeLocale?: string, defaultLocale?: string }} [context]
+ * @returns {string}
+ */
+export function canonicalRoute(site, route, context = {}) {
+  const index = indexOf(site)
+  const activeLocale = context.activeLocale ?? index.activeLocale
+  const defaultLocale = context.defaultLocale ?? index.defaultLocale
+  let target = route
+  if (activeLocale && activeLocale !== defaultLocale) {
+    const prefix = `/${activeLocale}`
+    if (target === prefix || target === `${prefix}/`) target = '/'
+    else if (target.startsWith(`${prefix}/`)) target = target.slice(prefix.length)
+  }
+  return reverseTranslateRoute(index, target, activeLocale)
+}
+
+/**
  * ⭐ **A PAGE'S URL IN A LOCALE** — the one rule the language switcher, a redirect's destination
  * and the canonical form share. The locale served unprefixed shows the canonical route; a locale
  * with a domain of its own is that domain; any other is `/{code}` plus its translated route.
@@ -162,17 +185,8 @@ export function reverseTranslateRoute(site, displayRoute, locale) {
  */
 export function localeUrl(site, localeCode, route, context = {}) {
   const index = indexOf(site)
-  const activeLocale = context.activeLocale ?? index.activeLocale
   const defaultLocale = context.defaultLocale ?? index.defaultLocale
-  let target = route
-
-  // The active locale's prefix, then its display route → canonical.
-  if (activeLocale && activeLocale !== defaultLocale) {
-    const prefix = `/${activeLocale}`
-    if (target === prefix || target === `${prefix}/`) target = '/'
-    else if (target.startsWith(`${prefix}/`)) target = target.slice(prefix.length)
-  }
-  target = reverseTranslateRoute(index, target, activeLocale)
+  const target = canonicalRoute(index, route, context)
 
   const designated = index.domainLocales && Object.entries(index.domainLocales).find(([, lang]) => lang === localeCode)
   if (designated) {
