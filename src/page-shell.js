@@ -12,11 +12,17 @@
  * of the site it served could start.
  *
  * Its output is a function of its inputs only — no request, no clock — because a host caches it
- * under a key of publish-time facts, one entry serving a site's every hostname.
+ * under a key of publish-time facts, one entry serving a site's every hostname. Besides its inputs,
+ * only this code changes it, and `pageShellFingerprint` says when.
+ *
+ * ⛔ A change to what this writes that an older runtime's browser build cannot read — a new
+ * `__DATA__` encoding, a new split shape — is a breaking change: mark the commit `!` and name the
+ * oldest runtime that reads the new pages.
  *
  * Zero-dependency leaf, like `data-script.js`, which writes its `__DATA__`.
  */
 import { dataScript, jsonForScript } from './data-script.js'
+import { PAGE_SHELL_VECTORS } from './page-shell-vectors.js'
 
 /**
  * Escape a string for HTML text or a double-quoted attribute value.
@@ -125,4 +131,35 @@ export function pageShell({ content, route = null, foundation, runtime }) {
     '</html>',
     '',
   ].join('\n')
+}
+
+let fingerprint = null
+
+/**
+ * A fingerprint of what `pageShell` writes: eight hex digits that change whenever the HTML it
+ * returns changes, and only then. A host that caches the pages it assembles puts it in its cache
+ * key, so a page cached before a change to this module or to `data-script.js` is not served after
+ * it, and a change that leaves every page's bytes alone moves nothing.
+ *
+ * It is worked out from the code that runs — `pageShell` over `PAGE_SHELL_VECTORS`, which reach
+ * each of its branches — so it cannot fall behind a change, and there is nothing to bump. A branch
+ * added to the shell takes a vector in the same commit (`page-shell-vectors.js`).
+ *
+ * @returns {string}
+ */
+export function pageShellFingerprint() {
+  if (fingerprint === null) {
+    fingerprint = fnv1a(PAGE_SHELL_VECTORS.map((input) => pageShell(input)).join('\u0000'))
+  }
+  return fingerprint
+}
+
+/** FNV-1a, 32 bits, over UTF-16 code units: a fingerprint, not a security property. */
+function fnv1a(text) {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0')
 }

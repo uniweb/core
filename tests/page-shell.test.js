@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { pageShell, foundationCssUrl, faviconType, escapeHtml } from '../src/page-shell.js'
+import { execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+import { pageShell, pageShellFingerprint, foundationCssUrl, faviconType, escapeHtml } from '../src/page-shell.js'
+import { PAGE_SHELL_VECTORS } from '../src/page-shell-vectors.js'
 
 // One locale's content, as a host stamps it, and the inputs only a host holds.
 const content = (config = {}, pages = [{ route: '/', sections: [{ id: 'hero' }] }]) => ({
@@ -104,6 +107,39 @@ describe('pageShell — the HTML a page starts as', () => {
     const split = dataOf(pageShell(input({ pageHashes: { en: { '/docs': '/_pages/d.json' } } }, pages)))
     expect(split.content.pages[0].sections).toEqual([{ text: '<!-- a --> </script>' }])
     expect('sections' in split.content.pages[1]).toBe(false)
+  })
+})
+
+describe('pageShellFingerprint — it changes when the pages the shell writes change, and only then', () => {
+  // ⛔ A host keys its cache on this value, so a new one renders every page it cached again. When
+  // this fails, the HTML pageShell writes has changed: check that you meant it, then pin the new
+  // value here.
+  it('is pinned, so a change to the pages it writes is seen in review', () => {
+    expect(pageShellFingerprint()).toBe('d994bb22')
+  })
+
+  it('is the same on every call', () => {
+    expect(pageShellFingerprint()).toBe(pageShellFingerprint())
+  })
+
+  it('renders vectors that are each a different page, with a __DATA__ that parses', () => {
+    const pages = PAGE_SHELL_VECTORS.map((vector) => pageShell(vector))
+    expect(new Set(pages).size).toBe(PAGE_SHELL_VECTORS.length)
+    for (const html of pages) expect(() => dataOf(html)).not.toThrow()
+  })
+
+  it('reaches every branch pageShell can take, so no page is left out of the fingerprint', () => {
+    // A branch no vector reaches is a page whose change the fingerprint cannot see: give it a
+    // vector (`page-shell-vectors.js`). What may stay unexecuted is the three defaults pageShell
+    // never takes — an empty value to escape or to type, and a split with no `fetchable`.
+    const script = fileURLToPath(new URL('./page-shell-coverage.mjs', import.meta.url))
+    const shell = new URL('../src/page-shell.js', import.meta.url).href
+    const unexecuted = JSON.parse(execFileSync(process.execPath, [script, shell], { encoding: 'utf8' }))
+    expect(unexecuted.sort()).toEqual([
+      "data-script.js: () => true",
+      "page-shell.js: return ''",
+      "page-shell.js: || ''",
+    ])
   })
 })
 
