@@ -17,22 +17,11 @@
  * Zero-dependency leaf, like `data-script.js`, which writes its `__DATA__`.
  */
 import { dataScript, jsonForScript } from './data-script.js'
+import { escapeHtml } from './escape-html.js'
 
-/**
- * Escape a string for HTML text or a double-quoted attribute value.
- *
- * @param {*} str
- * @returns {string}
- */
-export function escapeHtml(str) {
-  if (!str) return ''
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
+// The escaping the shell writes by, exported beside it (`@uniweb/runtime/ssr` re-exports it from
+// here).
+export { escapeHtml }
 
 /**
  * The MIME type of a favicon, by its file's extension — or null when unknown, and the `type`
