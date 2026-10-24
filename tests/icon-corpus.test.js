@@ -9,7 +9,7 @@
 
 import { describe, it, expect } from 'vitest'
 import { readFile } from 'node:fs/promises'
-import { DEFAULT_ICON_BASE, iconPath, iconUrl } from '../src/icon-corpus.js'
+import { DEFAULT_ICON_BASE, corpusIconName, iconPath, iconUrl } from '../src/icon-corpus.js'
 
 describe('iconPath', () => {
   it('groups by family and prefixes the filename with it', () => {
@@ -25,6 +25,32 @@ describe('iconPath', () => {
 
   it('passes multi-segment ids through unchanged', () => {
     expect(iconPath('lu', 'a-arrow-down')).toBe('lu/lu-a-arrow-down.svg')
+  })
+})
+
+describe('corpusIconName — a family\u2019s own spelling answers too', () => {
+  it("reads Lucide's names as Lucide's site spells them (measured 404 until 2026-10-24)", () => {
+    expect(iconPath('lu', 'building-2')).toBe('lu/lu-building2.svg')
+    expect(iconPath('lu', 'grid-2x2')).toBe('lu/lu-grid2-x2.svg')
+    expect(corpusIconName('lu', 'arrow-down-0-1')).toBe('arrow-down01')
+    expect(corpusIconName('lu', 'file-axis-3d')).toBe('file-axis3-d')
+    expect(corpusIconName('lu', 'heading-1')).toBe('heading1')
+  })
+
+  it('does the same for Heroicons and Feather', () => {
+    expect(corpusIconName('hi2', 'bars-3-bottom-left')).toBe('bars3-bottom-left')
+    expect(corpusIconName('fi', 'bar-chart-2')).toBe('bar-chart2')
+  })
+
+  it('leaves a name the corpus already spells as it is', () => {
+    for (const name of ['building2', 'grid2-x2', 'arrow-down01', 'house', 'a-arrow-down']) {
+      expect(corpusIconName('lu', name)).toBe(name)
+    }
+  })
+
+  it("never touches a family the rule would move: Material's 3d-rotation stays", () => {
+    expect(corpusIconName('md', '3d-rotation')).toBe('3d-rotation')
+    expect(corpusIconName('tb', 'cube3d-sphere')).toBe('cube3d-sphere')
   })
 })
 

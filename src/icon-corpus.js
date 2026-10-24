@@ -53,18 +53,50 @@
 export const DEFAULT_ICON_BASE = 'https://uniweb.github.io/icons'
 
 /**
+ * Families whose own sites spell a digit off by a hyphen (Lucide's `building-2` and `grid-2x2`,
+ * Heroicons' `bars-3`, Feather's `bar-chart-2`), where the corpus, named after react-icons, does
+ * not (`building2`, `grid2-x2`, `bars3`, `bar-chart2`). An author copies a name from the family's
+ * site, so for these the corpus answers that spelling too.
+ *
+ * ⛔ Only families the rule leaves every corpus name of unchanged, since the writer composes its
+ * paths with it too. Material's `3d-rotation` and Tabler's `cube3d-sphere` keep a letter after a
+ * digit unhyphenated, so the rule would move them. `_contracts/icon-corpus-names.test.js` holds
+ * these four to it, over every name their manifests list.
+ */
+const UPSTREAM_SPELLED = new Set(['lu', 'hi', 'hi2', 'fi'])
+
+/**
+ * An icon's name as the corpus spells it. In a family above, a digit takes no hyphen before it,
+ * and a letter after a digit takes one: `building-2` → `building2`, `grid-2x2` → `grid2-x2`. A
+ * name the corpus already spells comes back unchanged.
+ *
+ * ⛔ *Until 2026-10-24 a name was taken as written, so the 107 Lucide icons whose names hold a
+ * digit answered 404 to the spelling on Lucide's own site.*
+ *
+ * @param {string} family - short family code
+ * @param {string} name - icon id as written
+ * @returns {string}
+ */
+export function corpusIconName(family, name) {
+  const written = String(name ?? '')
+  if (!UPSTREAM_SPELLED.has(family)) return written
+  return written.replace(/-(?=\d)/g, '').replace(/(\d)([a-z])/g, '$1-$2')
+}
+
+/**
  * The corpus path for one icon, relative to any origin serving it.
  *
  * `{family}/{family}-{name}.svg` — the family repeats deliberately: the
  * directory groups, and the filename prefix keeps ids unique across families so
- * a name alone is never ambiguous.
+ * a name alone is never ambiguous. The name is the corpus's spelling of it
+ * (`corpusIconName`).
  *
  * @param {string} family - short family code (`lu`, `hi2`, `fa6`)
  * @param {string} name - icon id within that family (`house`, `a-arrow-down`)
  * @returns {string} e.g. `lu/lu-house.svg`
  */
 export function iconPath(family, name) {
-  return `${family}/${family}-${name}.svg`
+  return `${family}/${family}-${corpusIconName(family, name)}.svg`
 }
 
 /**
