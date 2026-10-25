@@ -182,7 +182,7 @@ describe('sectionFetches — a page’s sections’ own data, from raw content',
 })
 
 describe('block.sticky and block.stickyTop', () => {
-  // A component's own markup sits in boxes as tall as itself, where `sticky` cannot move, so the
+  // A component's outermost element sits in boxes as tall as itself, where `sticky` cannot move, so the
   // section asks and the runtime makes sticky the box that can (2026-10-19).
   const withFoundation = (meta, fn) => {
     const prev = globalThis.uniweb

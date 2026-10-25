@@ -95,7 +95,7 @@ export default class Block {
     // Whether the section stays in view as the page scrolls — what the author wrote (`true` or
     // `false`; anything else is no answer), else its type's default from `meta.js`, which
     // `initComponent` reads, else not. The runtime applies it to the box that can stick: a
-    // component's own markup sits in boxes as tall as itself, where `sticky` cannot move
+    // component's outermost element sits in boxes as tall as itself, where `sticky` cannot move
     // (2026-10-19).
     this.stickySetting = typeof stickyParam === 'boolean' ? stickyParam : null
     this.sticky = this.stickySetting ?? false
