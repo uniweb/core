@@ -119,6 +119,26 @@ describe('block.background', () => {
     expect(build({}).background).toBeNull()
   })
 
+  it('⛔ gathers a video’s own fields into its `video` — every renderer reads `video.src`', () => {
+    // the reference's shorthand: a url, with the poster beside it — drew nothing until 2026-10-25
+    expect(build({ background: { video: '/v/hero.mp4', poster: '/i/hero.jpg' } }).background)
+      .toEqual({ mode: 'video', video: { src: '/v/hero.mp4', poster: '/i/hero.jpg' } })
+    // sources alone: the first is the src
+    const sources = [{ src: '/v/hero.webm', type: 'video/webm' }, { src: '/v/hero.mp4', type: 'video/mp4' }]
+    expect(build({ background: { sources, poster: '/p.jpg' } }).background)
+      .toEqual({ mode: 'video', video: { src: '/v/hero.webm', sources, poster: '/p.jpg' } })
+    // with the mode written, too
+    expect(build({ background: { mode: 'video', video: '/v/a.mp4', loop: false } }).background)
+      .toEqual({ mode: 'video', video: { src: '/v/a.mp4', loop: false } })
+    // the video's own field wins over one beside it
+    expect(build({ background: { video: { src: '/v/a.mp4', poster: '/own.jpg' }, poster: '/beside.jpg' } }).background)
+      .toEqual({ mode: 'video', video: { src: '/v/a.mp4', poster: '/own.jpg' } })
+    // the object form and the string shorthand, as they were
+    expect(build({ background: { video: { src: '/v/a.mp4', poster: '/p.jpg' } } }).background)
+      .toEqual({ mode: 'video', video: { src: '/v/a.mp4', poster: '/p.jpg' } })
+    expect(build({ background: '/v/bg.mp4' }).background).toEqual({ mode: 'video', video: { src: '/v/bg.mp4' } })
+  })
+
   it('is the section’s own, never an older editor envelope’s', () => {
     const block = build({ standardOptions: { background: { mode: 'color', color: 'red' } }, background: 'blue' })
     expect(block.background).toEqual({ mode: 'color', color: 'blue' })

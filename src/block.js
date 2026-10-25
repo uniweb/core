@@ -13,6 +13,27 @@ import { normalizeTokenValue, isCssName, isCssValue } from '@uniweb/theming'
 import { sectionDomId } from './section-id.js'
 import { liftInsets } from './insets.js'
 
+/**
+ * A video background's own fields, in its `video`: `video: <url>` is its `src`, and a `poster`,
+ * `sources`, `loop` or `muted` written beside it are the video's — the shorthand the reference
+ * documents. A video given only as `sources` takes the first one's as its `src`.
+ * ⛔ Until 2026-10-25 these passed through as written, while every renderer reads
+ * `background.video.src`: the documented `video: /videos/hero.mp4` beside a `poster:` drew nothing.
+ *
+ * @param {Object} raw - a background object whose mode is video
+ * @returns {Object}
+ */
+function gatherVideoFields(raw) {
+  const { video, poster, sources, loop, muted, ...rest } = raw
+  const own = typeof video === 'string' ? { src: video } : { ...(video || {}) }
+  for (const [key, value] of Object.entries({ poster, sources, loop, muted })) {
+    if (value !== undefined && own[key] === undefined) own[key] = value
+  }
+  const first = !own.src && Array.isArray(own.sources) ? own.sources.find((s) => s?.src) : null
+  if (first) own.src = first.src
+  return { ...rest, video: own }
+}
+
 export default class Block {
   constructor(blockData, id, page) {
     this.id = id
@@ -880,8 +901,8 @@ export default class Block {
       return { mode: 'color', color: normalizeTokenValue(raw) }
     }
 
-    // Object with explicit mode — pass through
-    if (raw.mode) return raw
+    // Object with explicit mode — pass through, a video's own fields gathered into it
+    if (raw.mode) return raw.mode === 'video' ? gatherVideoFields(raw) : raw
 
     // Normalize overlay shorthand: number → { enabled: true, type: 'dark', opacity }
     if (typeof raw.overlay === 'number') {
@@ -889,7 +910,7 @@ export default class Block {
     }
 
     // Infer mode from fields
-    if (raw.video || raw.sources) return { mode: 'video', ...raw }
+    if (raw.video || raw.sources) return gatherVideoFields({ mode: 'video', ...raw })
     if (raw.image || raw.src) {
       // Support flat { src, position, size } shorthand
       if (raw.src) {
