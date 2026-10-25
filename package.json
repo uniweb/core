@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.js",
     "./base-path": "./src/base-path.js",
+    "./site-address": "./src/site-address.js",
     "./records-service": "./src/records-service.js",
     "./data-paths": "./src/data-paths.js",
     "./data-script": "./src/data-script.js",

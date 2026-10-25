@@ -8,11 +8,12 @@
  * Field names are camelCase to match the framework's authored convention
  * (`defaultLanguage`, etc.). `changefreq`/`priority` are sitemap hints — only
  * meaningful per-page, but carried uniformly so the shape never drifts.
+ * `twitterHandle` names the site's account (`twitter:site`, e.g. `@acme`).
  *
  * @param {Object} [raw] - raw `seo:` block from site.yml / page.yml
  * @returns {{ noindex: boolean, image: string|null, ogTitle: string|null,
  *   ogDescription: string|null, canonical: string|null, changefreq: string|null,
- *   priority: (string|number)|null }}
+ *   priority: (string|number)|null, twitterHandle: string|null }}
  */
 export function normalizeSeo(raw) {
   const seo = raw || {}
@@ -24,5 +25,6 @@ export function normalizeSeo(raw) {
     canonical: seo.canonical || null,
     changefreq: seo.changefreq || null,
     priority: seo.priority || null,
+    twitterHandle: seo.twitterHandle || null,
   }
 }

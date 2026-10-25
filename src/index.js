@@ -109,6 +109,8 @@ export {
 // since it must not pull the package root into an SSR/Worker bundle.
 export { resolveService, resolveServiceUrl, readServiceOptions } from './services.js'
 export { applyBasePath } from './base-path.js'
+// A site's address and the absolute URLs stated on it — also the leaf `@uniweb/core/site-address`.
+export { siteAddress, pageUrl, absoluteUrl } from './site-address.js'
 
 /**
  * The singleton Uniweb instance.

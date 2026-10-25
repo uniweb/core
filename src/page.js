@@ -9,6 +9,7 @@ import Block from './block.js'
 import ObservableState from './observable-state.js'
 import { normalizeSeo } from './seo.js'
 import { landingRoute } from './resolve-route.js'
+import { absoluteUrl } from './site-address.js'
 
 // Normalize a page's nav-visibility into a deduped hideIn array (the layout-area
 // names the page is suppressed from). Reads the canonical hideIn (array, or a single
@@ -179,29 +180,52 @@ export default class Page {
   }
 
   /**
-   * Get metadata for head tags
+   * The page's head metadata — the one source for both writers of a page's head: the prerendered
+   * HTML (`injectPageContent`) and the browser (`useHeadMeta`), so a crawler and a visitor read the
+   * same tags.
+   *
+   * URLs are absolute, on the site's address (`./site-address.js`): the page's own URL is its
+   * canonical and `og:url` unless it authors a canonical, and `alternates` is its URL in each locale
+   * the site serves. With the address unknown they are left out — a relative `og:url` is not one,
+   * and a canonical guessed from where the page was loaded may name another copy of the site.
+   * ⛔ Until 2026-10-25 `og:url` was the bare route and a page had a canonical only when it authored
+   * one, and the static build wrote the HOME page's into the shell every page is rendered into.
+   *
    * @returns {Object} Head metadata
    */
   getHeadMeta() {
+    const website = this.website
     const resolvedTitle = this.getTitle()
     // Site-level seo provides the defaults; a page overrides any field it sets.
     // (Website.seo / Website.keywords are the normalized site-root values.)
-    const site = this.website?.seo || {}
-    const siteKeywords = this.website?.keywords || null
+    const site = website?.seo || {}
+    const siteKeywords = website?.keywords || null
+    const address = website?.url || null
+    const own = this.description || null
+    // The site's description describes its home page, and no other: one every page shared would
+    // describe none of them.
+    const home = this.getNavRoute() === '/' ? website?.description || null : null
+    const canonical = this.seo.canonical
+      ? absoluteUrl(address, this.seo.canonical) || this.seo.canonical
+      : website?.getPageUrl?.(this) ?? null
+    const image = this.seo.image || site.image || null
     return {
       title: resolvedTitle,
-      description: this.description,
+      description: own || home,
       keywords: this.keywords || siteKeywords,
-      canonical: this.seo.canonical,
+      canonical,
       robots: this.seo.noindex || site.noindex ? 'noindex, nofollow' : null,
+      alternates: website?.getPageAlternates?.(this) ?? [],
       og: {
         // Page content wins; site-level seo only fills gaps. Image is the
         // exception authors most want cascaded (the shared social card).
         title: this.seo.ogTitle || resolvedTitle || site.ogTitle,
-        description: this.seo.ogDescription || this.description || site.ogDescription,
-        image: this.seo.image || site.image,
-        url: this.route,
+        description: this.seo.ogDescription || own || site.ogDescription || home,
+        image: image ? absoluteUrl(address, image) || image : null,
+        url: canonical,
+        siteName: website?.name || null,
       },
+      twitter: { site: this.seo.twitterHandle || site.twitterHandle || null },
     }
   }
 

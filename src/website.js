@@ -10,6 +10,7 @@ import EntityStore from './entity-store.js'
 import FetcherDispatcher from './fetcher-dispatcher.js'
 import ObservableState from './observable-state.js'
 import { normalizeSeo } from './seo.js'
+import { siteAddress, pageUrl } from './site-address.js'
 import { resolveDefaultLocale, localeLabel } from './locale-config.js'
 import { matchDynamicRoute, recordTitle, recordImage, routeBinding, routeParamName, parentRouteOf } from './route-match.js'
 import { resolveFetchConfigs, pageRouteQuery, recordPages } from './fetch-config.js'
@@ -93,7 +94,10 @@ export default class Website {
     // ─── Fields populated by _applyContent (declared up front so Object.seal works) ───
     this.name = ''
     this.description = ''
-    this.url = ''
+    // The site's address and how its pages are addressed, as whoever serves it states them
+    // (`config.url`, `config.trailingSlash`; `./site-address.js`). Null: unknown.
+    this.url = null
+    this.trailingSlash = false
     this._layoutSets = {}
     this.notFoundPage = null
     this._dynamicPageData = new Map()
@@ -147,7 +151,8 @@ export default class Website {
 
     this.name = config.name || ''
     this.description = config.description || ''
-    this.url = config.url || ''
+    this.url = siteAddress(config.url)
+    this.trailingSlash = config.trailingSlash === true
 
     // Layout areas (header/footer/left/right pages scoped per named layout).
     this._layoutSets = {}
@@ -1006,6 +1011,45 @@ export default class Website {
     // served unprefixed shows the canonical route, a locale with its own domain is that domain,
     // any other is `/{code}` plus its translated route.
     return localeUrl(this._routeIndex, localeCode, targetRoute, this._routeContext())
+  }
+
+  /**
+   * A page's URL as the public reaches it — absolute, on the site's address — in a locale (default:
+   * the active one): the URL its canonical, `og:url`, hreflang and sitemap entry name. By the rule a
+   * link to another locale is made with (`localeUrl`), so a translated route is the route that
+   * locale shows. Null when the site's address is unknown (`config.url`): a URL guessed from where
+   * the page happens to be loaded could be another copy of the site.
+   *
+   * @param {Object|string} page - A Page, or a route
+   * @param {string} [localeCode]
+   * @returns {string|null}
+   */
+  getPageUrl(page, localeCode = this.activeLocale) {
+    if (!this.url) return null
+    const route = typeof page === 'string' ? page : page?.getNavRoute?.() ?? page?.route
+    if (typeof route !== 'string') return null
+    const path = localeUrl(this._routeIndex, localeCode, route, this._routeContext())
+    return pageUrl(this.url, path, { trailingSlash: this.trailingSlash })
+  }
+
+  /**
+   * A page's URL in each locale the site serves, and the site's default as `x-default` — the
+   * hreflang a crawler reads to send each reader to their own. Empty for a site in one locale, or
+   * whose address is unknown.
+   *
+   * @param {Object|string} page - A Page, or a route
+   * @returns {Array<{ hreflang: string, url: string }>}
+   */
+  getPageAlternates(page) {
+    if (!this.url || this.locales.length < 2) return []
+    const alternates = []
+    for (const { code } of this.locales) {
+      const url = this.getPageUrl(page, code)
+      if (url) alternates.push({ hreflang: code, url })
+    }
+    const fallback = this.getPageUrl(page, this.siteDefaultLocale)
+    if (fallback) alternates.push({ hreflang: 'x-default', url: fallback })
+    return alternates
   }
 
   /**

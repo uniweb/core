@@ -29,6 +29,7 @@ describe('normalizeSeo', () => {
       canonical: null,
       changefreq: null,
       priority: null,
+      twitterHandle: null,
     })
   })
 
@@ -111,5 +112,70 @@ describe('Page.getHeadMeta cascade (page over site, site fills gaps)', () => {
     })
     const about = w.pages.find((p) => p.route === '/about')
     expect(about.getHeadMeta().og.title).toBe('Site Default')
+  })
+})
+
+describe('Page.getHeadMeta — absolute URLs on the site’s address (`config.url`)', () => {
+  const PAGES = 'https://octocat.github.io/handbook/'
+
+  it('⭐ each page names ITSELF as its canonical and og:url — not the home page', () => {
+    const w = new Website({ content: content({ config: { url: PAGES, trailingSlash: true } }) })
+    const about = w.pages.find((p) => p.route === '/about').getHeadMeta()
+    expect(about.canonical).toBe(`${PAGES}about/`)
+    expect(about.og.url).toBe(`${PAGES}about/`)
+    expect(w.pages.find((p) => p.route === '/').getHeadMeta().canonical).toBe(PAGES)
+  })
+
+  it('states no canonical or og:url when the address is unknown — never a bare route', () => {
+    const meta = new Website({ content: content() }).pages.find((p) => p.route === '/about').getHeadMeta()
+    expect(meta.canonical).toBeNull()
+    expect(meta.og.url).toBeNull()
+    expect(meta.alternates).toEqual([])
+  })
+
+  it('an authored canonical wins, made absolute on the address', () => {
+    const w = new Website({
+      content: content({ config: { url: PAGES }, about: { seo: { canonical: '/team' } } }),
+    })
+    const meta = w.pages.find((p) => p.route === '/about').getHeadMeta()
+    expect(meta.canonical).toBe(`${PAGES}team`)
+    expect(meta.og.url).toBe(`${PAGES}team`)
+  })
+
+  it('the social card image is absolute, with the base path once', () => {
+    const w = new Website({ content: content({ config: { url: PAGES, seo: { image: '/og/default.png' } } }) })
+    expect(w.pages.find((p) => p.route === '/about').getHeadMeta().og.image).toBe(`${PAGES}og/default.png`)
+    const absolute = new Website({ content: content({ config: { url: PAGES, seo: { image: 'https://cdn.example.com/c.png' } } }) })
+    expect(absolute.pages.find((p) => p.route === '/about').getHeadMeta().og.image).toBe('https://cdn.example.com/c.png')
+  })
+
+  it('a site in several locales gives each page its URL in each, and the default as x-default', () => {
+    const w = new Website({
+      content: content({ config: { url: 'https://example.com', languages: ['en', 'fr'], trailingSlash: true } }),
+    })
+    expect(w.pages.find((p) => p.route === '/about').getHeadMeta().alternates).toEqual([
+      { hreflang: 'en', url: 'https://example.com/about/' },
+      { hreflang: 'fr', url: 'https://example.com/fr/about/' },
+      { hreflang: 'x-default', url: 'https://example.com/about/' },
+    ])
+    const one = new Website({ content: content({ config: { url: 'https://example.com' } }) })
+    expect(one.pages.find((p) => p.route === '/about').getHeadMeta().alternates).toEqual([])
+  })
+
+  it('the site’s description is the home page’s, and no other page’s', () => {
+    const w = new Website({
+      content: content({ config: { description: 'A site about things' }, about: { description: '' } }),
+    })
+    const home = w.pages.find((p) => p.route === '/').getHeadMeta()
+    expect(home.description).toBe('A site about things')
+    expect(home.og.description).toBe('A site about things')
+    expect(w.pages.find((p) => p.route === '/about').getHeadMeta().description).toBeNull()
+  })
+
+  it('names the site and its account', () => {
+    const w = new Website({ content: content({ config: { seo: { twitterHandle: '@acme' } } }) })
+    const meta = w.pages.find((p) => p.route === '/about').getHeadMeta()
+    expect(meta.og.siteName).toBe('Test')
+    expect(meta.twitter.site).toBe('@acme')
   })
 })
