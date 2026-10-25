@@ -333,6 +333,24 @@ export default class DataStore {
   }
 
   /**
+   * Resolves once no fetch is in flight — waiting too for any that a settling one started, since
+   * one answer can start another fetch. For what must see a page's answers in place, as the dev
+   * check of sticky elements does (`@uniweb/runtime`), not for code that needs one answer: that
+   * awaits its own fetch. An entry left registered after its promise settled is waited on once.
+   *
+   * @returns {Promise<void>}
+   */
+  async whenIdle() {
+    const waited = new Set()
+    for (;;) {
+      const pending = [...this._inflight.values()].map((entry) => entry.promise).filter((p) => p && !waited.has(p))
+      if (!pending.length) return
+      for (const promise of pending) waited.add(promise)
+      await Promise.allSettled(pending)
+    }
+  }
+
+  /**
    * Flush cache and in-flight map. Listeners are preserved so subscribers
    * that outlive the cache (kit hooks waiting on a key) aren't orphaned.
    */

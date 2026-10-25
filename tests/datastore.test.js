@@ -113,6 +113,37 @@ describe('DataStore', () => {
     })
   })
 
+  describe('whenIdle', () => {
+    it('resolves at once with nothing in flight', async () => {
+      await expect(new DataStore().whenIdle()).resolves.toBeUndefined()
+    })
+
+    it('waits for every fetch in flight, and for one a settling fetch starts', async () => {
+      const store = new DataStore()
+      const order = []
+      let answerSecond
+      const second = new Promise((resolve) => { answerSecond = resolve })
+      const first = Promise.resolve().then(() => {
+        order.push('first')
+        store.inflight.delete('a')
+        const promise = second.then(() => { order.push('second'); store.inflight.delete('b') })
+        store.inflight.set('b', { promise, signals: new Set() })
+      })
+      store.inflight.set('a', { promise: first, signals: new Set() })
+      const idle = store.whenIdle().then(() => order.push('idle'))
+      await first
+      answerSecond()
+      await idle
+      expect(order).toEqual(['first', 'second', 'idle'])
+    })
+
+    it('waits once on an entry left registered after its promise settled', async () => {
+      const store = new DataStore()
+      store.inflight.set('aborted', { promise: Promise.reject(new Error('aborted')), signals: new Set() })
+      await expect(store.whenIdle()).resolves.toBeUndefined()
+    })
+  })
+
   describe('clear', () => {
     it('flushes cache and in-flight map', () => {
       const store = new DataStore()
