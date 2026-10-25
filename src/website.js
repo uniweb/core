@@ -249,6 +249,21 @@ export default class Website {
   }
 
   /**
+   * Forget the answers this Website holds, and the parametric pages made from them.
+   *
+   * ⭐ For a caller that renders many pages or requests on one Website, so that each render
+   * starts from the answers its own page carries (`render(target, { fetchedData })` in
+   * `@uniweb/runtime/ssr`). ⛔ Emptying the store alone is not enough: a parametric page takes
+   * its title, description and not-found state from the store when it is first made, and is
+   * then kept by route (`_pageFor`), so it would go on showing what an earlier request found.
+   * The store is emptied in place, so every dispatcher built on it sees the same.
+   */
+  forgetData() {
+    this.dataStore.clear()
+    this._dynamicPageCache.clear()
+  }
+
+  /**
    * Rebuild in place. Content-only rebuilds preserve the dispatcher and all
    * state (site and per-page). Passing `foundation` or `extensions` reassembles
    * the dispatcher; the DataStore cache survives so warm entries aren't lost.

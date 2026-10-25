@@ -144,6 +144,39 @@ describe('the page is about one record, so the record is asked first (F3)', () =
   })
 })
 
+describe('forgetData — one Website, many requests', () => {
+  // A host renders request after request on one Website, each against its own answers. The page
+  // made from the first answers is cached by route, so a later request whose answers differ (the
+  // record edited, or gone) would be rendered with the first one's title and not-found state.
+  const listKey = deriveCacheKey({ query: 'articles', as: 'articles', path: '/data/articles.json' })
+  const firstRequest = (w) => {
+    w.dataStore.set(listKey, { data: [{ $name: 'hello', title: 'Hello World' }] })
+    expect(w.getPage('/blog/hello').title).toBe('Hello World')
+  }
+
+  it('⭐ forgets the answers and the parametric pages made from them', () => {
+    const w = site()
+    firstRequest(w)
+    w.forgetData()
+    expect(w.dataStore.get(listKey)).toBeFalsy()
+    // the next request's answers: the record is gone
+    w.dataStore.set(listKey, { data: [] })
+    const page = w.getPage('/blog/hello')
+    expect(page.notFound).toBe(true)
+    expect(page.title).toBe('Not found')
+  })
+
+  it('CONTROL — emptying the store alone keeps the page the first answers made', () => {
+    const w = site()
+    firstRequest(w)
+    w.dataStore.clear()
+    w.dataStore.set(listKey, { data: [] })
+    const page = w.getPage('/blog/hello')
+    expect(page.notFound).toBeFalsy()
+    expect(page.title).toBe('Hello World')
+  })
+})
+
 describe('the record names the page by the one title rule — `recordTitle` (ruled 2026-09-14)', () => {
   // ⛔ Until then the page read `title` alone, so a record with a `name` and no `title`
   // kept the template's title. Measured on a served site whose template title was the
