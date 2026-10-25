@@ -28,7 +28,7 @@ export default class Uniweb {
    *   sites never pass this option.
    */
   constructor({ content = {}, foundation = null, extensions = [], defaultFetcher = null, transport = null, dev = false } = {}) {
-    this.activeWebsite = new Website({ content, foundation, extensions, defaultFetcher, transport, dev })
+    this.activeWebsite = new Website({ content, foundation, extensions, defaultFetcher, transport, dev, uniweb: this })
 
     this.foundation = foundation
     this.foundationConfig = {}

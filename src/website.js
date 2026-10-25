@@ -54,7 +54,7 @@ const SERVICE_RESOLVERS = {
  * swaps reassemble the dispatcher but preserve the DataStore and state so the
  * editor's live-edit path doesn't wipe either between keystrokes.
  *
- *   new Website({ content, foundation?, extensions?, defaultFetcher?, dev? })
+ *   new Website({ content, foundation?, extensions?, defaultFetcher?, dev?, uniweb? })
  */
 export default class Website {
   constructor({
@@ -64,6 +64,7 @@ export default class Website {
     defaultFetcher = null,
     transport = null,
     dev = false,
+    uniweb = null,
   } = {}) {
 
     // ─── Foundation / dispatcher state (not re-derived on rebuild) ───
@@ -74,6 +75,8 @@ export default class Website {
     // rebuild() reassembles the dispatcher with the same override in place.
     this._transport = transport
     this._dev = dev
+    // The Uniweb that made this Website, if one did — what `makeCurrent` points the global at.
+    this._uniweb = uniweb
 
     this.dataStore = new DataStore()
     this.fetcher = new FetcherDispatcher({
@@ -261,6 +264,22 @@ export default class Website {
   forgetData() {
     this.dataStore.clear()
     this._dynamicPageCache.clear()
+  }
+
+  /**
+   * Point `globalThis.uniweb` at the Uniweb that made this Website.
+   *
+   * ⭐ Code that reaches the site through the global reads THAT, not the Website it was handed:
+   * a block resolving its component (`Block#initComponent`, kept on the block), the props
+   * pipeline, this class's own foundation config, and kit in every foundation
+   * (`getUniweb().activeWebsite`). Every `createUniweb` points the global at the newest instance,
+   * so a caller holding several in one process (a host serving many sites, publishes or locales)
+   * must point it back before it uses another. The render door and the data step do
+   * (`@uniweb/runtime/ssr`). A Website built without a Uniweb has none to point at, and leaves
+   * the global as it is.
+   */
+  makeCurrent() {
+    if (this._uniweb) globalThis.uniweb = this._uniweb
   }
 
   /**
