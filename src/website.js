@@ -1087,6 +1087,19 @@ export default class Website {
   }
 
   /**
+   * The pages of the content this Website was built from, as the content states them, in its
+   * order — for a rule written over site content to read the pages the build read. The runtime
+   * links each page's markdown this way (`pageMarkdownUrls` in `@uniweb/projections`), whose rules
+   * read fields a Page does not keep, such as a container's `hasContent: false`. The not-found
+   * page is not among them.
+   *
+   * @returns {Object[]}
+   */
+  getContentPages() {
+    return [...this._pageOfData.keys()]
+  }
+
+  /**
    * Show the page in another locale.
    *
    * A locale is its own document, with its own content and routes, so this is a page load of

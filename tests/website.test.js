@@ -143,6 +143,27 @@ describe('Website.rebuild', () => {
   })
 })
 
+describe('Website.getContentPages', () => {
+  it('is the content’s own page entries, in its order, without the not-found page', () => {
+    const content = simpleContent()
+    const notFound = { route: '/404', title: 'Not found', sections: [] }
+    content.pages = [content.pages[0], notFound, content.pages[1]]
+    const w = new Website({ content })
+
+    const pages = w.getContentPages()
+    expect(pages).toEqual([content.pages[0], content.pages[2]])
+    // The entries themselves — fields a Page does not keep stay readable.
+    expect(pages[0]).toBe(content.pages[0])
+  })
+
+  it('follows a rebuild to its new content', () => {
+    const w = new Website({ content: simpleContent() })
+    const next = simpleContent({ pages: [{ route: '/', isIndex: true, title: 'Home', sections: [], hasContent: false }] })
+    w.rebuild({ content: next })
+    expect(w.getContentPages()).toEqual(next.pages)
+  })
+})
+
 describe('Website route translation (localized slugs)', () => {
   // config.i18n.routeTranslations: { <locale>: { <canonicalRoute>: <displayRoute> } }
   // Produced by the build from page.yml `slug:` maps (and by the editor/backend
