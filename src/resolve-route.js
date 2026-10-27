@@ -23,6 +23,7 @@
 
 import { decodeRouteValue, matchDynamicRoute, parentRouteOf } from './route-match.js'
 import { resolveDefaultLocale } from './locale-config.js'
+import { siteAddress } from './site-address.js'
 
 /** The not-found page's route. It is never a routable page of its own. */
 export const NOT_FOUND_ROUTE = '/404'
@@ -99,7 +100,16 @@ export function routeIndex(content = {}) {
     activeLocale: config.activeLocale || defaultLocale,
     locales: servedLocales(config, siteDefaultLocale),
     domainLocales: config.domainLocales || null,
+    // The locale the site's address (`config.url`) serves unprefixed, whichever host serves this
+    // copy: the address's domain's own, else the site's default.
+    addressLocale: addressLocaleOf(config, siteDefaultLocale),
   }
+}
+
+function addressLocaleOf(config, siteDefaultLocale) {
+  const address = siteAddress(config.url)
+  const host = address ? new URL(address).host : null
+  return (host && config.domainLocales?.[host]) || siteDefaultLocale
 }
 
 function servedLocales(config, siteDefaultLocale) {
@@ -200,6 +210,30 @@ export function localeUrl(site, localeCode, route, context = {}) {
   if (localeCode === defaultLocale) return translateRoute(index, target, localeCode)
   const translated = translateRoute(index, target, localeCode)
   return translated === '/' ? `/${localeCode}/` : `/${localeCode}${translated}`
+}
+
+/**
+ * ⭐ **A PAGE'S URL IN A LOCALE, AS THE SITE'S ADDRESS SERVES IT** — what its canonical, `og:url`,
+ * hreflang and sitemap entry join to `config.url` (`./site-address.js`). `localeUrl` made on the
+ * address's host rather than on the host serving this copy: the route is read as this copy shows
+ * it (`context`), and the URL is made with the locale the address serves unprefixed — its domain's
+ * own (`config.domainLocales`), else the site's default. A locale with a domain of its own is that
+ * domain, as `localeUrl` has it.
+ *
+ * ⛔ Until 2026-10-27 these URLs were made as the serving host shows the site. On a domain pinned
+ * to French, an English page's canonical, and every page's `en` and `x-default` alternates, named
+ * `/en/…` on an address that answers it with a 301 to the unprefixed URL.
+ *
+ * @param {Object} site - a locale's site content, or its `routeIndex`
+ * @param {string} localeCode - the locale the URL is for
+ * @param {string} route - the page's route, canonical or as the active locale shows it
+ * @param {{ activeLocale?: string, defaultLocale?: string }} [context] - this copy's
+ * @returns {string} a path from the address's root, or an absolute URL on a locale's own domain
+ */
+export function localeUrlOnAddress(site, localeCode, route, context = {}) {
+  const index = indexOf(site)
+  const target = canonicalRoute(index, route, context)
+  return localeUrl(index, localeCode, target, { activeLocale: index.siteDefaultLocale, defaultLocale: index.addressLocale })
 }
 
 /**

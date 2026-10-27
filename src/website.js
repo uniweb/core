@@ -23,6 +23,7 @@ import {
   routeIndex,
   resolveRoute as resolveRouteIn,
   localeUrl,
+  localeUrlOnAddress,
   canonicalRoute,
   translateRoute as translateRouteIn,
   reverseTranslateRoute as reverseTranslateRouteIn,
@@ -1049,10 +1050,12 @@ export default class Website {
 
   /**
    * A page's URL as the public reaches it — absolute, on the site's address — in a locale (default:
-   * the active one): the URL its canonical, `og:url`, hreflang and sitemap entry name. By the rule a
-   * link to another locale is made with (`localeUrl`), so a translated route is the route that
-   * locale shows. Null when the site's address is unknown (`config.url`): a URL guessed from where
-   * the page happens to be loaded could be another copy of the site.
+   * the active one): the URL its canonical, `og:url`, hreflang and sitemap entry name. As the address
+   * serves the site (`localeUrlOnAddress`): a translated route is the route that locale shows, a
+   * locale with a domain of its own is that domain, and the rest are prefixed as on the address —
+   * which is not how a domain pinned to another locale links to them. Null when the site's address is
+   * unknown (`config.url`): a URL guessed from where the page happens to be loaded could be another
+   * copy of the site.
    *
    * @param {Object|string} page - A Page, or a route
    * @param {string} [localeCode]
@@ -1062,7 +1065,7 @@ export default class Website {
     if (!this.url) return null
     const route = typeof page === 'string' ? page : page?.getNavRoute?.() ?? page?.route
     if (typeof route !== 'string') return null
-    const path = localeUrl(this._routeIndex, localeCode, route, this._routeContext())
+    const path = localeUrlOnAddress(this._routeIndex, localeCode, route, this._routeContext())
     return pageUrl(this.url, path, { trailingSlash: this.trailingSlash })
   }
 
