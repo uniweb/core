@@ -178,7 +178,10 @@ export default class EntityStore {
       peekRecord: (id) => dispatcher.peekRecord?.(id),
     })
     const ctx = this._ctx(probe)
-    return runPlan(plan, { dispatch: (request) => dispatcher.dispatch(request, ctx) })
+    return runPlan(plan, {
+      dispatch: (request) => dispatcher.dispatch(request, ctx),
+      peek: (request) => dispatcher.peek?.(request, ctx),
+    })
   }
 
   /**
@@ -340,6 +343,8 @@ export default class EntityStore {
     const ctx = this._ctx(block, { signal })
     const { data, errors } = await runPlan(this._plan(block, fills, route, dispatcher), {
       dispatch: (request) => dispatcher.dispatch(request, ctx),
+      // What the plan uses without asking, when it is held (`keyProgram`'s held steps).
+      peek: (request) => dispatcher.peek?.(request, ctx),
       onFailure: (key, cfg, message) => reportFetchFailure(this.dev, block, key, cfg, message),
     })
 

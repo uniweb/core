@@ -161,6 +161,74 @@ describe('the plan’s two drivers agree', () => {
   })
 })
 
+// ⭐ OFF THE RECORDS SERVICE, A PARAMETRIC PAGE'S RECORD IS LOOKED FOR IN WHAT IS HELD FIRST. A page
+// listing the query keeps its set, so a post reached from its list finds its brief there, and its
+// whole record when another question brought it. ⛔ Until 2026-10-27 the record's question was asked
+// either way, where the file lane finds the record in the set.
+describe('off the records service, a parametric page uses the record it holds', () => {
+  const SERVICE = { services: { records: '/_records/ask/{locale}' }, queries: { posts: { schema: '@/post' } } }
+  const BRIEFS = [
+    { $uuid: 'u-a', $name: 'a', title: 'A' },
+    { $uuid: 'u-b', $name: 'b', title: 'B' },
+  ]
+  const WHOLE = { a: { $uuid: 'u-a', $name: 'a', title: 'A', body: 'All of A' }, b: { $uuid: 'u-b', $name: 'b', title: 'B', body: 'All of B' } }
+  /** The service: a record's question (`narrow.match`), a whole list, or the set's briefs. */
+  const service = (req) => {
+    const name = req.narrow?.match && Object.values(req.narrow.match)[0]
+    if (name) return { data: WHOLE[name] ? [req.whole ? WHOLE[name] : BRIEFS.find((r) => r.$name === name)] : [], meta: { whole: !!req.whole } }
+    return req.whole ? { data: Object.values(WHOLE), meta: { whole: true } } : { data: BRIEFS, meta: { whole: false } }
+  }
+  const brief = declaring('posts')
+  const whole = { data: { posts: { schema: '@/post', whole: true } } }
+  const listing = (w) => block({ page: page({ route: '/posts', fetch: LIST }) }, w)
+  const post = (slug, w) => block({ page: page({ parent: list, dynamicContext: on(slug) }) }, w)
+
+  it('a brief: found in the set the list holds, with no question', async () => {
+    const { entityStore, website, asked } = makeHarness({ answer: service, config: SERVICE })
+    await entityStore.fetch(listing(website), brief)
+    expect(asked).toHaveBeenCalledTimes(1)
+
+    const result = await entityStore.fetch(post('b', website), brief)
+    expect(asked).toHaveBeenCalledTimes(1)
+    expect(result.data.posts).toEqual([BRIEFS[1]])
+    expect(entityStore.resolve(post('b', website), brief)).toMatchObject({ status: 'ready', data: { posts: [BRIEFS[1]] } })
+  })
+
+  it('whole: the record another question brought whole, with no question', async () => {
+    const { entityStore, website, asked } = makeHarness({ answer: service, config: SERVICE })
+    await entityStore.fetch(listing(website), brief)
+    await entityStore.fetch(listing(website), whole)
+    expect(asked).toHaveBeenCalledTimes(2)
+
+    const result = await entityStore.fetch(post('a', website), whole)
+    expect(asked).toHaveBeenCalledTimes(2)
+    expect(result.data.posts).toEqual([WHOLE.a])
+  })
+
+  it('whole, held only as a brief: the record is asked for whole', async () => {
+    const { entityStore, website, asked } = makeHarness({ answer: service, config: SERVICE })
+    await entityStore.fetch(listing(website), brief)
+
+    const result = await entityStore.fetch(post('a', website), whole)
+    expect(asked).toHaveBeenCalledTimes(2)
+    expect(asked.mock.calls[1][0]).toMatchObject({ whole: true, narrow: { match: { $name: 'a' } } })
+    expect(result.data.posts).toEqual([WHOLE.a])
+  })
+
+  it.each([
+    ['nothing is held', [], 'a'],
+    ['the held set does not have the record, which proves nothing about the service', ['list'], 'zzz'],
+  ])('CONTROL — %s: the record\'s question is asked', async (_, before, slug) => {
+    const { entityStore, website, asked } = makeHarness({ answer: service, config: SERVICE })
+    if (before.includes('list')) await entityStore.fetch(listing(website), brief)
+    const calls = asked.mock.calls.length
+
+    await entityStore.fetch(post(slug, website), brief)
+    expect(asked).toHaveBeenCalledTimes(calls + 1)
+    expect(asked.mock.calls.at(-1)[0].narrow).toMatchObject({ match: { $name: slug } })
+  })
+})
+
 // ⭐ A KEY DECLARED `single: true` ASKS FOR ONE RECORD (ruled 2026-10-07 [Diego]): the binding's
 // question cut to its first record, so a whole one is fetched whole alone. The store still answers a
 // list — of one, or none — and the runtime makes it the record (`runtime/src/prepare-props.js`).

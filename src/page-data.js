@@ -200,6 +200,8 @@ function heldWhole(peekRecord, match) {
 export function* keyProgram(cfg, { dynamicContext = null, route = null, held = undefined, peekRecord = null, current: forced = null, opportunistic = false, whole = false, single = false } = {}) {
   /** A step this caller can do without: a miss answers `{ missing: true }` instead of stopping. */
   const maybe = (request) => (opportunistic ? { request, optional: true } : request)
+  /** A step answered from what is held, on both drivers: never dispatched, `{ missing: true }` when not held. */
+  const fromHeld = (request) => ({ request, held: true })
   // The block holds this fetch's answer already — a static build prerendered it.
   if (held !== undefined) return { value: held }
 
@@ -232,6 +234,20 @@ export function* keyProgram(cfg, { dynamicContext = null, route = null, held = u
   }
 
   if (current === 'only' && cfg.ask) {
+    // ⭐ WHAT IS HELD, FIRST. A page that lists this query keeps its set, and the record is in it:
+    // its brief, and — when another question brought it whole — the record itself, in the record
+    // index. Either answers without a request. Only a positive match counts: a held set without the
+    // record proves nothing, since the service may answer the set in pages, so the record is asked.
+    // ⛔ Until 2026-10-27 this lane asked the record's question even with its query's set held, where
+    // the file lane finds the record in the set and asks for it whole only when it is not held whole.
+    const set = yield fromHeld(routeSelection(cfg))
+    const found = Array.isArray(set.data)
+      ? set.data.find(isPageRecord(dynamicContext, cfg.routeField)) ?? null
+      : null
+    if (found && !whole) return { value: [found] }
+    const foundWhole = found ? heldWhole(peekRecord, found) : null
+    if (foundWhole) return { value: [foundWhole] }
+
     // ⭐ THE RECORDS SERVICE needs no list to find the record: the record is the query's set
     // narrowed by the route's handle, so its one question answers the record if the set holds it
     // and `[]` if not — whole or its brief, as the component expects.
@@ -351,11 +367,22 @@ function recordRequest(cfg, record) {
   return buildDetailConfig(cfg, { paramName: 'slug', paramValue: String(handle), record })
 }
 
-/** A yielded step as `{ request, optional }` entries: one request, or several asked together. */
+/**
+ * A yielded step as `{ request, optional, held }` entries: one request, or several asked together.
+ * `held` is answered from the cache on both drivers and never dispatched.
+ */
 function asSteps(value) {
   return (Array.isArray(value) ? value : [value]).map((step) =>
-    step && step.request ? { request: step.request, optional: !!step.optional } : { request: step, optional: false }
+    step && step.request
+      ? { request: step.request, optional: !!step.optional, held: !!step.held }
+      : { request: step, optional: false, held: false }
   )
+}
+
+/** A held step's answer: what the cache holds, or `{ missing: true }` — never a request. */
+function fromCache(peek, request) {
+  const cached = typeof peek === 'function' ? peek(request) : null
+  return cached ? { data: cached.data } : { missing: true }
 }
 
 /**
@@ -399,11 +426,11 @@ export function runPlanSync(plan, { peek }) {
       }
       const answers = []
       let missed = false
-      for (const { request, optional } of asSteps(step.value)) {
+      for (const { request, optional, held } of asSteps(step.value)) {
         const cached = peek(request)
         if (cached) answers.push({ data: cached.data })
         // The program can do without this one and says what it makes of that.
-        else if (optional) answers.push({ missing: true })
+        else if (optional || held) answers.push({ missing: true })
         else {
           missed = true
           break
@@ -429,13 +456,17 @@ export function runPlanSync(plan, { peek }) {
  * a page's questions into one POST. A key whose second request depends on its first answer takes a
  * later tick, and only that key waits; the requests of one step are issued together.
  *
+ * A step the program marks held is answered from `peek` and never dispatched: what is already here
+ * is used, and its absence asks nothing.
+ *
  * @param {Map<string, Generator>} plan
  * @param {Object} io
  * @param {(request: Object) => Promise<{ data: *, error?: string }>} io.dispatch
+ * @param {(request: Object) => ({ data: * }|null|undefined)} [io.peek] - what is held, for a held step
  * @param {(key: string, cfg: Object|null, message: string) => void} [io.onFailure]
  * @returns {Promise<{ data: Object, errors: Object|null }>}
  */
-export async function runPlan(plan, { dispatch, onFailure = null }) {
+export async function runPlan(plan, { dispatch, peek = null, onFailure = null }) {
   const data = {}
   const errors = {}
 
@@ -452,8 +483,12 @@ export async function runPlan(plan, { dispatch, onFailure = null }) {
         }
         return
       }
-      const results = await Promise.all(asSteps(step.value).map(({ request }) => dispatch(request)))
-      const answers = results.map((result) => ({ data: result?.data, error: result?.error }))
+      const results = await Promise.all(
+        asSteps(step.value).map(({ request, held }) => (held ? fromCache(peek, request) : dispatch(request)))
+      )
+      const answers = results.map((result) =>
+        result?.missing ? { missing: true } : { data: result?.data, error: result?.error }
+      )
       sent = Array.isArray(step.value) ? answers : answers[0]
     }
   }))
