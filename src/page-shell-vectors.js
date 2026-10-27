@@ -27,6 +27,7 @@ export const PAGE_SHELL_VECTORS = [
       config: {
         name: `Café & "Co" <Ltd>'s`,
         favicon: '/favicon.svg?v=2',
+        touchIcon: '/touch-icon.png?a="1"',
         activeLocale: 'fr',
         extensions: ['https://assets.test/effects/entry.js', { url: '/ext/charts/entry.js' }, null],
       },

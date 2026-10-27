@@ -79,10 +79,17 @@ describe('pageShell — the HTML a page starts as', () => {
     expect(html).toContain('<link rel="icon" type="image/png" href="/i.png?a=&quot;1&quot;&amp;b=2">')
   })
 
+  it('links the touch icon a config names, after the favicon', () => {
+    const order = lines(pageShell(input({ touchIcon: 'https://assets.test/t.png?a="1"' })))
+    const icon = order.indexOf('<link rel="icon" type="image/svg+xml" href="/favicon.svg">')
+    expect(order[icon + 1]).toBe('<link rel="apple-touch-icon" href="https://assets.test/t.png?a=&quot;1&quot;">')
+  })
+
   it('writes no tag for a name or an icon the config does not have', () => {
     const html = pageShell(input({ name: undefined, favicon: undefined }))
     expect(html).not.toContain('<title>')
     expect(html).not.toContain('rel="icon"')
+    expect(html).not.toContain('rel="apple-touch-icon"')
   })
 
   it('puts the import map before the module script and every preload', () => {
@@ -115,7 +122,7 @@ describe('pageShellFingerprint — it changes when the pages the shell writes ch
   // this fails, the HTML pageShell writes has changed: check that you meant it, then pin the new
   // value here.
   it('is pinned, so a change to the pages it writes is seen in review', () => {
-    expect(pageShellFingerprint()).toBe('d994bb22')
+    expect(pageShellFingerprint()).toBe('a9b61ada')
   })
 
   it('is the same on every call', () => {

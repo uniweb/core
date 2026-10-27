@@ -80,8 +80,8 @@ const extensionUrl = (entry) => (typeof entry === 'string' ? entry : entry?.url)
  *
  * @param {Object} input
  * @param {Object} input.content - one locale's content as the host stamped it: `config` (`name`,
- *   `favicon`, `activeLocale`, `extensions` — each extension's entry URL, in declared order), the
- *   pages, and any `fetchedData`
+ *   `favicon`, `touchIcon`, `activeLocale`, `extensions` — each extension's entry URL, in declared
+ *   order), the pages, and any `fetchedData`
  * @param {string} [input.route] - the served page's route as the content names it, so a split
  *   site's `__DATA__` carries that page's sections (`dataScript`)
  * @param {{ url: string, cssUrl?: string }} input.foundation - the foundation's entry; its
@@ -113,6 +113,8 @@ export function pageShell({ content, route = null, foundation, runtime }) {
     config.favicon
       ? `<link rel="icon"${faviconType(config.favicon) ? ` type="${faviconType(config.favicon)}"` : ''} href="${escapeHtml(config.favicon)}">`
       : null,
+    // The icon iOS puts on a home screen and Safari on its start page — a PNG; neither uses an SVG favicon.
+    config.touchIcon ? `<link rel="apple-touch-icon" href="${escapeHtml(config.touchIcon)}">` : null,
     cssUrl ? `<link rel="stylesheet" href="${escapeHtml(cssUrl)}">` : null,
     // Before the module script and every preload: a browser reads an import map only ahead of them.
     `<script type="importmap">${jsonForScript({ imports: importMap })}</script>`,
