@@ -11,9 +11,11 @@
  * host wrote its own shell, and one escaped `__DATA__` its own way, as invalid JSON, so no page
  * of the site it served could start.
  *
- * Its output is a function of its inputs only — no request, no clock — because a host caches it
- * under a key of publish-time facts, one entry serving a site's every hostname. Besides its inputs,
- * only this code changes it, and `pageShellFingerprint` says when.
+ * Its output is a function of its inputs only — no request, no clock — so a host can cache it under
+ * a key of what it hands in, one entry serving every hostname that hands in the same. Besides its
+ * inputs, only this code changes it, and `pageShellFingerprint` says when. ⛔ Not every input is a
+ * publish-time fact: the site's address (`content.config.url`), which `__DATA__` carries, is stated
+ * by whoever serves the site and can change between publishes.
  *
  * ⛔ A change to what this writes that an older runtime's browser build cannot read — a new
  * `__DATA__` encoding, a new split shape — is a breaking change: mark the commit `!` and name the
