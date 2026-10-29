@@ -439,28 +439,37 @@ export default class Website {
       }
     }
 
-    // Build page ID map for makeHref() resolution
-    // Supports both explicit IDs and route-based lookup
+    // ⭐ What a `page:` link names a page BY — its stable id, else its route, and nothing else
+    // [Diego, 2026-10-29]: every site's data carries both, a static build's and a hosted site's
+    // alike. The homepage's route is the empty name, registered like any other, so `page:/`
+    // names it (`_pageByRef`). ⛔ Until 2026-10-29 a page's folder under `pages/` was a third
+    // name, added because the homepage had no route name — and a hosted site's data carries no
+    // folder, so `page:home` resolved in a static build and nowhere a backend served the site.
     this._pageIdMap = new Map()
     for (const page of this.pages) {
       // Explicit stableId takes priority (survives page reorganization)
       if (page.stableId) {
         this._pageIdMap.set(page.stableId, page)
       }
-      // Route-based lookup (normalized, without leading/trailing slashes)
+      // Route-based lookup (normalized, without leading/trailing slashes; the homepage's is '')
+      if (typeof page.route !== 'string') continue
       const routeId = this.normalizeRoute(page.route)
-      if (routeId && !this._pageIdMap.has(routeId)) {
+      if (!this._pageIdMap.has(routeId)) {
         this._pageIdMap.set(routeId, page)
       }
-      // Folder-name fallback — allows page:home for homepage, page:docs/intro for index pages
-      // Homepage route normalizes to '' (falsy, skipped above), but sourcePath '/home' → 'home' works
-      if (page.sourcePath) {
-        const folderId = page.sourcePath.replace(/^\//, '').replace(/\/$/, '')
-        if (folderId && !this._pageIdMap.has(folderId)) {
-          this._pageIdMap.set(folderId, page)
-        }
-      }
     }
+  }
+
+  /**
+   * The page a `page:` reference names (`_pageIdMap`): by stable id, else by route, a target read
+   * the way a route is — `page:/` the homepage, `page:/docs/` the page `page:docs` names.
+   *
+   * @param {string} ref - what follows `page:`, before any `#`
+   * @returns {Page|undefined}
+   */
+  _pageByRef(ref) {
+    if (typeof ref !== 'string') return undefined
+    return this._pageIdMap.get(ref) ?? this._pageIdMap.get(ref.replace(/^\/+/, '').replace(/\/+$/, ''))
   }
 
   /**
@@ -839,6 +848,7 @@ export default class Website {
    * makeHref('page:getting-started')           // → '/docs/getting-started'
    * makeHref('page:getting-started#install')   // → '/docs/getting-started#section-install'
    * makeHref('page:docs/api')                  // → '/docs/api' (route-based)
+   * makeHref('page:/#features')                // → '/#section-features' (the homepage)
    * makeHref('/about')                         // → '/about' (passthrough)
    */
   makeHref(href) {
@@ -848,8 +858,8 @@ export default class Website {
     // Parse page reference: page:pageId#sectionId
     const [pageId, sectionId] = withoutPrefix.split('#')
 
-    // Look up page by ID (explicit or route-based)
-    const page = this._pageIdMap?.get(pageId)
+    // Look up the page by its stable id, else its route (`_pageByRef`)
+    const page = this._pageByRef(pageId)
 
     if (!page) {
       // Page not found - return original href (or could warn in dev)
@@ -946,7 +956,7 @@ export default class Website {
   resolveDetailPageTemplate(pageRef) {
     if (!pageRef || typeof pageRef !== 'string') return null
     const id = pageRef.startsWith('page:') ? pageRef.slice(5) : pageRef
-    const page = this._pageIdMap?.get(id)
+    const page = this._pageByRef(id)
     if (!page || !page.route) {
       if (
         typeof console !== 'undefined' &&
