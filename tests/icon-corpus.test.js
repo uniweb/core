@@ -9,7 +9,15 @@
 
 import { describe, it, expect } from 'vitest'
 import { readFile } from 'node:fs/promises'
-import { DEFAULT_ICON_BASE, corpusIconName, iconPath, iconUrl } from '../src/icon-corpus.js'
+import { DEFAULT_ICON_BASE, ICON_FAMILY_MAP, corpusIconName, iconPath, iconUrl } from '../src/icon-corpus.js'
+
+describe('ICON_FAMILY_MAP', () => {
+  it('gives the family code for a friendly name and for the code itself', () => {
+    expect(ICON_FAMILY_MAP.lucide).toBe('lu')
+    expect(ICON_FAMILY_MAP.lu).toBe('lu')
+    expect(ICON_FAMILY_MAP.ionicons).toBe('io5')
+  })
+})
 
 describe('iconPath', () => {
   it('groups by family and prefixes the filename with it', () => {

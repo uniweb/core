@@ -53,6 +53,47 @@
 export const DEFAULT_ICON_BASE = 'https://uniweb.github.io/icons'
 
 /**
+ * The family code for each name a library goes by, friendly or short: what an address is built from.
+ * A library that is not here has no address, and its icon resolves to nothing.
+ */
+export const ICON_FAMILY_MAP = {
+  lucide: 'lu',
+  heroicons: 'hi',
+  heroicons2: 'hi2',
+  phosphor: 'pi',
+  tabler: 'tb',
+  feather: 'fi',
+  fa: 'fa',
+  fa6: 'fa6',
+  bootstrap: 'bs',
+  'material-design': 'md',
+  'ant-design': 'ai',
+  remix: 'ri',
+  'simple-icons': 'si',
+  ionicons: 'io5',
+  boxicons: 'bi',
+  vscode: 'vsc',
+  weather: 'wi',
+  game: 'gi',
+  lu: 'lu',
+  hi: 'hi',
+  hi2: 'hi2',
+  pi: 'pi',
+  tb: 'tb',
+  fi: 'fi',
+  bs: 'bs',
+  md: 'md',
+  ai: 'ai',
+  ri: 'ri',
+  io5: 'io5',
+  bi: 'bi',
+  si: 'si',
+  vsc: 'vsc',
+  wi: 'wi',
+  gi: 'gi',
+}
+
+/**
  * Families whose own sites spell a digit off by a hyphen (Lucide's `building-2` and `grid-2x2`,
  * Heroicons' `bars-3`, Feather's `bar-chart-2`), where the corpus, named after react-icons, does
  * not (`building2`, `grid2-x2`, `bars3`, `bar-chart2`). An author copies a name from the family's

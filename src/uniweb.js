@@ -75,8 +75,8 @@ export default class Uniweb {
     // Set by the runtime from site config.
     this.iconResolver = null
 
-    // Pre-populated icon cache for SSR: Map<"family:name", svgString>
-    // Populated by prerender before rendering, read synchronously by Icon.
+    // Pre-populated icon cache: Map<"library:name", svgString>. Filled before a render by a static
+    // build or a host's data step, and in the browser from the page. Read synchronously by Icon.
     this.iconCache = new Map()
 
     // Site tracking — one event stream. The runtime installs it in L2
