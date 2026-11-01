@@ -79,6 +79,30 @@ describe('Page.getHeadMeta cascade (page over site, site fills gaps)', () => {
     expect(meta.keywords).toEqual(['shared']) // inherited site keywords
   })
 
+  it("uses the site's social title on the home page, whose title is its name in the menu", () => {
+    const w = new Website({
+      content: {
+        ...content({ config: { seo: { ogTitle: 'Site OG' } } }),
+        pages: [
+          { route: '/', isIndex: true, title: 'Home', sections: [] },
+          { route: '/about', title: 'About', sections: [] },
+        ],
+      },
+    })
+    expect(w.pages.find((p) => p.route === '/').getHeadMeta().og.title).toBe('Site OG')
+    expect(w.pages.find((p) => p.route === '/about').getHeadMeta().og.title).toBe('About')
+  })
+
+  it("lets a home page's own seo.ogTitle win over the site's", () => {
+    const w = new Website({
+      content: {
+        ...content({ config: { seo: { ogTitle: 'Site OG' } } }),
+        pages: [{ route: '/', isIndex: true, title: 'Home', seo: { ogTitle: 'Mine' }, sections: [] }],
+      },
+    })
+    expect(w.pages[0].getHeadMeta().og.title).toBe('Mine')
+  })
+
   it('lets page seo override site seo per-field', () => {
     const w = new Website({
       content: content({

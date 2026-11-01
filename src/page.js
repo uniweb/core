@@ -218,8 +218,10 @@ export default class Page {
       alternates: website?.getPageAlternates?.(this) ?? [],
       og: {
         // Page content wins; site-level seo only fills gaps. Image is the
-        // exception authors most want cascaded (the shared social card).
-        title: this.seo.ogTitle || resolvedTitle || site.ogTitle,
+        // exception authors most want cascaded (the shared social card). And
+        // the home page's title, which is its name in the menu, so "Home" was
+        // what the whole site shared as; there the site's own title is the one.
+        title: this.seo.ogTitle || (this.isIndex && site.ogTitle) || resolvedTitle || site.ogTitle,
         description: this.seo.ogDescription || own || site.ogDescription || home,
         image: image ? absoluteUrl(address, image) || image : null,
         url: canonical,
