@@ -126,7 +126,6 @@ export default class Website {
     // A payload page → its Page, for the pages `resolveRoute` names.
     this._pageOfData = new Map()
     this.basePath = ''
-    this.versionedScopes = {}
     this.assets = {}
     this._pageIdMap = new Map()
 
@@ -149,7 +148,6 @@ export default class Website {
       config = {},
       layouts,
       notFound,
-      versionedScopes = {},
       assets = {},
     } = content || {}
 
@@ -220,7 +218,6 @@ export default class Website {
     this.activeLang = this.activeLocale
     this.langs = this.locales.map((l) => ({ label: l.label || l.code, value: l.code }))
 
-    this.versionedScopes = versionedScopes
     this.assets = assets
   }
 
@@ -1371,6 +1368,7 @@ export default class Website {
    * @param {boolean} [options.nested=true] - Return nested hierarchy (with children) or flat list
    * @param {string} [options.for] - Filter for specific navigation: 'header', 'footer', or undefined (all)
    * @param {boolean} [options.includeHidden=false] - Include hidden pages
+   * @param {string} [options.under] - The pages below this route, whether or not it is listed itself
    * @param {function} [options.filter] - Custom filter function (page) => boolean
    * @param {function} [options.sort] - Custom sort function (a, b) => number
    * @returns {Array<Object>} Array of page info objects for navigation
@@ -1392,6 +1390,7 @@ export default class Website {
       nested = true,
       for: navType,
       includeHidden = false,
+      under,
       filter: customFilter,
       sort: customSort
     } = options
@@ -1438,11 +1437,11 @@ export default class Website {
       return true
     }
 
-    let filteredPages = this.pages.filter(isPageVisible)
+    let filteredPages = (under ? this.getPage(under)?.children ?? [] : this.pages).filter(isPageVisible)
 
     // When nested, only include root-level pages at top level
     // (children will be nested inside their parents)
-    if (nested) {
+    if (nested && !under) {
       // Exclude child pages from root list. Also exclude orphans whose parent
       // was removed (e.g., hidden) — they have parentRoute but no resolved parent.
       filteredPages = filteredPages.filter(page => !page.parent && !page.parentRoute)
@@ -1466,7 +1465,6 @@ export default class Website {
         label: page.getLabel(),
         description: page.description,
         hasContent: page.hasContent(),
-        version: page.version || null, // Version metadata for filtering by version
         children: nested && page.hasChildren()
           ? page.children.filter(isPageVisible).map(buildPageInfo)
           : []
@@ -1653,188 +1651,5 @@ export default class Website {
 
     // Check if current starts with target followed by /
     return current.startsWith(target + '/')
-  }
-
-  // ─────────────────────────────────────────────────────────────────
-  // Version API (for documentation sites)
-  // ─────────────────────────────────────────────────────────────────
-
-  /**
-   * Get all versioned scopes
-   * Returns a map of scope routes to their version metadata
-   *
-   * @returns {Object} Map of scope → { versions, latestId }
-   *
-   * @example
-   * website.getVersionedScopes()
-   * // { '/docs': { versions: [...], latestId: 'v2' } }
-   */
-  getVersionedScopes() {
-    return this.versionedScopes
-  }
-
-  /**
-   * Check if site has any versioned content
-   * @returns {boolean}
-   */
-  hasVersionedContent() {
-    return Object.keys(this.versionedScopes).length > 0
-  }
-
-  /**
-   * Get the versioned scope that contains a given route
-   * Returns the scope route if the route is within a versioned section
-   *
-   * @param {string} route - Route to check (e.g., '/docs/getting-started')
-   * @returns {string|null} The scope route (e.g., '/docs') or null
-   *
-   * @example
-   * website.getVersionScope('/docs/getting-started') // '/docs'
-   * website.getVersionScope('/about')                // null
-   */
-  getVersionScope(route) {
-    const normalizedRoute = route || ''
-
-    // Check each versioned scope to see if route falls within it
-    for (const scope of Object.keys(this.versionedScopes)) {
-      // Route matches scope exactly
-      if (normalizedRoute === scope) {
-        return scope
-      }
-
-      // Root scope matches all routes starting with /
-      if (scope === '/') {
-        if (normalizedRoute.startsWith('/') || normalizedRoute === '') {
-          return scope
-        }
-      } else if (normalizedRoute.startsWith(scope + '/')) {
-        // Route is a child of this scope
-        return scope
-      }
-    }
-
-    return null
-  }
-
-  /**
-   * Check if a route is within a versioned section
-   *
-   * @param {string} route - Route to check
-   * @returns {boolean}
-   */
-  isVersionedRoute(route) {
-    return this.getVersionScope(route) !== null
-  }
-
-  /**
-   * Get version metadata for a scope
-   *
-   * @param {string} scope - The scope route (e.g., '/docs')
-   * @returns {Object|null} Version metadata { versions, latestId } or null
-   *
-   * @example
-   * website.getVersionMeta('/docs')
-   * // { versions: [{ id: 'v2', label: 'v2', latest: true }, ...], latestId: 'v2' }
-   */
-  getVersionMeta(scope) {
-    return this.versionedScopes[scope] || null
-  }
-
-  /**
-   * Get the current version for a page
-   * Returns the version object from the page's version metadata
-   *
-   * @param {Page} page - The page to check
-   * @returns {Object|null} Version object { id, label, latest, deprecated } or null
-   */
-  getPageVersion(page) {
-    return page?.version || null
-  }
-
-  /**
-   * Get available versions for a route's scope
-   *
-   * @param {string} route - Route within a versioned scope
-   * @returns {Array} Array of version objects, or empty array
-   *
-   * @example
-   * website.getVersionsForRoute('/docs/getting-started')
-   * // [{ id: 'v2', label: 'v2', latest: true }, { id: 'v1', label: 'v1' }]
-   */
-  getVersionsForRoute(route) {
-    const scope = this.getVersionScope(route)
-    if (!scope) return []
-
-    const meta = this.versionedScopes[scope]
-    return meta?.versions || []
-  }
-
-  /**
-   * Compute URL for switching to a different version
-   * Takes the current route and computes what the URL would be for another version
-   *
-   * @param {string} targetVersion - Target version ID (e.g., 'v1')
-   * @param {string} currentRoute - Current route (e.g., '/docs/getting-started')
-   * @returns {string|null} Target URL or null if not versioned
-   *
-   * @example
-   * // Current: /docs/getting-started (latest v2)
-   * website.getVersionUrl('v1', '/docs/getting-started')
-   * // → '/docs/v1/getting-started'
-   *
-   * // Current: /docs/v1/getting-started (older v1)
-   * website.getVersionUrl('v2', '/docs/v1/getting-started')
-   * // → '/docs/getting-started' (latest has no prefix)
-   */
-  getVersionUrl(targetVersion, currentRoute) {
-    const scope = this.getVersionScope(currentRoute)
-    if (!scope) return null
-
-    const meta = this.versionedScopes[scope]
-    if (!meta) return null
-
-    // Find target version info
-    const targetVersionInfo = meta.versions.find(v => v.id === targetVersion)
-    if (!targetVersionInfo) return null
-
-    // Extract the path within the scope (after scope and any version prefix)
-    // For root scope ('/'), keep the full path; otherwise slice off the scope
-    const afterScope = scope === '/'
-      ? currentRoute
-      : currentRoute.slice(scope.length) // e.g., '/getting-started' or '/v1/getting-started'
-
-    // Check if current route has a version prefix
-    let pathWithinVersion = afterScope
-    for (const version of meta.versions) {
-      const versionPrefix = `/${version.id}`
-      if (afterScope.startsWith(versionPrefix + '/') || afterScope === versionPrefix) {
-        // Remove version prefix
-        pathWithinVersion = afterScope.slice(versionPrefix.length)
-        break
-      }
-    }
-
-    // Build target URL
-    // Latest version has no prefix, others have /vN prefix
-    if (targetVersionInfo.latest) {
-      // For root scope, return path directly; otherwise prepend scope
-      return scope === '/' ? pathWithinVersion : scope + pathWithinVersion
-    } else {
-      // For root scope: /v1/path; otherwise: scope/v1/path
-      return scope === '/'
-        ? '/' + targetVersion + pathWithinVersion
-        : scope + '/' + targetVersion + pathWithinVersion
-    }
-  }
-
-  /**
-   * Get the latest version ID for a scope
-   *
-   * @param {string} scope - The scope route
-   * @returns {string|null} Latest version ID or null
-   */
-  getLatestVersion(scope) {
-    const meta = this.versionedScopes[scope]
-    return meta?.latestId || null
   }
 }

@@ -506,25 +506,19 @@ describe('parentRouteOf — the one rule for a page\'s parent', () => {
     expect(parentRouteOf('/blog/:slug', { has })).toBeNull()
   })
 
-  // A versioned section (`docs/v1/`, `docs/v2/`): the latest version's pages sit at the
-  // scope's own routes and hang from it; an older version's sit under `/docs/v1`, which is
-  // a folder and never a page. They hang from the scope too, or they are no one's children.
-  it('past a version folder, the versioned section', () => {
-    const versioned = new Set(['/docs', '/docs/start', '/docs/v1/start'])
+  // A version folder is a page like any other, so nothing here knows the word.
+  it('a page in a version folder hangs from that folder', () => {
+    const versioned = new Set(['/docs', '/docs/start', '/docs/v1', '/docs/v1/start'])
     const inDocs = (r) => versioned.has(r)
     expect(parentRouteOf('/docs/start', { has: inDocs })).toBe('/docs')
-    expect(parentRouteOf('/docs/v1/start', { has: inDocs })).toBe('/docs')
-    expect(parentRouteOf('/docs/v2.1/start', { has: inDocs })).toBe('/docs')
+    expect(parentRouteOf('/docs/v1', { has: inDocs })).toBe('/docs')
+    expect(parentRouteOf('/docs/v1/start', { has: inDocs })).toBe('/docs/v1')
     expect(parentRouteOf('/docs/v1/start/install', { has: inDocs })).toBe('/docs/v1/start')
   })
 
-  it('a version folder at the root leaves its pages top-level, as the latest version\'s are', () => {
-    expect(parentRouteOf('/v1/start', { has: (r) => r === '/' })).toBeNull()
-  })
-
-  it('a segment that only looks like a version, under no page, is still no parent', () => {
+  it('a segment that looks like a version, under no page, is no parent', () => {
     expect(parentRouteOf('/docs/v1/start', { has: () => false })).toBeNull()
-    expect(parentRouteOf('/docs/version1/start', { has: (r) => r === '/docs' })).toBeNull()
+    expect(parentRouteOf('/docs/v1/start', { has: (r) => r === '/docs' })).toBeNull()
   })
 })
 

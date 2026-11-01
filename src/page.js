@@ -31,6 +31,16 @@ function normalizeHideIn(pageData) {
   return out
 }
 
+// A folder's `noindex` covers the pages in it, as the sitemap and `llms.txt` read it
+// (`@uniweb/projections`, `closedFolders`). On a page with content of its own, it stays that page's.
+// ⛔ Until 2026-11-01 only `llms.txt` read it, and a page it left out still asked to be indexed.
+function underNoindexFolder(page) {
+  for (let up = page.parent; up; up = up.parent) {
+    if (up.seo.noindex && !up.hasContent()) return true
+  }
+  return false
+}
+
 export default class Page {
   constructor(pageData, id, website) {
     this.id = id
@@ -118,11 +128,6 @@ export default class Page {
     // 'Not found' title. Documented for years, carried only since 2026-09-04 —
     // the flag was set on the page DATA and this sealed class dropped it.
     this.notFound = pageData.notFound === true
-
-    // Version context (for pages within versioned sections like /docs/v1/*)
-    this.version = pageData.version || null // { id, label, latest, deprecated }
-    this.versionMeta = pageData.versionMeta || null // { versions, latestId }
-    this.versionScope = pageData.versionScope || null // The route where versioning starts
 
     // Build-time flag: does this page have renderable content?
     // Distinct from "are sections loaded?" — content-less containers
@@ -214,7 +219,7 @@ export default class Page {
       description: own || home,
       keywords: this.keywords || siteKeywords,
       canonical,
-      robots: this.seo.noindex || site.noindex ? 'noindex, nofollow' : null,
+      robots: this.seo.noindex || site.noindex || underNoindexFolder(this) ? 'noindex, nofollow' : null,
       alternates: website?.getPageAlternates?.(this) ?? [],
       og: {
         // Page content wins; site-level seo only fills gaps. Image is the
@@ -725,60 +730,6 @@ export default class Page {
     // For index pages, sourcePath differs from route
     const pathForAncestorCheck = this.sourcePath || this.route
     return this.website.isRouteActiveOrAncestor(pathForAncestorCheck, currentRoute)
-  }
-
-  // ─────────────────────────────────────────────────────────────────
-  // Version API (for documentation pages)
-  // ─────────────────────────────────────────────────────────────────
-
-  /**
-   * Check if this page is within a versioned section
-   * @returns {boolean}
-   */
-  isVersioned() {
-    return this.version !== null
-  }
-
-  /**
-   * Get the current version for this page
-   * @returns {Object|null} Version info { id, label, latest, deprecated } or null
-   */
-  getVersion() {
-    return this.version
-  }
-
-  /**
-   * Get all available versions for this page's scope
-   * @returns {Array} Array of version objects, or empty array
-   */
-  getVersions() {
-    return this.versionMeta?.versions || []
-  }
-
-  /**
-   * Check if this page is on the latest version
-   * @returns {boolean}
-   */
-  isLatestVersion() {
-    return this.version?.latest === true
-  }
-
-  /**
-   * Check if this page is on a deprecated version
-   * @returns {boolean}
-   */
-  isDeprecatedVersion() {
-    return this.version?.deprecated === true
-  }
-
-  /**
-   * Get URL for switching to a different version of this page
-   * @param {string} targetVersion - Target version ID (e.g., 'v1')
-   * @returns {string|null} Target URL or null if not versioned
-   */
-  getVersionUrl(targetVersion) {
-    if (!this.isVersioned()) return null
-    return this.website.getVersionUrl(targetVersion, this.route)
   }
 }
 
