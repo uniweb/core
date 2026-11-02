@@ -94,7 +94,7 @@ export default class Uniweb {
     // which is not what this class is for; and the guard it bought was never
     // taken up — every reader in the workspace already optional-chains
     // (`block.js`'s `track()`, and the runtime's `usePageView`,
-    // `useSectionViews`, `useOutboundClicks`, `useSectionClicks`), so the
+    // `useSectionViews`, `useDocumentEvents`), so the
     // invariant lived only in the comment. Cost of carrying it: 1,576 gzip in
     // core's chunk, which press, unipress, `@uniweb/api` and every SSR isolate
     // paid for a class they never wire.

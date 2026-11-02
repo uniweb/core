@@ -167,6 +167,40 @@ describe('page views', () => {
   })
 })
 
+describe('onPage', () => {
+  it('is told each new path, after that path\'s page_view', async () => {
+    const tracker = await freshTracker({ endpoint: ENDPOINT }, makeBrowser())
+    const seen = []
+    tracker.onPage = (path) => seen.push([path, pageViews().length])
+
+    tracker.trackPageView('/a')
+    tracker.trackPageView('/a') // the same path is no new page
+    tracker.trackPageView('/b')
+
+    expect(seen).toEqual([
+      ['/a', 1],
+      ['/b', 2]
+    ])
+  })
+
+  it('is told on a site that does not select page_view', async () => {
+    const tracker = await freshTracker({ endpoint: ENDPOINT, siteEmit: ['outbound_click'] }, makeBrowser())
+    const seen = []
+    tracker.onPage = (path) => seen.push(path)
+
+    tracker.trackPageView('/a')
+
+    expect(seen).toEqual(['/a'])
+    expect(pageViews()).toHaveLength(0) // control: page_view really is narrowed away
+  })
+
+  it('can be assigned on the sealed instance, and is empty until it is', async () => {
+    const tracker = await freshTracker({ endpoint: ENDPOINT }, makeBrowser())
+    expect(tracker.onPage).toBeNull()
+    expect(() => tracker.trackPageView('/a')).not.toThrow()
+  })
+})
+
 describe('the visit key — one document, not one visitor', () => {
   it('rides the envelope on every event, with the same value', async () => {
     const tracker = await freshTracker({ endpoint: ENDPOINT, maxQueueSize: 1 }, makeBrowser())

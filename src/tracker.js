@@ -287,6 +287,12 @@ export default class Tracker {
     // after construction. Same reason `Uniweb.defaultInsets` is pre-declared.
     this.onGranted = null
 
+    // Told each new path, after its `page_view`. The runtime's on-demand listener
+    // chunk uses it to notice a page the site counts as a conversion, without
+    // every site paying for a route subscription. Declared here for the same
+    // reason as `onGranted`.
+    this.onPage = null
+
     if (isBrowser && this.isEnabled()) {
       this.acquisition = captureAcquisition()
       // Minted even when consent is pending: events buffered before the visitor
@@ -499,21 +505,27 @@ export default class Tracker {
     this.currentPath = path
     this.startTimeOnPage()
 
-    if (!this.arms('page_view')) return
     // Promptly, rather than waiting out the batch window: a page view is the
     // event most likely to be the only one of a short visit.
     //
     // Emitted only when true, like `continues` — absent is the negative, and it
     // keeps every later view the size it already was.
-    this.enqueue(
-      {
-        event: 'page_view',
-        path,
-        ...(this.acquisition || {}),
-        ...(firstOfLoad ? { first_of_load: true } : {})
-      },
-      true
-    )
+    if (this.arms('page_view')) {
+      this.enqueue(
+        {
+          event: 'page_view',
+          path,
+          ...(this.acquisition || {}),
+          ...(firstOfLoad ? { first_of_load: true } : {})
+        },
+        true
+      )
+    }
+
+    // After the view, so what it reports follows the arrival it belongs to. Not
+    // behind `page_view`'s selection, for the reason this method's first comment
+    // gives: a site can select one without the other.
+    this.onPage?.(path)
   }
 
   /**
