@@ -838,3 +838,70 @@ describe('a narrowed site that does not select page_view', () => {
     expect(tracker.currentPath).toBe('/b')
   })
 })
+
+describe('landing — what a conversion carries of the address the visitor arrived at', () => {
+  const KEYS = ['utm_source', 'utm_content', 'utm_term', 'twclid']
+  const arrivedFromAnAd = () =>
+    makeBrowser({ url: 'https://site.test/?utm_source=X&utm_content=g1&utm_term=a2&twclid=abc&q=secret-search' })
+
+  it('carries the named keys the landing address had, after the address has moved on', async () => {
+    const browser = arrivedFromAnAd()
+    const tracker = await freshTracker({ endpoint: ENDPOINT, landing: KEYS }, browser)
+    tracker.trackPageView('/')
+    // SPA navigation: the query leaves the address. What the conversion carries must not follow.
+    browser.win.location = new URL('https://site.test/pricing')
+    tracker.trackPageView('/pricing')
+    tracker.track('conversion', { name: 'signup' })
+    tracker.flush()
+
+    const conversion = sentEvents().find((e) => e.event === 'conversion')
+    expect(conversion.landing).toEqual({ utm_source: 'X', utm_content: 'g1', utm_term: 'a2', twclid: 'abc' })
+  })
+
+  it('reads nothing it was not told to: a key nobody named never leaves the page', async () => {
+    const tracker = await freshTracker({ endpoint: ENDPOINT, landing: KEYS }, arrivedFromAnAd())
+    tracker.track('conversion', { name: 'signup' })
+    tracker.flush()
+
+    expect(JSON.stringify(sentEvents())).not.toContain('secret-search')
+  })
+
+  it('is absent when no keys were named, and when the address had none of them', async () => {
+    const unnamed = await freshTracker({ endpoint: ENDPOINT }, arrivedFromAnAd())
+    unnamed.track('conversion', { name: 'signup' })
+    unnamed.flush()
+    const direct = await freshTracker({ endpoint: ENDPOINT, landing: KEYS }, makeBrowser({ url: 'https://site.test/' }))
+    direct.track('conversion', { name: 'signup' })
+    direct.flush()
+
+    for (const conversion of sentEvents()) expect(conversion).not.toHaveProperty('landing')
+  })
+
+  it('rides conversions only — never a page view, an engagement or a foundation event', async () => {
+    const tracker = await freshTracker({ endpoint: ENDPOINT, landing: KEYS }, arrivedFromAnAd())
+    tracker.trackPageView('/')
+    tracker.track('engagement', { name: 'sign_in' })
+    tracker.track('video_milestone', { milestone: 50 })
+    tracker.flush()
+
+    expect(sentEvents()).toHaveLength(3)
+    for (const event of sentEvents()) expect(event).not.toHaveProperty('landing')
+  })
+
+  it("is this page load's fact: a caller's own `landing` field does not replace it", async () => {
+    const tracker = await freshTracker({ endpoint: ENDPOINT, landing: KEYS }, arrivedFromAnAd())
+    tracker.track('conversion', { name: 'signup', landing: { twclid: 'forged' } })
+    tracker.flush()
+
+    expect(sentEvents()[0].landing.twclid).toBe('abc')
+  })
+
+  it('ignores a malformed list rather than throwing', async () => {
+    for (const landing of ['twclid', [null, 7, { key: 'twclid' }], {}]) {
+      const tracker = await freshTracker({ endpoint: ENDPOINT, landing }, arrivedFromAnAd())
+      expect(() => tracker.track('conversion', { name: 'signup' })).not.toThrow()
+      tracker.flush()
+    }
+    for (const conversion of sentEvents()) expect(conversion).not.toHaveProperty('landing')
+  })
+})

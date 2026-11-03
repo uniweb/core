@@ -163,6 +163,36 @@ function captureAcquisition() {
 }
 
 /**
+ * The landing address's values for the query keys a conversion carries, read once at construction.
+ *
+ * ⭐ **The keys are named by whoever collects, never by this file** — `tracking.landing`, a host's
+ * or a site's own. Which campaign keys and which ad-platform click IDs matter is a collector's
+ * business, and the list grows with the platforms it sends to; a list held here would name vendors
+ * in a public package and need a release for each [framework, answering hosting, 2026-11-03].
+ *
+ * ⛔ Only the keys named, only from the address the visitor arrived at, held for this document and
+ * sent only on `conversion` — the event whose attribution otherwise depends on a collector joining
+ * it to the arrival. A query can carry a search term or a token, so nothing unnamed is read.
+ *
+ * Called only for an enabled tracker in a browser, so it checks neither. Every site loads this
+ * file, so it is as small as it can be read: no keys, or none on the address, is `null`.
+ *
+ * @param {string[]} [keys]
+ * @returns {Object<string, string>|null}
+ */
+function captureLanding(keys) {
+  let landing = null
+  if (Array.isArray(keys)) {
+    const params = new URLSearchParams(window.location.search)
+    for (const key of keys) {
+      const value = typeof key === 'string' && params.get(key)
+      if (value) (landing ||= {})[key] = value
+    }
+  }
+  return landing
+}
+
+/**
  * An opaque key for one document lifetime. Never stored, never persisted.
  *
  * `crypto.randomUUID` needs a secure context, so a site served over plain HTTP
@@ -199,6 +229,8 @@ export default class Tracker {
    * @param {number} [options.flushIntervalMs=5000] - batch window, MILLISECONDS
    * @param {number} [options.maxQueueSize=10]
    * @param {boolean} [options.debug=false]
+   * @param {string[]} [options.landing] - query keys of the landing address each `conversion`
+   *        carries, as `landing: { key: value }`; see `captureLanding`
    */
   constructor(options = {}) {
     this.endpoint = options.endpoint || null
@@ -232,6 +264,8 @@ export default class Tracker {
 
     this.queue = []
     this.acquisition = null
+    // What a conversion carries of the landing address, when a collector named keys.
+    this.landing = null
 
     // One key per document, minted only when there is somewhere to send it.
     // Rides the ENVELOPE beside `event` rather than inside a payload, because
@@ -295,6 +329,7 @@ export default class Tracker {
 
     if (isBrowser && this.isEnabled()) {
       this.acquisition = captureAcquisition()
+      this.landing = captureLanding(options.landing)
       // Minted even when consent is pending: events buffered before the visitor
       // answers must carry the SAME key as those after it, or granting consent
       // would split one visit in two. It never leaves the device until the
@@ -424,6 +459,11 @@ export default class Tracker {
   /**
    * Report an event.
    *
+   * A `conversion` also carries `landing`, the landing address's values for the keys a
+   * collector named (`captureLanding`), so its attribution survives navigation without the
+   * collector joining it to the arrival. Set after the caller's fields: it is this page
+   * load's fact, not a caller's.
+   *
    * @param {string} event - event name, e.g. 'video_milestone'. Open registry.
    * @param {Object} [data] - the caller's own fields; `path` overrides the
    *        current route, which is what block-scoped callers supply.
@@ -431,7 +471,8 @@ export default class Tracker {
   track(event, data = {}) {
     if (!this.isEnabled() || !event) return
     const { path, ...rest } = data
-    this.enqueue({ event, path: path || this.currentPath || undefined, ...rest })
+    const landing = event === 'conversion' && this.landing ? { landing: this.landing } : null
+    this.enqueue({ event, path: path || this.currentPath || undefined, ...rest, ...landing })
   }
 
   /**
