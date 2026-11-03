@@ -679,42 +679,70 @@ describe('time_on_page', () => {
     expect(dwell()).toMatchObject([{ path: '/a', durationMs: 3000 }])
   })
 
-  // ⭐ Otherwise it measures tab-open rather than reading.
-  it('SUBTRACTS time the document spent hidden', async () => {
-    const browser = makeBrowser()
-    const tracker = await freshTracker({ endpoint: ENDPOINT }, browser)
-    const hide = () => {
-      browser.doc.visibilityState = 'hidden'
-      browser.listeners.visibilitychange.forEach((fn) => fn())
-    }
-    const show = () => {
-      browser.doc.visibilityState = 'visible'
-      browser.listeners.visibilitychange.forEach((fn) => fn())
-    }
-
-    tracker.trackPageView('/a')
-    wait(1000)
-    hide()
-    wait(60_000) // a minute in another tab
-    show()
-    wait(2000)
-    tracker.trackPageView('/b')
-
-    expect(dwell()).toMatchObject([{ path: '/a', durationMs: 3000 }])
-  })
-
-  // ⛔ Visibility is a PAUSE, not an end. Emitting here would truncate exactly
-  // the engaged readers this metric exists to find, and a second event for one
-  // visit would corrupt every mean derived from it.
-  it('does NOT report when the document merely becomes hidden', async () => {
-    const browser = makeBrowser()
-    const tracker = await freshTracker({ endpoint: ENDPOINT }, browser)
-    tracker.trackPageView('/a')
-    wait(1000)
+  const hide = (browser) => {
     browser.doc.visibilityState = 'hidden'
     browser.listeners.visibilitychange.forEach((fn) => fn())
+  }
+  const show = (browser) => {
+    browser.doc.visibilityState = 'visible'
+    browser.listeners.visibilitychange.forEach((fn) => fn())
+  }
 
-    expect(dwell()).toHaveLength(0)
+  // ⭐ A phone may discard a hidden page with no `pagehide`, so hidden is the last
+  // moment a view can count on [Diego, 2026-11-03]. Before that day this asserted
+  // the opposite, and four in ten phone views on a real site carried no time.
+  it('reports when the document becomes hidden, with no pagehide after it', async () => {
+    const browser = makeBrowser()
+    const tracker = await freshTracker({ endpoint: ENDPOINT }, browser)
+    tracker.trackPageView('/a')
+    wait(1000)
+    hide(browser)
+
+    expect(dwell()).toMatchObject([{ path: '/a', durationMs: 1000 }])
+  })
+
+  // ⚖️ The cost of the rule: a reader who comes back is counted up to the switch,
+  // and the view is not reported again — a second event would corrupt every mean.
+  it('counts a reader who comes back only up to the switch, and once', async () => {
+    const browser = makeBrowser()
+    const tracker = await freshTracker({ endpoint: ENDPOINT }, browser)
+    tracker.trackPageView('/a')
+    wait(1000)
+    hide(browser)
+    wait(60_000) // a minute in another app
+    show(browser)
+    wait(2000)
+    browser.listeners.pagehide.forEach((fn) => fn())
+
+    expect(dwell()).toMatchObject([{ path: '/a', durationMs: 1000 }])
+  })
+
+  it('starts a new visit at the next page after the visitor comes back', async () => {
+    const browser = makeBrowser()
+    const tracker = await freshTracker({ endpoint: ENDPOINT }, browser)
+    tracker.trackPageView('/a')
+    wait(1000)
+    hide(browser)
+    show(browser)
+    tracker.trackPageView('/b')
+    wait(4000)
+    hide(browser)
+
+    expect(dwell().map((e) => [e.path, e.durationMs])).toEqual([
+      ['/a', 1000],
+      ['/b', 4000]
+    ])
+  })
+
+  it('sends the view and what was queued together, by beacon, at hidden', async () => {
+    const browser = makeBrowser()
+    const tracker = await freshTracker({ endpoint: ENDPOINT, flushIntervalMs: 600_000 }, browser)
+    tracker.trackPageView('/a')
+    tracker.track('conversion', { name: 'command_copied' })
+    wait(1000)
+    hide(browser)
+
+    expect(sentEvents().map((e) => e.event)).toEqual(['page_view', 'conversion', 'time_on_page'])
   })
 
   it('reports AT MOST ONCE per page visit, even when both terminal signals fire', async () => {

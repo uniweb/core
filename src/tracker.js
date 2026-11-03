@@ -292,10 +292,6 @@ export default class Tracker {
     // already run.
     /** When the current path became active. */
     this.pageEnteredAt = null
-    /** Hidden time accrued on the current path, in ms. */
-    this.hiddenMs = 0
-    /** When the document last became hidden, or `null` while visible. */
-    this.hiddenSince = null
     /** Guards against a second report for one page visit — see `reportTimeOnPage`. */
     this.pageReported = false
 
@@ -662,8 +658,6 @@ export default class Tracker {
    */
   startTimeOnPage() {
     this.pageEnteredAt = Date.now()
-    this.hiddenMs = 0
-    this.hiddenSince = null
     this.pageReported = false
   }
 
@@ -677,21 +671,20 @@ export default class Tracker {
    * skewed — a tab left open overnight sits in the same mean as forty readers —
    * so a clamp is genuinely needed; it is just not needed *here*.
    *
-   * ⛔ **Hidden time is subtracted**, or this measures tab-open rather than
-   * reading. A backgrounded tab accrues nothing.
+   * ⭐ **Reported at the first of three ends: a route change, `pagehide`, or the
+   * document becoming hidden** [Diego, 2026-11-03]. A phone visitor who switches
+   * apps, to paste a copied prompt or answer a message, may never come back, and
+   * the phone can then discard the page with no `pagehide`. Reported only at
+   * `pagehide`, about four in ten views on a mostly-phone site carried no time
+   * at all (24robert.ca, 2026-11-01, measured by hosting). So every view now
+   * reports the time until the visitor first left it, and the number is a floor.
    *
-   * ⛔ **Reported at a route change and at `pagehide` — NOT when the document
-   * merely becomes hidden.** Visibility is a *pause*, not an end: someone who
-   * switches tabs to look something up and comes back is still reading. Emitting
-   * on hidden would truncate exactly the engaged readers this metric exists to
-   * find, and — because the consumer derives a mean from a sum and a count —
-   * emitting more than once per page visit would inflate the count and make
-   * every mean wrong. Hence `pageReported`: **at most one per page visit.**
-   *
-   * ⚠️ **The cost of that choice, stated rather than hidden:** a page discarded
-   * while hidden, without `pagehide`, is never reported. That is an
-   * under-count, it is bounded, and it fails in the direction that does not
-   * corrupt the statistic.
+   * ⚖️ **The cost, stated rather than hidden:** a reader who switches away and
+   * comes back is counted only up to the switch. The view still reports once,
+   * since the consumer derives a mean from a sum and a count: a second event for
+   * one visit would inflate the count and make every mean wrong. Hence
+   * `pageReported`: **at most one per page visit.** The next page starts a new
+   * one. *(Until that day, hidden was a pause and its time was subtracted.)*
    *
    * @private
    */
@@ -699,11 +692,7 @@ export default class Tracker {
     if (this.pageReported || this.pageEnteredAt === null || !this.currentPath) return
     if (!this.arms('time_on_page')) return
 
-    const now = Date.now()
-    // A tab hidden at this instant has not yet had its span folded in.
-    const openHidden = this.hiddenSince === null ? 0 : now - this.hiddenSince
-    const durationMs = now - this.pageEnteredAt - this.hiddenMs - openHidden
-
+    const durationMs = Date.now() - this.pageEnteredAt
     this.pageReported = true
     // Negative is not reachable by arithmetic, but a clock adjustment mid-visit
     // would produce one, and a negative duration poisons a sum the consumer
@@ -726,13 +715,12 @@ export default class Tracker {
       this.flush(true)
     })
     window.addEventListener('visibilitychange', () => {
+      // The last moment a phone promises: a page hidden may be discarded with no
+      // `pagehide`. So the view's time is queued first, as at `pagehide`, and
+      // everything goes by beacon.
       if (document.visibilityState === 'hidden') {
-        // A pause, not an end — see `reportTimeOnPage`. Only the clock stops.
-        if (this.hiddenSince === null) this.hiddenSince = Date.now()
+        this.reportTimeOnPage()
         this.flush(true)
-      } else if (this.hiddenSince !== null) {
-        this.hiddenMs += Date.now() - this.hiddenSince
-        this.hiddenSince = null
       }
     })
   }
