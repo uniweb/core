@@ -11,10 +11,9 @@
  * question, neither wrong on the routes anyone had tried.
  *
  * That is already bad inside one repo. It is worse across them, because the
- * matcher answers a question more than one lane asks: *which page does this
- * path name?* A consumer outside this repo routes with these patterns —
- * `hosting/framework-surface.json` declares `routePatternToRegex`,
- * `isDynamicRoute` and `normalizeRoute` read by its `src/routes.js`. Two copies
+ * matcher answers a question more than one program asks: *which page does this
+ * path name?* A host that serves a site asks it too, before it renders anything,
+ * which is why this leaf can be imported on its own. Two copies
  * that disagree by a single route give two answers to page identity, silently,
  * and only on the paths that have a pattern — which are exactly the interesting
  * ones. So this is a cross-boundary contract, not an implementation detail, and
@@ -574,7 +573,7 @@ export function parentRouteOf(route, { declared = null, has } = {}) {
  * when its route ENDS in a parameter. ⛔ A page nested inside a parametric one —
  * `/members/:slug/cv` — does not, and returns null: composing a record onto it would
  * produce `/members/:slug/alice`, a URL that ranks in an index and 404s on click
- * (the failure hosting measured in their own fixture, 2026-09-12). A static page
+ * (the failure a host measured in its own fixture, 2026-09-12). A static page
  * returns null too, so a page that merely fetches to render itself contributes
  * nothing to a record index.
  *
