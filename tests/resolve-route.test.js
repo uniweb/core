@@ -61,6 +61,15 @@ describe('a page', () => {
     expect(resolveRoute(content(), '/wiki/a/b/c')).toMatchObject({ kind: 'page', template: '/wiki/:path*', params: { path: 'a/b/c' } })
   })
 
+  it('a `:` inside a segment is text: the page answers to its own route, and to nothing else', () => {
+    const c = content({}, [page('/', { isIndex: true }), page('/Note:-a-thing'), page('/404', { title: 'Missing' })])
+    expect(resolveRoute(c, '/Note:-a-thing')).toMatchObject({ kind: 'page', route: '/Note:-a-thing', template: null })
+    expect(resolveRoute(c, '/Note%3A-a-thing')).toMatchObject({ kind: 'page', route: '/Note:-a-thing' })
+    expect(resolveRoute(c, '/Noteabc')).toMatchObject({ kind: 'notFound', status: 404 })
+    const w = new Website({ content: c })
+    expect(w.getPageHierarchy({ nested: false }).map((p) => p.route)).toContain('/Note:-a-thing')
+  })
+
   it('in a locale: its prefix comes off, and a translated route reaches the canonical page', () => {
     expect(resolveRoute(content(FR), '/fr/a-propos')).toMatchObject({ kind: 'page', route: '/about' })
     expect(resolveRoute(content(FR), '/fr/blogue/bonjour')).toMatchObject({ kind: 'page', template: '/blog/:slug', params: { slug: 'bonjour' } })

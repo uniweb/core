@@ -145,6 +145,31 @@ describe('isDynamicRoute', () => {
     expect(isDynamicRoute('/blog')).toBe(false)
     expect(isDynamicRoute(undefined)).toBe(false)
   })
+
+  it('a param starts a segment, and may carry a literal suffix', () => {
+    expect(isDynamicRoute('/:slug')).toBe(true)
+    expect(isDynamicRoute('/files/:name.json')).toBe(true)
+  })
+
+  it('a `:` anywhere else in a segment is text, since a route is plain text', () => {
+    expect(isDynamicRoute('/Note:-a-thing')).toBe(false)
+    expect(isDynamicRoute('/guide/Step-1:-install')).toBe(false)
+    expect(isDynamicRoute('/a:b/c')).toBe(false)
+  })
+})
+
+describe('a `:` inside a segment is the character itself', () => {
+  it('compiles to a literal, so the route matches only itself', () => {
+    expect(routePatternToRegex('/Note:-a-thing').paramNames).toEqual([])
+    expect(matchDynamicRoute('/Note:-a-thing', '/Note:-a-thing')).toEqual({ params: {} })
+    expect(matchDynamicRoute('/Note:-a-thing', '/Noteabc')).toBeNull()
+  })
+
+  it('beside a real param, only the param is filled', () => {
+    expect(routePatternToRegex('/Step-1:-intro/:slug').paramNames).toEqual(['slug'])
+    expect(matchDynamicRoute('/Step-1:-intro/:slug', '/Step-1:-intro/hello')).toEqual({ params: { slug: 'hello' } })
+    expect(fillRoutePattern('/Step-1:-intro/:slug', { $name: 'hello' })).toBe('/Step-1:-intro/hello')
+  })
 })
 
 describe('routePatternToRegex', () => {

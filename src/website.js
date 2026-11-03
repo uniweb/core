@@ -12,7 +12,7 @@ import ObservableState from './observable-state.js'
 import { normalizeSeo } from './seo.js'
 import { siteAddress, pageUrl } from './site-address.js'
 import { resolveDefaultLocale, localeLabel } from './locale-config.js'
-import { matchDynamicRoute, recordTitle, recordImage, routeBinding, routeParamName, parentRouteOf } from './route-match.js'
+import { isDynamicRoute, matchDynamicRoute, recordTitle, recordImage, routeBinding, routeParamName, parentRouteOf } from './route-match.js'
 import { resolveFetchConfigs, pageRouteQuery, recordPages } from './fetch-config.js'
 import { declaredKeys } from './data-keys.js'
 import { pageRecordConfig, planFor, runPlanSync } from './page-data.js'
@@ -179,7 +179,7 @@ export default class Website {
     // materialize concrete pages on demand (/blog/:slug → /blog/my-post).
     this._dynamicPageData = new Map()
     for (const pageData of regularPages) {
-      if (pageData.isDynamic || pageData.route?.includes(':')) {
+      if (pageData.isDynamic || isDynamicRoute(pageData.route)) {
         this._dynamicPageData.set(pageData.route, pageData)
       }
     }
@@ -1399,7 +1399,7 @@ export default class Website {
     const isPageVisible = (page) => {
       // Always exclude dynamic route template pages (e.g., /blog/:slug)
       // These are templates for generating pages, not actual navigable pages
-      if (page.route.includes(':')) return false
+      if (isDynamicRoute(page.route)) return false
 
       // ⭐ And the pages made from one — a record's own page (/blog/my-post). The SPA keeps
       // those out of `this.pages` (`_dynamicPageCache`), but a static build expands them into

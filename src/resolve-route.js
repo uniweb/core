@@ -21,7 +21,7 @@
  * @module @uniweb/core/resolve-route
  */
 
-import { decodeRouteValue, matchDynamicRoute, parentRouteOf } from './route-match.js'
+import { decodeRouteValue, isDynamicRoute, matchDynamicRoute, parentRouteOf } from './route-match.js'
 import { resolveDefaultLocale } from './locale-config.js'
 import { siteAddress } from './site-address.js'
 
@@ -313,7 +313,7 @@ function findPage(index, path, { activeLocale, defaultLocale }) {
 
   for (const candidate of new Set([canonical, asGiven, shown])) {
     for (const page of index.pages) {
-      if (!page.route.includes(':')) continue
+      if (!isDynamicRoute(page.route)) continue
       const hit = matchDynamicRoute(page.route, candidate)
       if (hit) return { page, route: candidate, params: hit.params, template: page.route }
     }

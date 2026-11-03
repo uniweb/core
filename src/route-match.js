@@ -33,7 +33,10 @@
  *
  * ## The syntax, in full
  *
- * `:param` captures exactly one non-empty path segment. `:param*` — the ONE
+ * `:param` captures exactly one non-empty path segment, and starts it: literal
+ * text may follow the name in its segment (`/files/:name.json`), while a `:`
+ * anywhere else in a segment is the character itself (`/Note:-a-thing` is a page,
+ * not a pattern). `:param*` — the ONE
  * multi-segment construct, admitted 2026-09-04 by ruling [Diego] for the
  * `[...path]` route folder — captures one or more segments, slashes intact, and
  * only as the FINAL segment of a pattern; anywhere else the `*` is the literal it
@@ -84,13 +87,27 @@ export function normalizeRoute(route) {
 }
 
 /**
- * Whether a route is a dynamic template rather than a concrete path.
+ * A parameter, wherever a pattern may hold one: `:name` at the START of a segment.
+ * Literal text may follow the name in that segment (`/files/:name.json`), and a `:`
+ * anywhere else in a segment is the character itself. `lead` is what precedes the
+ * `:`, a `/` or the start of the pattern, kept by whoever replaces the parameter.
+ */
+const PARAM_SOURCE = `(^|/):(${PARAM_NAME})`
+
+/**
+ * Whether a route is a dynamic template rather than a concrete path: whether one
+ * of its segments starts with a parameter (`/blog/:slug`, `/files/:name.json`,
+ * `/docs/:path*`).
+ *
+ * A route is plain text, so a `:` an author typed into a slug is text too:
+ * `/Note:-a-thing` is a page. Until 2026-11-02 this asked whether a route held a
+ * `:` at all, so that page left every menu and `/Noteabc` resolved to it.
  *
  * @param {string} route
  * @returns {boolean}
  */
 export function isDynamicRoute(route) {
-  return typeof route === 'string' && route.includes(':')
+  return typeof route === 'string' && new RegExp(PARAM_SOURCE).test(route)
 }
 
 /** The catch-all token, only as a pattern's final segment: `/:path*`. */
@@ -123,10 +140,10 @@ export function routePatternToRegex(pattern) {
   let source = head
     // Escape first: a `.` in a route is a literal `.`, not "any character".
     .replace(REGEX_SPECIALS, '\\$&')
-    // Then each `:name` becomes one non-empty segment capture.
-    .replace(new RegExp(`:(${PARAM_NAME})`, 'g'), (_, name) => {
+    // Then each `:name` that starts a segment becomes one non-empty segment capture.
+    .replace(new RegExp(PARAM_SOURCE, 'g'), (_, lead, name) => {
       paramNames.push(name)
-      return '([^/]+)'
+      return `${lead}([^/]+)`
     })
   if (catchAll) {
     paramNames.push(catchAll)
@@ -623,16 +640,16 @@ export function fillRoutePattern(pattern, values, { field = null } = {}) {
     tailHref = '/' + encodeURIComponent(String(handle))
     head = pattern.slice(0, tail.index)
   }
-  const href = head.replace(new RegExp(`:(${PARAM_NAME})`, 'g'), (_, name) => {
+  const href = head.replace(new RegExp(PARAM_SOURCE, 'g'), (_, lead, name) => {
     // ⭐ THE FIRST MEMBER of a `multi` field — a record has ONE canonical href, and
     // every member routes to it (`routeParamValues`). Baked whole, a `['a','b']`
     // field produced `/tags/a%2Cb`, a URL no lane matches.
     const [value] = routeParamValues(values, name, name === 'slug' ? field : null)
     if (value === undefined) {
       missing = true
-      return ''
+      return lead
     }
-    return encodeURIComponent(value)
+    return lead + encodeURIComponent(value)
   })
   return missing ? null : href + tailHref
 }
