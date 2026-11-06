@@ -95,7 +95,8 @@ export default class Block {
     const blockConfig = blockData.params || blockData.config || {}
 
     // ⭐ THE SECTION'S OWN SETTINGS — the names framework reserves in its params
-    // (`@uniweb/schemas/section`): `theme`, `background`, `grid`, `vars`, `fetch`, `sticky`.
+    // (`@uniweb/schemas/section`): `theme`, `background`, `grid`, `vars`, `fetch`, `sticky`,
+    // `underHeader`.
     // Framework applies each — the runtime paints the background and the color context around
     // the component and makes sticky the box that can stick, the page stylesheet applies the
     // section's theme and its component's variables, kit's `ChildGrid` lays out the child
