@@ -661,10 +661,29 @@ export default class Block {
       contextOverrides: this.contextOverrides,
       state: this.state,
       context: this.context,
-      // Whether the header lies over this section when it opens a page: a header reads it on its
-      // next block, the page's first section, to paint itself see-through.
-      underHeader: this.underHeader
+      // Whether the header lies over this section on its page (`liesUnderHeader`): a header reads
+      // it on its next block, the page's first section, to paint itself see-through.
+      underHeader: this.liesUnderHeader()
     }
+  }
+
+  /**
+   * Whether the header lies over this section on its page: the section asks (`underHeader`, its
+   * author's setting or its type's default), it opens the page, and the page has a header — its
+   * layout's area named `header`, holding sections. One rule for the runtime, which lays the
+   * header over the section, and for a header, which reads it on its next block
+   * (`getBlockInfo().underHeader`) to paint itself see-through.
+   *
+   * ⛔ Until 2026-11-06 a header read the section's setting alone, so a header in an area named
+   * otherwise, which the runtime never lays over anything, painted itself see-through in the flow.
+   *
+   * @returns {boolean}
+   */
+  liesUnderHeader() {
+    const page = this.page
+    if (!this.underHeader || !page || page.getBodyBlocks?.()?.[0] !== this) return false
+    const header = page.getLayoutAreas?.()?.header
+    return Array.isArray(header) && header.length > 0
   }
 
   /**

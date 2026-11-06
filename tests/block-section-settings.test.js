@@ -284,8 +284,29 @@ describe('block.underHeader and block.height (2026-11-06)', () => {
     expect(initialized({}, { height: ' var(--header-height) ' }).height).toBe('var(--header-height)')
   })
 
-  it('tells a neighbour, through its block info', () => {
-    expect(initialized({}, { underHeader: true }).getBlockInfo().underHeader).toBe(true)
+  // A page for `block`: its body's sections, and the layout areas it shows.
+  const placed = (block, { first = true, areas = { header: [{}] } } = {}) => {
+    block.page.getBodyBlocks = () => (first ? [block] : [{}, block])
+    block.page.getLayoutAreas = () => areas
+    return block
+  }
+
+  it('⭐ tells a neighbour, through its block info, that the header lies over it: it asks, opens the page, and the page has a header', () => {
+    const block = placed(initialized({}, { underHeader: true }))
+    expect(block.liesUnderHeader()).toBe(true)
+    expect(block.getBlockInfo().underHeader).toBe(true)
+  })
+
+  it.each([
+    ['it does not open the page', { first: false }],
+    ['the page shows no header', { areas: { footer: [{}] } }],
+    ['the layout’s top area is named otherwise', { areas: { topbar: [{}] } }],
+    ['the header area holds no section', { areas: { header: [] } }],
+  ])('⭐ the header lies over no section where %s — what a header reads is the fact, not the setting', (_, where) => {
+    const block = placed(initialized({}, { underHeader: true }), where)
+    expect(block.underHeader).toBe(true)
+    expect(block.liesUnderHeader()).toBe(false)
+    expect(block.getBlockInfo().underHeader).toBe(false)
   })
 
   it('CONTROL — a type that declares neither lies under no header, and has no height', () => {
