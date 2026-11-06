@@ -266,6 +266,31 @@ describe('a link to the record\'s page shows the record\'s image — `recordImag
   })
 })
 
+describe('the record describes its page by its text — `recordDescription` (2026-11-06)', () => {
+  // ⛔ Until then `description || excerpt` was taken as it came, so a record whose `description`
+  // was a rich-text body described its page as `[object Object]`.
+  const body = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'A long body' }] }] }
+  const described = (w, slug) => w.getPage(`/blog/${slug}`).getHeadMeta().description
+
+  it('a rich-text `description` is passed over for the `excerpt`', () => {
+    const w = site(LIVE)
+    w.dataStore.set(recordKey(w, 'rich'), { data: [{ $name: 'rich', title: 'Rich', description: body, excerpt: 'In short.' }] })
+    expect(described(w, 'rich')).toBe('In short.')
+  })
+
+  it('with no text to describe it, the page has no description — never `[object Object]`', () => {
+    const w = site(LIVE)
+    w.dataStore.set(recordKey(w, 'rich'), { data: [{ $name: 'rich', title: 'Rich', description: body }] })
+    expect(described(w, 'rich')).toBeNull()
+  })
+
+  it('CONTROL — a text `description` still describes the page', () => {
+    const w = site(LIVE)
+    w.dataStore.set(recordKey(w, 'plain'), { data: [{ $name: 'plain', title: 'Plain', description: 'The one' }] })
+    expect(described(w, 'plain')).toBe('The one')
+  })
+})
+
 describe('recordPageFor — the page a query\'s records link to (ruled 2026-09-14)', () => {
   const pagesOf = (pages) => new Website({ content: { config: { name: 'T', defaultLanguage: 'en' }, theme: {}, pages } })
 

@@ -335,6 +335,33 @@ export function recordImage(record) {
 }
 
 /**
+ * A record's DESCRIPTION — the line the page about it is described by (its meta description),
+ * and the line under it in a search result and in `llms.txt`.
+ *
+ * ONE RULE, read where `recordTitle` is: the parametric page (`Website._createDynamicPage`), the
+ * static build's page expansion, and the record search index (`@uniweb/projections`).
+ *
+ *     description  →  excerpt
+ *
+ * Only a non-empty string describes a record. A rich-text field named `description` is a
+ * document, which this rule cannot write into a meta tag, so it is passed over for `excerpt`.
+ * ⛔ Until 2026-11-06 the page and the build took either field as it came, so a rich-text
+ * `description` described the page as `[object Object]`, and the search index never read
+ * either: its excerpt was the record's strings run together, icon names and colours included,
+ * and `llms.txt` described each record's page with it.
+ *
+ * @param {Object} record
+ * @returns {string|undefined}
+ */
+export function recordDescription(record) {
+  if (!record || typeof record !== 'object') return undefined
+  for (const value of [record.description, record.excerpt]) {
+    if (typeof value === 'string' && value.trim() !== '') return value
+  }
+  return undefined
+}
+
+/**
  * The record field a route param is matched on — ONE MAP, read by the local match
  * (`routeParamValue`, below) and by the records service's record question (`match`,
  * `./detail-url.js`), so the two lanes cannot disagree about what a folder's name

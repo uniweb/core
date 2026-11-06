@@ -12,7 +12,7 @@ import ObservableState from './observable-state.js'
 import { normalizeSeo } from './seo.js'
 import { siteAddress, pageUrl } from './site-address.js'
 import { resolveDefaultLocale, localeLabel } from './locale-config.js'
-import { isDynamicRoute, matchDynamicRoute, recordTitle, recordImage, routeBinding, routeParamName, parentRouteOf } from './route-match.js'
+import { isDynamicRoute, matchDynamicRoute, recordTitle, recordImage, recordDescription, routeBinding, routeParamName, parentRouteOf } from './route-match.js'
 import { resolveFetchConfigs, pageRouteQuery, recordPages } from './fetch-config.js'
 import { declaredKeys } from './data-keys.js'
 import { pageRecordConfig, planFor, runPlanSync } from './page-data.js'
@@ -682,9 +682,11 @@ export default class Website {
         // read `title` alone, so a person record kept the template's title — `:slug`.
         const title = recordTitle(currentItem)
         if (title) pageData.title = title
-        if (currentItem.description || currentItem.excerpt) {
-          pageData.description = currentItem.description || currentItem.excerpt
-        }
+        // ⭐ And described by its text: `description`, else `excerpt` (`recordDescription`).
+        // ⛔ Until 2026-11-06 either was taken as it came, and a rich-text `description`
+        // described the page as `[object Object]`.
+        const description = recordDescription(currentItem)
+        if (description) pageData.description = description
         // ⭐ And by its picture: a link to the page shows the record's image (`recordImage`).
         // ⛔ Until 2026-10-05 it showed the page's or the site's `seo.image`, the same for
         // every record.

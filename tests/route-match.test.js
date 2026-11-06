@@ -12,7 +12,7 @@
  * a caller can rely on. A host matching identically depends on all of it.
  */
 
-import { recordHandle, routeFieldOf, recordKeyValues, recordTitle, routeParamValue, routeParamValues, matchesRouteParam, recordRouteBase,
+import { recordHandle, routeFieldOf, recordKeyValues, recordTitle, recordDescription, routeParamValue, routeParamValues, matchesRouteParam, recordRouteBase,
   matchDynamicRoute,
   findPageForRoute,
   routePatternToRegex,
@@ -419,6 +419,19 @@ describe('the placement handle — `$name`, and nothing else', () => {
     expect(recordTitle({ slug: 'ada' })).toBeUndefined()
     // a number is text a title can carry — `title: 2024` in YAML
     expect(recordTitle({ slug: 'y', title: 2024 })).toBe('2024')
+  })
+
+  it('recordDescription — `description`, then `excerpt`, text only (2026-11-06)', () => {
+    expect(recordDescription({ description: 'Short.', excerpt: 'Not this' })).toBe('Short.')
+    expect(recordDescription({ excerpt: 'From the excerpt' })).toBe('From the excerpt')
+    // ⛔ A rich-text body named `description` was the page's meta description as `[object Object]`.
+    const doc = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Body' }] }] }
+    expect(recordDescription({ description: doc, excerpt: 'The excerpt' })).toBe('The excerpt')
+    expect(recordDescription({ description: doc })).toBeUndefined()
+    expect(recordDescription({ description: '  ', excerpt: '' })).toBeUndefined()
+    expect(recordDescription({ description: 42 })).toBeUndefined()
+    expect(recordDescription({})).toBeUndefined()
+    expect(recordDescription(null)).toBeUndefined()
   })
 
   it('recordTitle skips what is not text, and what is blank', () => {
