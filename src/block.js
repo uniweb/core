@@ -108,7 +108,7 @@ export default class Block {
     // publishes the envelope. Either name is an ordinary param now.
     const {
       theme: rawTheme, background: rawBg, grid: gridParam, vars: varsParam, fetch: fetchParam,
-      sticky: stickyParam,
+      sticky: stickyParam, underHeader: underHeaderParam,
       ...componentParams
     } = blockConfig
     this.properties = componentParams
@@ -122,6 +122,14 @@ export default class Block {
     this.sticky = this.stickySetting ?? false
     // How far below the top it stays — its type's `top`, a CSS length; null is the very top.
     this.stickyTop = null
+
+    // Whether the header lies over the section when it opens a page — what the author wrote
+    // (`true` or `false`), else its type's `underHeader` from `meta.js`, which `initComponent`
+    // reads. The runtime lays the header's box over it (`under-header.js`, 2026-11-06).
+    this.underHeaderSetting = typeof underHeaderParam === 'boolean' ? underHeaderParam : null
+    this.underHeader = this.underHeaderSetting ?? false
+    // A header type's height before the browser measures it — its `meta.js` `height`, a CSS length.
+    this.height = null
 
     // The section's theme: `theme.yml`'s own keys scoped to the section — `colors`,
     // `contexts`, `vars` — plus `mode`, the color context it pins. `theme: dark` is the
@@ -544,6 +552,10 @@ export default class Block {
     this.sticky = this.stickySetting ?? sticky.default
     this.stickyTop = sticky.top
 
+    // The type's `underHeader` and `height` — the author's `underHeader` wins.
+    this.underHeader = this.underHeaderSetting ?? meta.underHeader === true
+    this.height = typeof meta.height === 'string' && meta.height.trim() ? meta.height.trim() : null
+
     return this.Component
   }
 
@@ -639,7 +651,7 @@ export default class Block {
    * Get information about this block for cross-component communication.
    * Other components (like NavBar) can use this to adapt their behavior.
    *
-   * @returns {Object} Block info: { type, theme, state, context }
+   * @returns {Object} Block info: { type, theme, contextOverrides, state, context, underHeader }
    */
   getBlockInfo() {
     return {
@@ -647,7 +659,10 @@ export default class Block {
       theme: this.themeName,
       contextOverrides: this.contextOverrides,
       state: this.state,
-      context: this.context
+      context: this.context,
+      // Whether the header lies over this section when it opens a page: a header reads it on its
+      // next block, the page's first section, to paint itself see-through.
+      underHeader: this.underHeader
     }
   }
 

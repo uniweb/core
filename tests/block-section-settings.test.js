@@ -1,5 +1,5 @@
 /**
- * A section’s own settings — `theme`, `background`, `grid`, `vars`, `sticky`, the names framework
+ * A section’s own settings — `theme`, `background`, `grid`, `vars`, `sticky`, `underHeader`, the names framework
  * reserves in its params (`@uniweb/schemas/section`). Framework applies each, so the Block
  * lifts each onto itself, normalized, and a component never receives one as a param
  * [Diego, 2026-09-28].
@@ -247,6 +247,52 @@ describe('block.sticky and block.stickyTop', () => {
     const block = initialized({}, {})
     expect(block.sticky).toBe(false)
     expect(block.stickyTop).toBeNull()
+  })
+})
+
+describe('block.underHeader and block.height (2026-11-06)', () => {
+  // A section type that can sit under a see-through header says so, and a header type says how tall
+  // it is before the browser measures it; the runtime lays the header over the page's opening section.
+  const withFoundation = (meta, fn) => {
+    const prev = globalThis.uniweb
+    globalThis.uniweb = { getComponent: () => () => null, getComponentMeta: () => meta }
+    try {
+      return fn()
+    } finally {
+      globalThis.uniweb = prev
+    }
+  }
+  const initialized = (params, meta) => withFoundation(meta, () => {
+    const block = build(params)
+    block.initComponent()
+    return block
+  })
+
+  it('is a setting of the section: lifted onto the block, never a param', () => {
+    const block = build({ underHeader: false, layout: 'center' })
+    expect(block.underHeader).toBe(false)
+    expect(block.properties).toEqual({ layout: 'center' })
+  })
+
+  it("defaults to its type's `meta.js` declaration, and the author's value wins", () => {
+    expect(initialized({}, { underHeader: true }).underHeader).toBe(true)
+    expect(initialized({ underHeader: false }, { underHeader: true }).underHeader).toBe(false)
+    expect(initialized({ underHeader: 'yes' }, { underHeader: true }).underHeader).toBe(true)
+  })
+
+  it("takes a header type's `height`, a CSS length", () => {
+    expect(initialized({}, { height: ' var(--header-height) ' }).height).toBe('var(--header-height)')
+  })
+
+  it('tells a neighbour, through its block info', () => {
+    expect(initialized({}, { underHeader: true }).getBlockInfo().underHeader).toBe(true)
+  })
+
+  it('CONTROL — a type that declares neither lies under no header, and has no height', () => {
+    const block = initialized({}, {})
+    expect(block.underHeader).toBe(false)
+    expect(block.height).toBeNull()
+    expect(block.getBlockInfo().underHeader).toBe(false)
   })
 })
 
