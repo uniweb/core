@@ -25,6 +25,32 @@ describe('Website constructor', () => {
     expect(w.entityStore).toBeDefined()
   })
 
+  it('⭐ makes active the Page it is handed, the not-found page included — no route names that one', () => {
+    const w = new Website({
+      content: simpleContent({
+        pages: [
+          { route: '/', isIndex: true, title: 'Home', sections: [] },
+          { route: '/404', title: 'Not found', sections: [] },
+        ],
+      }),
+    })
+    const notFound = w.getNotFoundPage()
+    expect(notFound).toBeTruthy()
+    w.setActivePage(notFound)
+    expect(w.activePage).toBe(notFound)
+    // By route, as before; and a route naming nothing leaves the active page as it was.
+    w.setActivePage('/')
+    expect(w.activePage.route).toBe('/')
+    w.setActivePage('/no-such-page')
+    expect(w.activePage.route).toBe('/')
+  })
+
+  it('CONTROL — plain page data is not a Page, and is not made active', () => {
+    const w = new Website({ content: simpleContent() })
+    w.setActivePage({ route: '/about', title: 'About' })
+    expect(w.activePage.route).toBe('/')
+  })
+
   it('exposes page.state as ObservableState', () => {
     const w = new Website({ content: simpleContent() })
     const page = w.pages[0]

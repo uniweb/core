@@ -717,11 +717,21 @@ export default class Website {
   }
 
   /**
-   * Set active page by route
-   * @param {string} route
+   * Make a page the active one: the page on screen, which whatever adapts to the page reads — a
+   * header's next block, the language switcher, page state, a contents rail. A renderer hands in
+   * the Page it renders; a route is looked up.
+   *
+   * ⭐ By the Page, where the caller holds it. The site's not-found page has no route of its own
+   * (a parametric page can match `/404`), and a parametric page whose records are not held yet is
+   * made anew by each lookup, so a route could name another Page than the one rendered. ⛔ Until
+   * 2026-11-06 both renderers set it by route: the not-found page rendered with another page
+   * active, and a header read that page's opening section while the runtime laid the header over
+   * this one's.
+   *
+   * @param {Page|string} pageOrRoute
    */
-  setActivePage(route) {
-    const page = this.getPage(route)
+  setActivePage(pageOrRoute) {
+    const page = pageOrRoute instanceof Page ? pageOrRoute : this.getPage(pageOrRoute)
     if (page) {
       this.activePage = page
     }
