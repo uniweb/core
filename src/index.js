@@ -111,6 +111,13 @@ export { resolveService, resolveServiceUrl, readServiceOptions } from './service
 export { applyBasePath } from './base-path.js'
 // A site's address and the absolute URLs stated on it — also the leaf `@uniweb/core/site-address`.
 export { siteAddress, pageUrl, absoluteUrl } from './site-address.js'
+// The content parser and its sanitizer, for code a foundation BUNDLES (kit's `Render`, `Icon`,
+// `Scene`). A foundation leaves `@uniweb/core` for the runtime to supply, so what it takes from
+// here is the runtime's copy, the one Block parses every section with, never a second copy frozen
+// at the foundation's build. A foundation imports these by name and a published one never
+// changes, so none of them may leave this entry.
+export { parseContent } from '@uniweb/semantic-parser'
+export { sanitizeSVG, isStyleName } from '@uniweb/semantic-parser/sanitize'
 
 /**
  * The singleton Uniweb instance.
