@@ -43,6 +43,24 @@ const SERVICE_RESOLVERS = {
 }
 
 /**
+ * A value's entry for a language: by its tag, then each shorter tag, ignoring case (RFC 4647 §3.4
+ * lookup). `zh-Hant-TW` tries `zh-Hant-TW`, `zh-Hant`, `zh`. Returns the first non-empty entry.
+ *
+ * @param {Object} obj - entries keyed by language tag
+ * @param {string} lang - a language tag
+ * @returns {*} the entry, or undefined
+ */
+function entryForLanguage(obj, lang) {
+  if (!obj || !lang) return undefined
+  const keys = Object.keys(obj)
+  for (let tag = String(lang); tag; tag = tag.slice(0, Math.max(tag.lastIndexOf('-'), 0))) {
+    const key = Object.hasOwn(obj, tag) ? tag : keys.find((k) => k.toLowerCase() === tag.toLowerCase())
+    if (key !== undefined && obj[key]) return obj[key]
+  }
+  return undefined
+}
+
+/**
  * Website — orchestration root for a single site instance.
  *
  * Accepts the site content payload plus the primary foundation and any
@@ -1151,6 +1169,12 @@ export default class Website {
 
   /**
    * Localize a value
+   *
+   * A language finds its entry by its own tag, then by each shorter one (`zh-Hant-TW`, `zh-Hant`,
+   * `zh`), without regard to case: the lookup of RFC 4647 §3.4. So a value keyed `zh` answers a site
+   * whose languages are `zh-CN` and `zh-TW`, where an exact key alone left it empty (measured
+   * 2026-11-10 on a site's footer).
+   *
    * @param {any} val - Value to localize (object with lang keys, or string)
    * @param {string} defaultVal - Default value if not found
    * @param {string} givenLang - Override language
@@ -1160,23 +1184,17 @@ export default class Website {
   localize(val, defaultVal = '', givenLang = '', fallbackDefaultLangVal = false) {
     const lang = givenLang || this.activeLang
     const defaultLang = this.langs[0]?.value || 'en'
+    const pick = (obj) =>
+      entryForLanguage(obj, lang) || (fallbackDefaultLangVal ? entryForLanguage(obj, defaultLang) : undefined) || defaultVal
 
-    if (typeof val === 'object' && !Array.isArray(val)) {
-      return fallbackDefaultLangVal
-        ? val?.[lang] || val?.[defaultLang] || defaultVal
-        : val?.[lang] || defaultVal
-    }
+    if (typeof val === 'object' && !Array.isArray(val)) return pick(val)
 
     if (typeof val === 'string') {
       if (!val.startsWith('{') && !val.startsWith('"')) return val
 
       try {
         const obj = JSON.parse(val)
-        if (typeof obj === 'object') {
-          return fallbackDefaultLangVal
-            ? obj?.[lang] || obj?.[defaultLang] || defaultVal
-            : obj?.[lang] || defaultVal
-        }
+        if (typeof obj === 'object') return pick(obj)
         return obj
       } catch {
         return val
