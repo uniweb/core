@@ -16,7 +16,7 @@
 
 import { resolveFetchConfigs } from './fetch-config.js'
 import { fillRoutePattern } from './route-match.js'
-import { blockRouteQuery, blockFetchOptions, blockFillsOf, pageRecordConfig, planFor, runPlan, runPlanSync } from './page-data.js'
+import { blockRouteQuery, blockFillsOf, pageRecordPlan, planFor, runPlan, runPlanSync } from './page-data.js'
 
 export default class EntityStore {
   /**
@@ -72,30 +72,14 @@ export default class EntityStore {
    *   when the page's route query resolves to nothing
    */
   async fetchPageRecord(page, { dispatcher = this.website?.fetcher } = {}) {
-    const dynamicContext = page?.dynamicContext
-    if (!dynamicContext || !dispatcher) return null
+    if (!page?.dynamicContext || !dispatcher) return null
 
-    // A block-shaped probe standing for the page itself: its levels, its route query.
-    const probe = { fetch: null, page, website: this.website, dynamicContext: null }
-    const route = blockRouteQuery(probe)
-    const cfg = route && pageRecordConfig({
-      pageFetch: page.fetch,
-      parent: page.parent ?? null,
-      route,
-      site: this.website?.config?.fetch,
-      options: blockFetchOptions(probe),
-    })
-    if (!cfg) return null
-
-    const plan = planFor(new Map([[route.key, { cfg }]]), {
-      dynamicContext,
-      route,
-      // The page is about ONE record, whatever a section's `current:` says.
-      current: 'only',
-      peekRecord: (id) => dispatcher.peekRecord?.(id),
-    })
-    const ctx = this._ctx(probe)
-    return runPlan(plan, {
+    // The question, as `heldPageRecord` reads its answer back (`./page-data.js`).
+    const asked = pageRecordPlan(page, { website: this.website, peekRecord: (id) => dispatcher.peekRecord?.(id) })
+    if (!asked) return null
+    // A block-shaped probe standing for the page itself, as the context a dispatcher is handed.
+    const ctx = this._ctx({ fetch: null, page, website: this.website, dynamicContext: null })
+    return runPlan(asked.plan, {
       dispatch: (request) => dispatcher.dispatch(request, ctx),
       peek: (request) => dispatcher.peek?.(request, ctx),
     })

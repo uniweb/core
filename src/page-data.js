@@ -241,6 +241,66 @@ export function blockFillsOf(block, meta, route = blockRouteQuery(block)) {
 }
 
 /**
+ * The plan for a parametric page's OWN record — its route query's program under `current: only` —
+ * read off the graph: the question the page's data step asks (`EntityStore#fetchPageRecord`), and the
+ * one `heldPageRecord` answers from what is held.
+ *
+ * @param {Object} page - a concrete parametric page (it carries `dynamicContext`)
+ * @param {Object} where
+ * @param {Object} where.website
+ * @param {Function} [where.peekRecord] - the record index, for the R1 gate
+ * @returns {{ key: string, plan: Map<string, Generator> }|null} null off a parametric page, or when
+ *   its route query resolves to nothing
+ */
+export function pageRecordPlan(page, { website, peekRecord = null } = {}) {
+  const dynamicContext = page?.dynamicContext
+  if (!dynamicContext) return null
+  // A block-shaped probe standing for the page itself: its levels, its route query.
+  const probe = { fetch: null, page, website, dynamicContext: null }
+  const route = blockRouteQuery(probe)
+  const cfg = route && pageRecordConfig({
+    pageFetch: page.fetch,
+    parent: page.parent ?? null,
+    route,
+    site: website?.config?.fetch,
+    options: blockFetchOptions(probe),
+  })
+  if (!cfg) return null
+  return {
+    key: route.key,
+    plan: planFor(new Map([[route.key, { cfg }]]), {
+      dynamicContext,
+      route,
+      // The page is about ONE record, whatever a section's `current:` says.
+      current: 'only',
+      peekRecord,
+    }),
+  }
+}
+
+/**
+ * A parametric page's own record, from what is held: the answer `pageRecordPlan`'s question got,
+ * read back after the page's data step. For a caller reporting what a page held, a record page's
+ * Markdown among them (`@uniweb/runtime`'s `section-records.js`).
+ *
+ * @param {Object} page
+ * @param {Object} where
+ * @param {Object} where.website
+ * @param {(request: Object) => ({ data: * }|null|undefined)} where.peek - the cache
+ * @param {Function} [where.peekRecord] - the record index
+ * @returns {Object|null|undefined} the record; null when the route names none (its answer is `[]`);
+ *   undefined off a parametric page, or when nothing held answers the question
+ */
+export function heldPageRecord(page, { website, peek, peekRecord = null } = {}) {
+  const asked = pageRecordPlan(page, { website, peekRecord })
+  if (!asked) return undefined
+  const out = runPlanSync(asked.plan, { peek })
+  const found = out.status === 'ready' ? out.data?.[asked.key] : undefined
+  if (found === undefined) return undefined
+  return Array.isArray(found) ? (found[0] ?? null) : found
+}
+
+/**
  * The fetch a parametric page's OWN record is asked for with — its route query, resolved.
  *
  * ⭐ A page's existence is not a section's business: it is asked whether or not a section declares

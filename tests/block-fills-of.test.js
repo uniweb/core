@@ -59,3 +59,27 @@ describe('blockFillsOf', () => {
     expect(Object.keys(resolved.data)).toEqual([...blockFillsOf(block, meta).keys()])
   })
 })
+
+describe('heldPageRecord — a parametric page\'s own record, read back from what is held', () => {
+  const posts = [{ $name: 'a', title: 'A' }, { $name: 'b', title: 'B' }]
+  const parent = { route: '/posts', fetch: { query: 'posts', as: 'posts', path: '/data/posts.json' } }
+  const pageFor = (slug) => pageOf({ route: `/posts/${slug}`, parent, dynamicContext: { templateRoute: '/posts/:slug', paramName: 'slug', paramValue: slug, params: { slug, path: slug, dir: '' } } })
+  // The cache holds the query's set, by the address its question names.
+  const peekSet = (request) => (request?.path === '/data/posts.json' ? { data: posts } : null)
+
+  it('⭐ the record the page is about, found by the question its data step asked', async () => {
+    const { heldPageRecord } = await import('../src/page-data.js')
+    expect(heldPageRecord(pageFor('b'), { website: site(), peek: peekSet })).toEqual(posts[1])
+  })
+
+  it('null when what is held says the route names no record; undefined when nothing held answers', async () => {
+    const { heldPageRecord } = await import('../src/page-data.js')
+    expect(heldPageRecord(pageFor('zz'), { website: site(), peek: peekSet })).toBe(null)
+    expect(heldPageRecord(pageFor('a'), { website: site(), peek: () => null })).toBe(undefined)
+  })
+
+  it('undefined off a parametric page', async () => {
+    const { heldPageRecord } = await import('../src/page-data.js')
+    expect(heldPageRecord(pageOf(), { website: site(), peek: peekSet })).toBe(undefined)
+  })
+})
