@@ -28,8 +28,8 @@
  * @module
  */
 
-import { resolveFetchConfigs, fetchEntries, routeSelection, currentFor, othersView, othersOf, siteReaches } from './fetch-config.js'
-import { fillDeclaredKeys } from './data-keys.js'
+import { resolveFetchConfigs, fetchEntries, routeSelection, currentFor, othersView, othersOf, siteReaches, pageRouteQuery } from './fetch-config.js'
+import { fillDeclaredKeys, declaredKeys } from './data-keys.js'
 import { matchesRouteParam } from './route-match.js'
 import { buildDetailConfig } from './detail-url.js'
 
@@ -110,6 +110,134 @@ export function blockFills({ declared, levels, holds = {}, queries = null, optio
     out.set(key, { cfg, held, ...flags.get(key) })
   }
   return out
+}
+
+/**
+ * ⭐ (a) AND (b) READ OFF THE OBJECT GRAPH — a Block of a Website, where the two functions above take
+ * plain data. The entity store fills a section by these (`EntityStore`), and a caller reporting what a
+ * section received asks them too (`@uniweb/runtime`'s `section-records.js`, for a page's Markdown):
+ * one reading of the graph, so the two cannot name different fetches. ⛔ Do not spell the levels out
+ * anywhere else: every lane that has needed this answer has written its own list, and each list has
+ * drifted.
+ *
+ * Each takes a Block, or an object shaped like one where it reads it (`fetch`, `page`, `website`,
+ * `dynamicContext`, `heldData`): the store asks for a page's own record with such a probe.
+ */
+
+/**
+ * The ROUTE QUERY of a block's page — the query its URL names one record of — worked out from the
+ * same sources the levels read, at the page that captured the URL's variable (`pageRouteQuery`,
+ * `./fetch-config.js`): its fetch, its parent's, the site's, and, when none of those declares one,
+ * the key its sections share. So what a section receives and what the URL narrows are read off one
+ * walk and cannot disagree.
+ *
+ * ⛔ This was `dynamicContext.schema`, stored on the page by whoever built it — the SPA from
+ * `parentSchema`, the static build from the parent's first prerendered fetch — a stored copy of a
+ * derived answer, computed by a different rule from the one sections are fed by. Deleted 2026-09-11
+ * [Diego].
+ *
+ * @param {Object} block
+ * @returns {{ key: string, config: Object, nested: boolean }|null} null off a parametric page, or when
+ *   it has no route query
+ */
+export function blockRouteQuery(block) {
+  const dynamicContext = block.dynamicContext || block.page?.dynamicContext
+  if (!dynamicContext || !block.page) return null
+  return pageRouteQuery(block.page, {
+    // a concrete page carries its template's route; its ancestors are templates, or
+    // pages the static build expanded, which carry theirs the same way
+    routeOf: (p) => p?.dynamicContext?.templateRoute ?? p?.route,
+    parentOf: (p) => p?.parent ?? null,
+    fetchOf: (p) => p?.fetch,
+    sectionsOf: (p) => p?._bodySections,
+    site: block.website?.config?.fetch,
+  })
+}
+
+/**
+ * The options each fetch of a block is resolved with. The rule applied to a fetch (locale
+ * normalization, route variables, the record files' pattern) lives in `./fetch-config.js`, shared
+ * with every other host that has to answer the same question. Do not re-inline it — divergence
+ * between copies is what the extraction exists to prevent.
+ *
+ * @param {Object} block
+ * @returns {Object} what `resolveFetchConfigs` takes
+ */
+export function blockFetchOptions(block) {
+  const website = block.website
+  const dynamicContext = block.dynamicContext || block.page?.dynamicContext
+  // The route's variables, for a query that binds `:path` / `:dir` / `:slug` —
+  // `routeBinding`'s, carried as `params` by every parametric page this runtime
+  // or its build makes. A page that carries only its capture gets the same three
+  // names from it: one segment is `:slug` and `:path`, with no `:dir`.
+  const variables = dynamicContext
+    ? (dynamicContext.params ?? (dynamicContext.paramValue !== undefined
+        ? {
+            [dynamicContext.paramName]: dynamicContext.paramValue,
+            path: dynamicContext.paramValue,
+            dir: '',
+            slug: dynamicContext.paramValue,
+          }
+        : null))
+    : null
+  return {
+    locale: website?.getActiveLocale?.() ?? null,
+    defaultLocale: website?.getDefaultLocale?.() ?? null,
+    // ⚠️ `queries`, matching `resolveFetchConfigs`. This passed `collections`
+    // after the payload key was renamed — a dead option name, silently: the
+    // resolver simply saw no queries and stopped injecting `detail:`.
+    queries: website?.config?.queries ?? null,
+    // The host's services; its `records` row is the live-records lane.
+    // Absent on every static site and on local dev, which is why
+    // `resolveQuerySource` treats absence as the ordinary case and reads
+    // the compiled artifact without comment.
+    services: website?.config?.services ?? null,
+    variables,
+  }
+}
+
+/**
+ * ⭐ WHAT THIS SECTION RECEIVES, AND FROM WHICH FETCH — ruled 2026-09-14 [Diego]: (b) for a Block.
+ * The keys its component declares and its foundation's (`website.declaredKeys`), each paired with the
+ * fetch that fills it by the one rule (`fillDeclaredKeys`, automatic `as`) over the levels that reach
+ * the block (`fetchLevels`). A declared key the block already holds — a tagged data block, or its own
+ * fetch's prerendered answer under that name — is not filled from a request, and a fetch that fills no
+ * declared key is not asked. Each filling fetch is resolved on its own, so two fetches of one `as` can
+ * fill two keys.
+ *
+ * ⭐ `held` is the answer the block already holds for a filling fetch, under the fetch's own key: a
+ * static build prerenders a section's own fetch into its content by `as`, so a component that names
+ * the key differently still receives it without the browser asking again. Only for the first fetch of
+ * that key reaching the block — the one whose answer a build put there.
+ *
+ * ⛔ Until 2026-09-14 every fetch reaching the block was resolved and delivered under its `as` — the
+ * first per key — whether the component read it or not, and a component declaring its key under
+ * another name received nothing.
+ *
+ * @param {Object} block
+ * @param {Object|null} meta - its component's runtime meta
+ * @param {{ key: string, config: Object, nested: boolean }|null} [route] - its page's route query,
+ *   when the caller has worked it out already (`blockRouteQuery`)
+ * @returns {Map<string, { cfg: Object, held: *, whole: boolean, single: boolean }>} `blockFills`'
+ *   answer: declared key → the resolved config of the fetch that fills it (its `as` among it), and the
+ *   answer the block holds for it (undefined when none)
+ */
+export function blockFillsOf(block, meta, route = blockRouteQuery(block)) {
+  const website = block.website
+  const page = block.page
+  return blockFills({
+    declared: website?.declaredKeys ? website.declaredKeys(meta) : declaredKeys(meta?.data),
+    levels: fetchLevels({
+      own: block.fetch,
+      page: page?.fetch,
+      parent: page?.parent ?? null,
+      route,
+      site: website?.config?.fetch,
+    }),
+    holds: block.heldData || {},
+    queries: website?.config?.queries ?? null,
+    options: blockFetchOptions(block),
+  })
 }
 
 /**
@@ -214,7 +342,7 @@ export function* keyProgram(cfg, { dynamicContext = null, route = null, held = u
   if (external) whole = false
 
   // How this fetch uses the page's record: by the query it names (`currentFor`).
-  const current = forced ?? (dynamicContext ? currentFor(cfg, route) : null)
+  const current = forced ?? pageRecordUse(cfg, dynamicContext, route)
 
   // What a list of the binding's records is asked as — its first only, for a key holding one — and
   // the answer cut to it here too, since a source need not honour `narrow` (a foundation's transport).
@@ -307,6 +435,31 @@ export function* keyProgram(cfg, { dynamicContext = null, route = null, held = u
   if (answer.data === undefined || answer.data === null) return {}
   if (!whole || cfg.ask) return { value: cut(answer.data) }
   return yield* wholeRecordsOf(cfg, cut(answer.data))
+}
+
+/**
+ * How a filling fetch uses this page's record: on a parametric page, by the query it names
+ * (`currentFor`); off one, not at all. One answer for the per-key program and for a caller asking
+ * whether a key holds the page's record (`fillIsPageRecord`).
+ */
+function pageRecordUse(cfg, dynamicContext, route) {
+  return dynamicContext ? currentFor(cfg, route) : null
+}
+
+/**
+ * Whether a block's key is filled with its page's OWN record — a parametric page's record, which
+ * the key's program gives under `current: only` (`keyProgram`) — for a caller that holds the record
+ * already: a record page's Markdown writes it once, as the page's (`@uniweb/runtime`'s
+ * `section-records.js`).
+ *
+ * @param {Object} block
+ * @param {Object} cfg - the key's filling fetch, resolved (`blockFillsOf`)
+ * @param {{ key: string, config: Object, nested: boolean }|null} [route] - the block's page's route
+ *   query (`blockRouteQuery`)
+ * @returns {boolean}
+ */
+export function fillIsPageRecord(block, cfg, route = blockRouteQuery(block)) {
+  return pageRecordUse(cfg, block.dynamicContext || block.page?.dynamicContext, route) === 'only'
 }
 
 /**

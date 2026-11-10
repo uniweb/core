@@ -577,7 +577,7 @@ export default class Website {
     const { paramName, paramValue, variables } = routeBinding(templatePage.route, params, originalData.paramName)
 
     // Store dynamic context for components to access. ⛔ No `schema`: the key the
-    // URL narrows is worked out where it is read (`EntityStore._route`), from
+    // URL narrows is worked out where it is read (`blockRouteQuery`, `./page-data.js`), from
     // the page, never stored beside it (deleted 2026-09-11).
     pageData.dynamicContext = {
       templateRoute: templatePage.route,
@@ -925,7 +925,7 @@ export default class Website {
     if (typeof query !== 'string' || !query) return null
     if (!this._recordPages) {
       // ⭐ Every page, by the route PATTERN it answers to — the entity store's reading
-      // (`_route`). A static build replaces a parametric page with one concrete page per
+      // (`blockRouteQuery`). A static build replaces a parametric page with one concrete page per
       // record (`expandDynamicPages`), each carrying its template's route as
       // `dynamicContext.templateRoute`; the payload it prerenders and hydrates holds those,
       // and no template. ⛔ Read from the templates alone, this found no page there, and

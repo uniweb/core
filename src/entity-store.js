@@ -14,10 +14,9 @@
  * and in-flight dedup.
  */
 
-import { resolveFetchConfigs, pageRouteQuery } from './fetch-config.js'
-import { declaredKeys } from './data-keys.js'
+import { resolveFetchConfigs } from './fetch-config.js'
 import { fillRoutePattern } from './route-match.js'
-import { fetchLevels, blockFills, pageRecordConfig, planFor, runPlan, runPlanSync } from './page-data.js'
+import { blockRouteQuery, blockFetchOptions, blockFillsOf, pageRecordConfig, planFor, runPlan, runPlanSync } from './page-data.js'
 
 export default class EntityStore {
   /**
@@ -33,93 +32,11 @@ export default class EntityStore {
   }
 
   /**
-   * The fetches that reach a block — `fetchLevels` (`./page-data.js`), the one rule, read
-   * off this block's graph. ⛔ Do not spell the levels out here: every lane that has
-   * needed this answer has written its own list, and each list has drifted.
+   * ⭐ What a block receives, from which fetch, its page's route query and the options each fetch
+   * is resolved with, are read off the graph by `./page-data.js` (`blockFillsOf`,
+   * `blockRouteQuery`, `blockFetchOptions`) — the reading a caller reporting what a section
+   * received asks too, so the two cannot name different fetches.
    */
-  _levels(block, route = this._route(block)) {
-    const page = block.page
-    return fetchLevels({
-      own: block.fetch,
-      page: page?.fetch,
-      parent: page?.parent ?? null,
-      route,
-      site: block.website?.config?.fetch,
-    })
-  }
-
-  /**
-   * The options each fetch of a block is resolved with. The rule applied to a fetch
-   * (locale normalization, route variables, the record files' pattern) lives in
-   * `./fetch-config.js`, shared with every other host that has to answer the same
-   * question. Do not re-inline it here — divergence between copies is what the
-   * extraction exists to prevent.
-   */
-  _resolveOptions(block) {
-    const website = block.website
-    const dynamicContext = block.dynamicContext || block.page?.dynamicContext
-    // The route's variables, for a query that binds `:path` / `:dir` / `:slug` —
-    // `routeBinding`'s, carried as `params` by every parametric page this runtime
-    // or its build makes. A page that carries only its capture gets the same three
-    // names from it: one segment is `:slug` and `:path`, with no `:dir`.
-    const variables = dynamicContext
-      ? (dynamicContext.params ?? (dynamicContext.paramValue !== undefined
-          ? {
-              [dynamicContext.paramName]: dynamicContext.paramValue,
-              path: dynamicContext.paramValue,
-              dir: '',
-              slug: dynamicContext.paramValue,
-            }
-          : null))
-      : null
-    return {
-      locale: website?.getActiveLocale?.() ?? null,
-      defaultLocale: website?.getDefaultLocale?.() ?? null,
-      // ⚠️ `queries`, matching `resolveFetchConfigs`. This passed `collections`
-      // after the payload key was renamed — a dead option name, silently: the
-      // resolver simply saw no queries and stopped injecting `detail:`.
-      queries: website?.config?.queries ?? null,
-      // The host's services; its `records` row is the live-records lane.
-      // Absent on every static site and on local dev, which is why
-      // `resolveQuerySource` treats absence as the ordinary case and reads
-      // the compiled artifact without comment.
-      services: website?.config?.services ?? null,
-      variables,
-    }
-  }
-
-  /**
-   * ⭐ WHAT THIS SECTION RECEIVES, AND FROM WHICH FETCH — ruled 2026-09-14 [Diego]. The keys
-   * its component declares and its foundation's (`website.declaredKeys`), each paired with
-   * the fetch that fills it by the one rule (`fillDeclaredKeys`, automatic `as`) over the
-   * levels that reach the block. A declared key the block already holds — a tagged data
-   * block, or its own fetch's prerendered answer under that name — is not the store's to
-   * fill, and a fetch that fills no declared key is not asked. Each filling fetch is
-   * resolved on its own, so two fetches of one `as` can fill two keys.
-   *
-   * ⭐ `held` is the answer the block already holds for a filling fetch, under the fetch's
-   * own key: a static build prerenders a section's own fetch into its content by `as`, so
-   * a component that names the key differently still receives it without the browser
-   * asking again. Only for the first fetch of that key reaching the block — the one whose
-   * answer a build put there.
-   *
-   * ⛔ Until 2026-09-14 every fetch reaching the block was resolved and delivered under its
-   * `as` — the first per key — whether the component read it or not, and a component
-   * declaring its key under another name received nothing.
-   *
-   * @returns {Map<string, { cfg: Object, held: * }>} declared key → the resolved config of
-   *   the fetch that fills it, and the answer the block holds for it (undefined when none)
-   */
-  _fills(block, meta, route) {
-    const website = block.website
-    return blockFills({
-      declared: website?.declaredKeys ? website.declaredKeys(meta) : declaredKeys(meta?.data),
-      levels: this._levels(block, route),
-      holds: block.heldData || {},
-      queries: website?.config?.queries ?? null,
-      options: this._resolveOptions(block),
-    })
-  }
 
   /**
    * The plan for a block — one program per declared key (`planFor`, `./page-data.js`),
@@ -160,13 +77,13 @@ export default class EntityStore {
 
     // A block-shaped probe standing for the page itself: its levels, its route query.
     const probe = { fetch: null, page, website: this.website, dynamicContext: null }
-    const route = this._route(probe)
+    const route = blockRouteQuery(probe)
     const cfg = route && pageRecordConfig({
       pageFetch: page.fetch,
       parent: page.parent ?? null,
       route,
       site: this.website?.config?.fetch,
-      options: this._resolveOptions(probe),
+      options: blockFetchOptions(probe),
     })
     if (!cfg) return null
 
@@ -181,36 +98,6 @@ export default class EntityStore {
     return runPlan(plan, {
       dispatch: (request) => dispatcher.dispatch(request, ctx),
       peek: (request) => dispatcher.peek?.(request, ctx),
-    })
-  }
-
-  /**
-   * The ROUTE QUERY of the block's page — the query its URL names one record of —
-   * worked out from the same sources `_levels` reads, at the page that
-   * captured the URL's variable (`pageRouteQuery`, `./fetch-config.js`): its fetch,
-   * its parent's, the site's, and, when none of those declares one, the key its
-   * sections share. So what a section receives and what the URL narrows are read
-   * off one walk and cannot disagree.
-   *
-   * ⛔ This was `dynamicContext.schema`, stored on the page by whoever built it —
-   * the SPA from `parentSchema`, the static build from the parent's first
-   * prerendered fetch — a stored copy of a derived answer, computed by a different
-   * rule from the one sections are fed by. Deleted 2026-09-11 [Diego].
-   *
-   * @returns {{ key: string, config: Object, nested: boolean }|null} null off a
-   *   parametric page, or when it has no route query
-   */
-  _route(block) {
-    const dynamicContext = block.dynamicContext || block.page?.dynamicContext
-    if (!dynamicContext || !block.page) return null
-    return pageRouteQuery(block.page, {
-      // a concrete page carries its template's route; its ancestors are templates, or
-      // pages the static build expanded, which carry theirs the same way
-      routeOf: (p) => p?.dynamicContext?.templateRoute ?? p?.route,
-      parentOf: (p) => p?.parent ?? null,
-      fetchOf: (p) => p?.fetch,
-      sectionsOf: (p) => p?._bodySections,
-      site: block.website?.config?.fetch,
     })
   }
 
@@ -297,8 +184,8 @@ export default class EntityStore {
    */
   resolve(block, meta) {
     const dispatcher = this.website?.fetcher
-    const route = this._route(block)
-    const fills = this._fills(block, meta, route)
+    const route = blockRouteQuery(block)
+    const fills = blockFillsOf(block, meta, route)
     if (fills.size === 0) return { status: 'none', data: null }
 
     const ctx = this._ctx(block)
@@ -336,8 +223,8 @@ export default class EntityStore {
   async fetch(block, meta, { signal, dispatcher = this.website?.fetcher } = {}) {
     if (!dispatcher) return { data: null, errors: null }
 
-    const route = this._route(block)
-    const fills = this._fills(block, meta, route)
+    const route = blockRouteQuery(block)
+    const fills = blockFillsOf(block, meta, route)
     if (fills.size === 0) return { data: null, errors: null }
 
     const ctx = this._ctx(block, { signal })
