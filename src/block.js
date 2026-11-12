@@ -911,6 +911,14 @@ export default class Block {
       const url = resolveAssetUrl(media.assetId, media.assetExt, pattern)
       if (url) out = { ...out, [key]: { ...media, src: url } }
     }
+    // ⭐ An uploaded video named no poster: the one its host makes of it, where the host states
+    // their address (`config.assets.poster`), as the parser does for a video in content. Derived
+    // here, never stored; the background's own poster always wins.
+    const video = out.video
+    if (video && typeof video === 'object' && !video.poster) {
+      const poster = resolveAssetUrl(video.assetId, video.assetExt, options?.assets?.poster)
+      if (poster) out = { ...out, video: { ...video, poster } }
+    }
     return out
   }
 

@@ -122,4 +122,26 @@ describe('section backgrounds resolve too', () => {
     expect(bgOf(withBackground('#ff0000')).mode).toBe('color')
     expect(bgOf(withBackground('linear-gradient(red, blue)')).mode).toBe('gradient')
   })
+
+  // A host that makes a still of each uploaded video states where it is (`config.assets.poster`).
+  const withPosterPattern = (background) => {
+    const content = withBackground(background)
+    content.config.assets = { url: TEMPLATE, poster: `${TEMPLATE}?poster` }
+    return content
+  }
+
+  it('⭐ an uploaded video background that names no poster takes the one its host states', () => {
+    const bg = bgOf(withPosterPattern({ video: { assetId: ID, assetExt: 'mp4' } }))
+    expect(bg.video.poster).toBe(`https://assets.example.com/dist/${ID}/base.mp4?poster`)
+  })
+
+  it("the background's own poster wins", () => {
+    const bg = bgOf(withPosterPattern({ video: { assetId: ID, assetExt: 'mp4' }, poster: '/own.jpg' }))
+    expect(bg.video.poster).toBe('/own.jpg')
+  })
+
+  it('CONTROL: no poster where the host states none, or for a video that is not uploaded', () => {
+    expect(bgOf(withBackground({ video: { assetId: ID, assetExt: 'mp4' } })).video.poster).toBeUndefined()
+    expect(bgOf(withPosterPattern({ video: { src: '/clip.mp4' } })).video.poster).toBeUndefined()
+  })
 })
